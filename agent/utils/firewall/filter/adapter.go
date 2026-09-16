@@ -1,0 +1,125 @@
+package filter
+
+import (
+	"context"
+	"errors"
+)
+
+var (
+	ErrAdapterUnavailable   = errors.New("firewall rule adapter is unavailable")
+	ErrInventoryUnavailable = errors.New("firewall rule inventory is unavailable")
+	ErrFamilyUnavailable    = errors.New("firewall address family is unavailable")
+)
+
+type ChangeOperation string
+
+const (
+	ChangeCreate  ChangeOperation = "create"
+	ChangeAdopt   ChangeOperation = "adopt"
+	ChangeUpdate  ChangeOperation = "update"
+	ChangeDelete  ChangeOperation = "delete"
+	ChangeReorder ChangeOperation = "reorder"
+)
+
+type DesiredChange struct {
+	CommandOnly     bool            `json:"-"`
+	UnmarkedAdopted bool            `json:"-"`
+	Operation       ChangeOperation `json:"operation"`
+	Before          *FirewallRule   `json:"before,omitempty"`
+	After           *FirewallRule   `json:"after,omitempty"`
+	Locator         *Locator        `json:"locator,omitempty"`
+	PreviousMarker  string          `json:"previousMarker,omitempty"`
+	Append          bool            `json:"append,omitempty"`
+	RestoreAtEnd    bool            `json:"restoreAtEnd,omitempty"`
+}
+
+type NativeCommand struct {
+	Executable string   `json:"executable"`
+	Args       []string `json:"args"`
+	Stdin      string   `json:"stdin,omitempty"`
+}
+
+type NativeRulePlan struct {
+	RuleUUID         string          `json:"ruleUUID"`
+	Operation        ChangeOperation `json:"operation"`
+	Commands         []NativeCommand `json:"commands"`
+	RollbackCommands []NativeCommand `json:"rollbackCommands,omitempty"`
+	Previous         *ObservedRule   `json:"previous,omitempty"`
+	Expected         ObservedRule    `json:"expected"`
+}
+
+type BackendPlan struct {
+	CommandOnly      bool             `json:"-"`
+	Provider         Provider         `json:"provider"`
+	Scope            Scope            `json:"scope"`
+	SnapshotRevision string           `json:"snapshotRevision"`
+	Rules            []NativeRulePlan `json:"rules"`
+}
+
+func (p BackendPlan) CreatesOnly() bool {
+	if len(p.Rules) == 0 {
+		return false
+	}
+	for _, rule := range p.Rules {
+		if rule.Operation != ChangeCreate {
+			return false
+		}
+	}
+	return true
+}
+
+type ApplyResult struct {
+	Applied      []ObservedRule `json:"applied"`
+	Verification *VerifyResult  `json:"verification,omitempty"`
+}
+
+type VerifyResult struct {
+	Snapshot Snapshot `json:"snapshot"`
+	Matched  bool     `json:"matched"`
+}
+
+type Adapter interface {
+	Provider() Provider
+	Capabilities(context.Context) (Capabilities, error)
+	Observe(context.Context, Scope) (Snapshot, error)
+	Compile(Snapshot, []DesiredChange) (BackendPlan, error)
+	Apply(context.Context, BackendPlan) (ApplyResult, error)
+	Verify(context.Context, BackendPlan) (VerifyResult, error)
+}
+
+type MultiScopeObserver interface {
+	ObserveScopes(context.Context, []Scope) ([]Snapshot, error)
+}
+
+type ObservationSessionFactory interface {
+	NewObservationSession() Adapter
+}
+
+type CreatePlanner interface {
+	Compile(DesiredChange) (BackendPlan, error)
+	Applied(ObservedRule)
+}
+
+type CreatePlannerFactory interface {
+	NewCreatePlanner(Snapshot) CreatePlanner
+}
+
+type RulePreparer interface {
+	PrepareRule(FirewallRule) (FirewallRule, error)
+}
+
+type RuleChecker interface {
+	CheckRule(context.Context, FirewallRule) error
+}
+
+type UnverifiedRuleAppender interface {
+	AppendUnverified(context.Context, FirewallRule, string) error
+}
+
+type NativeDetailReader interface {
+	NativeDetail(context.Context, string, bool) (string, error)
+}
+
+type PlanRollbacker interface {
+	Rollback(context.Context, BackendPlan) error
+}

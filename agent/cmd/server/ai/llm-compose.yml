@@ -1,0 +1,30 @@
+services:
+  tensorrt-llm:
+    image: ${IMAGE}:${VERSION}
+    container_name: ${CONTAINER_NAME}
+    restart: always
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    networks:
+      - 3panel-network
+    volumes:
+      - ${MODEL_PATH}:${MODEL_PATH}
+    ipc: host
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65535
+        hard: 65535
+      stack: 67108864
+    command: ${COMMAND}
+networks:
+  3panel-network:
+    external: true

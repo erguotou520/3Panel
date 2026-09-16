@@ -1,0 +1,618 @@
+package nftables
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/3panel-dev/3panel/agent/utils/cmd"
+	"github.com/3panel-dev/3panel/agent/utils/firewall/filter"
+	"github.com/3panel-dev/3panel/agent/utils/firewall/nftables_helper"
+	"github.com/mattn/go-shellwords"
+)
+
+type Backend interface {
+	ListChain(context.Context, filter.Scope) (string, error)
+	Run(context.Context, filter.NativeCommand) error
+	Save(context.Context) error
+}
+
+type Adapter struct{ backend Backend }
+
+func NewAdapter() *Adapter { return &Adapter{backend: systemBackend{}} }
+
+func NewAdapterWithBackend(backend Backend) *Adapter { return &Adapter{backend: backend} }
+
+func (a *Adapter) Provider() filter.Provider { return filter.ProviderNftables }
+
+func (a *Adapter) Capabilities(context.Context) (filter.Capabilities, error) {
+	return filter.Capabilities{
+		Marker: true, OwnedChains: true, ExplicitPosition: true,
+	}, nil
+}
+
+func (a *Adapter) Observe(ctx context.Context, scope filter.Scope) (filter.Snapshot, error) {
+	scope = scope.Normalize()
+	if err := validateScope(scope); err != nil {
+		return filter.Snapshot{}, err
+	}
+	if a.backend == nil {
+		return filter.Snapshot{}, fmt.Errorf("nftables backend is required")
+	}
+	output, err := a.backend.ListChain(ctx, scope)
+	if errors.Is(err, nftables_helper.ErrChainNotFound) {
+		snapshot, snapshotErr := filter.NewSnapshot(scope, nil)
+		if snapshotErr != nil {
+			return filter.Snapshot{}, snapshotErr
+		}
+		snapshot.Notices = []filter.ScopeNotice{{
+			Code: filter.ScopeNoticeManagedScopeMissing, Values: []string{string(scope.Family), scope.Chain},
+		}}
+		return snapshot, nil
+	}
+	if err != nil {
+		return filter.Snapshot{}, err
+	}
+	return filter.NewSnapshot(scope, parseChain(scope, output))
+}
+
+func (a *Adapter) Compile(snapshot filter.Snapshot, changes []filter.DesiredChange) (filter.BackendPlan, error) {
+	if snapshot.Revision == "" {
+		return filter.BackendPlan{}, filter.ErrRuleStale
+	}
+	if err := validateScope(snapshot.Scope); err != nil {
+		return filter.BackendPlan{}, err
+	}
+	if len(changes) == 0 {
+		return filter.BackendPlan{}, fmt.Errorf("%w: nftables plan requires at least one change", filter.ErrInvalidRule)
+	}
+	if len(changes) > 1 && changes[0].Operation != filter.ChangeCreate && changes[0].Operation != filter.ChangeDelete {
+		return filter.BackendPlan{}, fmt.Errorf("%w: nftables batch plans only support create or delete operations", filter.ErrInvalidRule)
+	}
+
+	operation := changes[0].Operation
+	current := snapshot
+	current.Rules = make([]filter.ObservedRule, len(snapshot.Rules), len(snapshot.Rules)+len(changes))
+	copy(current.Rules, snapshot.Rules)
+	plan := filter.BackendPlan{
+		Provider: filter.ProviderNftables, Scope: snapshot.Scope, SnapshotRevision: snapshot.Revision,
+		Rules: make([]filter.NativeRulePlan, 0, len(changes)),
+	}
+	for _, change := range changes {
+		if len(changes) > 1 && change.Operation != operation {
+			return filter.BackendPlan{}, fmt.Errorf("%w: nftables batch plan operations must be homogeneous", filter.ErrInvalidRule)
+		}
+		rules, expected, previous, err := applyChange(current, change)
+		if err != nil {
+			return filter.BackendPlan{}, err
+		}
+		plan.Rules = append(plan.Rules, filter.NativeRulePlan{
+			RuleUUID: ruleUUID(change), Operation: change.Operation, Previous: previous, Expected: expected,
+		})
+		current.Rules = rules
+	}
+	if _, err := filter.NewSnapshot(snapshot.Scope, current.Rules); err != nil {
+		return filter.BackendPlan{}, err
+	}
+	applyCommand, err := rebuildCommand(snapshot.Scope, current.Rules)
+	if err != nil {
+		return filter.BackendPlan{}, err
+	}
+	rollbackCommand, err := rebuildCommand(snapshot.Scope, snapshot.Rules)
+	if err != nil {
+		return filter.BackendPlan{}, err
+	}
+	plan.Rules[0].Commands = []filter.NativeCommand{applyCommand}
+	plan.Rules[0].RollbackCommands = []filter.NativeCommand{rollbackCommand}
+	return plan, nil
+}
+
+func (a *Adapter) Apply(ctx context.Context, plan filter.BackendPlan) (filter.ApplyResult, error) {
+	if err := validatePlan(plan); err != nil {
+		return filter.ApplyResult{}, err
+	}
+	for _, rulePlan := range plan.Rules {
+		for _, command := range rulePlan.Commands {
+			if err := validateNativeCommand(command); err != nil {
+				return filter.ApplyResult{}, err
+			}
+		}
+	}
+	for _, rulePlan := range plan.Rules {
+		for _, command := range rulePlan.Commands {
+			if err := a.backend.Run(ctx, command); err != nil {
+				if plan.CommandOnly {
+					return filter.ApplyResult{}, err
+				}
+				return filter.ApplyResult{}, a.compensate(ctx, plan, err)
+			}
+		}
+	}
+	if err := a.backend.Save(ctx); err != nil {
+		if plan.CommandOnly {
+			return filter.ApplyResult{}, err
+		}
+		return filter.ApplyResult{}, a.compensate(ctx, plan, err)
+	}
+	applied := make([]filter.ObservedRule, 0, len(plan.Rules))
+	for _, rulePlan := range plan.Rules {
+		applied = append(applied, rulePlan.Expected)
+	}
+	return filter.ApplyResult{Applied: applied}, nil
+}
+
+func (a *Adapter) Verify(ctx context.Context, plan filter.BackendPlan) (filter.VerifyResult, error) {
+	if err := validatePlan(plan); err != nil {
+		return filter.VerifyResult{}, err
+	}
+	snapshot, err := a.Observe(ctx, plan.Scope)
+	if err != nil {
+		return filter.VerifyResult{}, err
+	}
+	byMarker := make(map[string][]int, len(snapshot.Rules))
+	for index, observed := range snapshot.Rules {
+		byMarker[observed.Marker] = append(byMarker[observed.Marker], index)
+	}
+	for _, expected := range plan.Rules {
+		matches := 0
+		for _, index := range byMarker[expected.Expected.Marker] {
+			observed := snapshot.Rules[index]
+			if observed.Marker == expected.Expected.Marker {
+				if expected.Operation == filter.ChangeDelete {
+					matches++
+					continue
+				}
+				want, wantErr := filter.RuleKey(expected.Expected.Rule)
+				got, gotErr := filter.RuleKey(observed.Rule)
+				if wantErr == nil && gotErr == nil && want == got {
+					matches++
+				}
+			}
+		}
+		if (expected.Operation == filter.ChangeDelete && matches != 0) ||
+			(expected.Operation != filter.ChangeDelete && matches != 1) {
+			return filter.VerifyResult{Snapshot: snapshot, Matched: false}, nil
+		}
+	}
+	return filter.VerifyResult{Snapshot: snapshot, Matched: true}, nil
+}
+
+func (a *Adapter) Rollback(ctx context.Context, plan filter.BackendPlan) error {
+	if err := validatePlan(plan); err != nil {
+		return err
+	}
+	for _, rulePlan := range plan.Rules {
+		for _, command := range rulePlan.RollbackCommands {
+			if err := validateNativeCommand(command); err != nil {
+				return err
+			}
+		}
+	}
+	for _, rulePlan := range plan.Rules {
+		for _, command := range rulePlan.RollbackCommands {
+			if err := a.backend.Run(ctx, command); err != nil {
+				return err
+			}
+		}
+	}
+	return a.backend.Save(ctx)
+}
+
+func (a *Adapter) compensate(ctx context.Context, plan filter.BackendPlan, cause error) error {
+	if plan.CreatesOnly() {
+		return cause
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	if err := a.Rollback(ctx, plan); err != nil {
+		return fmt.Errorf("nftables apply failed: %w; compensation failed: %v", cause, err)
+	}
+	return cause
+}
+
+func validateScope(scope filter.Scope) error {
+	scope = scope.Normalize()
+	if err := scope.ValidateMVP(); err != nil {
+		return err
+	}
+	if scope.Provider != filter.ProviderNftables {
+		return fmt.Errorf("%w: nftables adapter scope %s", filter.ErrUnsupportedScope, scope.Key())
+	}
+	return nil
+}
+
+func nativeChainName(scope filter.Scope) string {
+	switch scope.Normalize().Chain {
+	case filter.BasicBeforeChain:
+		return nftables_helper.BasicBeforeChain
+	case filter.IptablesInputChain:
+		return nftables_helper.BasicChain
+	case filter.BasicAfterChain:
+		return nftables_helper.BasicAfterChain
+	default:
+		return ""
+	}
+}
+
+func validatePlan(plan filter.BackendPlan) error {
+	if plan.Provider != filter.ProviderNftables || len(plan.Rules) == 0 {
+		return fmt.Errorf("%w: invalid nftables plan", filter.ErrInvalidRule)
+	}
+	return validateScope(plan.Scope)
+}
+
+func validateNativeCommand(command filter.NativeCommand) error {
+	if command.Executable != "nft" || len(command.Args) != 0 || command.Stdin == "" {
+		return fmt.Errorf("%w: invalid nftables native command", filter.ErrInvalidRule)
+	}
+	return nil
+}
+
+func applyChange(snapshot filter.Snapshot, change filter.DesiredChange) ([]filter.ObservedRule, filter.ObservedRule, *filter.ObservedRule, error) {
+	rules := snapshot.Rules
+	rule := change.After
+	if change.Operation == filter.ChangeDelete {
+		rule = change.Before
+	}
+	if rule == nil {
+		return nil, filter.ObservedRule{}, nil, fmt.Errorf("%w: %s rule is required", filter.ErrInvalidRule, change.Operation)
+	}
+	normalized, err := filter.NormalizeRule(*rule)
+	if err != nil {
+		return nil, filter.ObservedRule{}, nil, err
+	}
+	if normalized.Scope.Key() != snapshot.Scope.Key() || normalized.UUID == "" {
+		return nil, filter.ObservedRule{}, nil, fmt.Errorf("%w: invalid nftables mutation rule", filter.ErrInvalidRule)
+	}
+	position := len(rules) + 1
+	marker := "3panel-rule:" + normalized.UUID
+	var previous *filter.ObservedRule
+
+	if change.Operation != filter.ChangeCreate {
+		if change.Locator == nil || change.Locator.Position == nil {
+			return nil, filter.ObservedRule{}, nil, fmt.Errorf("%w: mutation requires a position locator", filter.ErrInvalidRule)
+		}
+		position = *change.Locator.Position
+		if position < 1 || position > len(rules) {
+			return nil, filter.ObservedRule{}, nil, filter.ErrRuleStale
+		}
+		selected := rules[position-1]
+		if selected.Protected {
+			return nil, filter.ObservedRule{}, nil, filter.ErrProtectedRule
+		}
+		previousCopy := selected
+		previous = &previousCopy
+		rules = append(rules[:position-1], rules[position:]...)
+	}
+
+	target := position
+	if normalized.OrderIndex != nil {
+		target = int(*normalized.OrderIndex)
+	}
+	if change.Operation == filter.ChangeCreate && normalized.OrderIndex == nil {
+		target = len(rules) + 1
+	}
+	if change.Operation == filter.ChangeDelete {
+		expected := observedRule(normalized, marker, position, "")
+		for index := position - 1; index < len(rules); index++ {
+			position := index + 1
+			rules[index].Locator.Position = &position
+		}
+		return rules, expected, previous, nil
+	}
+	if target < 1 || target > len(rules)+1 {
+		return nil, filter.ObservedRule{}, nil, fmt.Errorf("%w: target position is out of range", filter.ErrInvalidRule)
+	}
+	expected := observedRule(normalized, marker, target, strings.Join(compileExpressionArgs(normalized, marker), " "))
+	rules = append(rules, filter.ObservedRule{})
+	copy(rules[target:], rules[target-1:])
+	rules[target-1] = expected
+	for index := min(position, target) - 1; index < len(rules); index++ {
+		position := index + 1
+		rules[index].Locator.Position = &position
+	}
+	return rules, expected, previous, nil
+}
+
+func observedRule(rule filter.FirewallRule, marker string, position int, raw string) filter.ObservedRule {
+	return filter.ObservedRule{
+		Rule: rule, Marker: marker, Raw: raw, ParseStatus: filter.ParseStatusSupported,
+		Locator: filter.Locator{Provider: filter.ProviderNftables, ScopeKey: rule.Scope.Key(), Position: &position},
+	}
+}
+
+func ruleUUID(change filter.DesiredChange) string {
+	if change.After != nil {
+		return change.After.UUID
+	}
+	if change.Before != nil {
+		return change.Before.UUID
+	}
+	return ""
+}
+
+func rebuildCommand(scope filter.Scope, rules []filter.ObservedRule) (filter.NativeCommand, error) {
+	tableFamily := nftables_helper.TableFamily(scope.Family)
+	chain := nativeChainName(scope)
+	var script strings.Builder
+	script.WriteString("flush chain ")
+	script.WriteString(tableFamily)
+	script.WriteByte(' ')
+	script.WriteString(nftables_helper.TableName)
+	script.WriteByte(' ')
+	script.WriteString(chain)
+	script.WriteByte('\n')
+	for _, rule := range rules {
+		raw := strings.TrimSpace(rule.Raw)
+		if rule.ParseStatus == filter.ParseStatusSupported && rule.Marker != "" {
+			script.WriteString(strings.Join([]string{"add", "rule", tableFamily, nftables_helper.TableName, chain}, " "))
+			script.WriteByte(' ')
+			script.WriteString(strings.Join(compileExpressionArgs(rule.Rule, rule.Marker), " "))
+			script.WriteByte('\n')
+			continue
+		}
+		if raw != "" {
+			if strings.ContainsAny(raw, "\r\n") {
+				return filter.NativeCommand{}, fmt.Errorf("%w: invalid newline in native nftables rule", filter.ErrInvalidRule)
+			}
+			script.WriteString(strings.Join([]string{"add", "rule", tableFamily, nftables_helper.TableName, chain}, " "))
+			script.WriteByte(' ')
+			script.WriteString(raw)
+			script.WriteByte('\n')
+		}
+	}
+	return filter.NativeCommand{Executable: "nft", Stdin: script.String()}, nil
+}
+
+func compileExpressionArgs(rule filter.FirewallRule, marker string) []string {
+	parts := make([]string, 0, 24)
+	if rule.Protocol != "all" {
+		protocol := rule.Protocol
+		if protocol == "icmpv6" {
+			protocol = "ipv6-icmp"
+		}
+		parts = append(parts, "meta", "l4proto", protocol)
+	}
+	prefix := "ip"
+	if rule.Scope.Family == filter.FamilyIPv6 {
+		prefix = "ip6"
+	}
+	if rule.SourceAddress != "" {
+		parts = append(parts, prefix, "saddr", rule.SourceAddress)
+	}
+	if rule.DestinationAddress != "" {
+		parts = append(parts, prefix, "daddr", rule.DestinationAddress)
+	}
+	if rule.Interface != "" {
+		parts = append(parts, "iifname", strconv.Quote(rule.Interface))
+	}
+	if rule.SourcePort != "" {
+		parts = append(parts, rule.Protocol, "sport", rule.SourcePort)
+	}
+	if rule.DestinationPort != "" {
+		parts = append(parts, rule.Protocol, "dport", rule.DestinationPort)
+	}
+	if len(rule.ConnectionStates) != 0 {
+		parts = append(parts, "ct", "state", "{", strings.Join(rule.ConnectionStates, ","), "}")
+	}
+	parts = append(parts, string(rule.Action), "comment", strconv.Quote(marker))
+	return parts
+}
+
+func parseChain(scope filter.Scope, output string) []filter.ObservedRule {
+	rules := make([]filter.ObservedRule, 0)
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		handleIndex := strings.LastIndex(line, "# handle ")
+		if handleIndex < 0 {
+			continue
+		}
+		raw := strings.TrimSpace(line[:handleIndex])
+		if strings.HasPrefix(raw, "chain ") {
+			continue
+		}
+		handle := strings.TrimSpace(line[handleIndex+len("# handle "):])
+		position := len(rules) + 1
+		rules = append(rules, parseRule(scope, raw, handle, position))
+	}
+	return rules
+}
+
+func parseRule(scope filter.Scope, raw, handle string, position int) filter.ObservedRule {
+	locator := filter.Locator{Provider: filter.ProviderNftables, ScopeKey: scope.Key(), NativeID: handle, Canonical: raw, Position: &position}
+	opaque := func() filter.ObservedRule {
+		return filter.ObservedRule{
+			Rule:    filter.FirewallRule{Scope: scope, NativeKind: filter.NativeKindOpaque},
+			Locator: locator, ParseStatus: filter.ParseStatusOpaque, Raw: raw,
+			Protected: scope.Chain != filter.IptablesInputChain,
+		}
+	}
+	tokens, err := shellwords.Parse(raw)
+	if err != nil {
+		return opaque()
+	}
+	rule := filter.FirewallRule{Scope: scope, NativeKind: filter.NativeKindRule, Protocol: "all"}
+	marker := ""
+	for index := 0; index < len(tokens); {
+		switch tokens[index] {
+		case "meta":
+			if index+2 >= len(tokens) {
+				return opaque()
+			}
+			if tokens[index+1] == "nfproto" {
+				want := string(filter.FamilyIPv4)
+				if scope.Family == filter.FamilyIPv6 {
+					want = string(filter.FamilyIPv6)
+				}
+				if tokens[index+2] != want {
+					return opaque()
+				}
+			} else if tokens[index+1] == "l4proto" {
+				rule.Protocol = parseProtocol(tokens[index+2])
+			} else {
+				return opaque()
+			}
+			index += 3
+		case "ip", "ip6":
+			if index+2 >= len(tokens) {
+				return opaque()
+			}
+			if tokens[index+1] == "saddr" {
+				rule.SourceAddress = tokens[index+2]
+			} else if tokens[index+1] == "daddr" {
+				rule.DestinationAddress = tokens[index+2]
+			} else {
+				return opaque()
+			}
+			index += 3
+		case "tcp", "udp":
+			if index+2 >= len(tokens) {
+				return opaque()
+			}
+			if rule.Protocol == "all" {
+				rule.Protocol = tokens[index]
+			}
+			value := strings.ReplaceAll(tokens[index+2], ":", "-")
+			if tokens[index+1] == "sport" {
+				rule.SourcePort = value
+			} else if tokens[index+1] == "dport" {
+				rule.DestinationPort = value
+			} else {
+				return opaque()
+			}
+			index += 3
+		case "iifname":
+			if index+1 >= len(tokens) {
+				return opaque()
+			}
+			rule.Interface = tokens[index+1]
+			index += 2
+		case "ct":
+			if index+2 >= len(tokens) || tokens[index+1] != "state" {
+				return opaque()
+			}
+			index += 2
+			values := tokens[index]
+			if values == "{" {
+				index++
+				start := index
+				for index < len(tokens) && tokens[index] != "}" {
+					index++
+				}
+				if index == len(tokens) {
+					return opaque()
+				}
+				values = strings.Join(tokens[start:index], " ")
+			}
+			for _, state := range strings.Split(values, ",") {
+				state = strings.TrimSpace(state)
+				if state == "" {
+					return opaque()
+				}
+				rule.ConnectionStates = append(rule.ConnectionStates, parseConnectionState(state))
+			}
+			index++
+		case "accept", "drop", "reject":
+			rule.Action = filter.Action(tokens[index])
+			index++
+		case "comment":
+			if index+1 >= len(tokens) {
+				return opaque()
+			}
+			if strings.HasPrefix(tokens[index+1], "3panel-rule:") {
+				marker = tokens[index+1]
+			} else {
+				rule.Description = tokens[index+1]
+			}
+			index += 2
+		case "counter":
+			index++
+			if index+3 < len(tokens) && tokens[index] == "packets" {
+				index += 4
+			}
+		default:
+			return opaque()
+		}
+	}
+	if rule.Action == "" {
+		return opaque()
+	}
+	normalized, err := filter.NormalizeRule(rule)
+	if err != nil {
+		return opaque()
+	}
+	return filter.ObservedRule{Rule: normalized, Locator: locator, Marker: marker, ParseStatus: filter.ParseStatusSupported, Raw: raw, Protected: scope.Chain != filter.IptablesInputChain}
+}
+
+func parseProtocol(value string) string {
+	switch numericSymbol(value) {
+	case "1":
+		return "icmp"
+	case "6":
+		return "tcp"
+	case "17":
+		return "udp"
+	case "58", "ipv6-icmp":
+		return "icmpv6"
+	default:
+		return value
+	}
+}
+
+func parseConnectionState(value string) string {
+	switch numericSymbol(value) {
+	case "1":
+		return "invalid"
+	case "2":
+		return "established"
+	case "4":
+		return "related"
+	case "8":
+		return "new"
+	case "64":
+		return "untracked"
+	default:
+		return value
+	}
+}
+
+func numericSymbol(value string) string {
+	base := 10
+	digits := value
+	if strings.HasPrefix(strings.ToLower(value), "0x") {
+		base, digits = 16, value[2:]
+	}
+	if number, err := strconv.ParseUint(digits, base, 32); err == nil {
+		return strconv.FormatUint(number, 10)
+	}
+	return value
+}
+
+type systemBackend struct{}
+
+func (systemBackend) ListChain(ctx context.Context, scope filter.Scope) (string, error) {
+	run := func(args ...string) (string, error) {
+		return cmd.NewCommandMgr(cmd.WithContext(ctx), cmd.WithTimeout(60*time.Second)).RunWithOptionalSudoAndStdout(
+			"nft", append([]string{"-n", "-n"}, args...)...,
+		)
+	}
+	return nftables_helper.ReadChain(run, nftables_helper.TableFamily(scope.Family), nftables_helper.TableName, nativeChainName(scope))
+}
+
+func (systemBackend) Run(ctx context.Context, command filter.NativeCommand) error {
+	if command.Executable != "nft" {
+		return fmt.Errorf("unexpected nftables executable %q", command.Executable)
+	}
+	if command.Stdin != "" {
+		return nftables_helper.RunScriptContext(ctx, command.Stdin)
+	}
+	return cmd.NewCommandMgr(cmd.WithContext(ctx), cmd.WithTimeout(60*time.Second)).
+		RunWithOptionalSudo(command.Executable, command.Args...)
+}
+
+func (systemBackend) Save(ctx context.Context) error {
+	return nftables_helper.PersistRuleset(ctx)
+}
