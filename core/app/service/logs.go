@@ -23,7 +23,7 @@ import (
 
 type LogService struct{}
 
-const logs = "https://resource.fit2cloud.com/installation-log.sh"
+const logs = "https://resource.3panel.pro/installation-log.sh"
 
 type ILogService interface {
 	CreateLoginLog(operation model.LoginLog) error

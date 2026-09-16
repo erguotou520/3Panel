@@ -36,37 +36,37 @@ type DBOption func(*gorm.DB) *gorm.DB
 
 func RepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://resource.fit2cloud.com/3panel/package/enterprise"
+		return "https://resource.3panel.pro/package/enterprise"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://resource.fit2cloud.com/3panel/package/fusionxplay"
+		return "https://resource.3panel.pro/package/fusionxplay"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://resource.fit2cloud.com/3panel/package/v2"
+		return "https://resource.3panel.pro/package/v2"
 	}
 	return "https://resource.3panel.pro/v2"
 }
 func ResourceURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://resource.fit2cloud.com/3panel/resource/v2"
+		return "https://resource.3panel.pro/resource/v2"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://resource.fit2cloud.com/3panel/resource/fusionxplay"
+		return "https://resource.3panel.pro/resource/fusionxplay"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://resource.fit2cloud.com/3panel/resource/v2"
+		return "https://resource.3panel.pro/resource/v2"
 	}
 	return "https://resource.3panel.pro/v2/resource"
 }
 func AppRepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://apps-assets.fit2cloud.com"
+		return "https://apps.3panel.pro"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://apps-assets.fit2cloud.com"
+		return "https://apps.3panel.pro"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://apps-assets.fit2cloud.com"
+		return "https://apps.3panel.pro"
 	}
 	return "https://apps.3panel.pro"
 }

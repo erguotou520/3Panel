@@ -158,7 +158,7 @@ const licenseInfo = reactive({
 let restoreTimer: number | undefined;
 let pageInitialized = false;
 let pageInitialization: Promise<void> | undefined;
-const defaultLoginImage = new URL('@/assets/images/3panel-login-enterprise.png', import.meta.url).href;
+const defaultLoginImage = new URL('@/assets/images/3panel-login-enterprise.svg', import.meta.url).href;
 const defaultLoginBgImage = new URL('@/assets/images/3panel-login-bg.jpg', import.meta.url).href;
 const loadedLoginImage = ref<string | null>(null);
 const loadedBackgroundImage = ref<string | null>(null);

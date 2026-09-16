@@ -242,7 +242,7 @@ var InitDefaultCA = &gormigrate.Migration{
 			Country:          "CN",
 			KeyType:          "EC256",
 			Name:             "3Panel",
-			Organization:     "FIT2CLOUD",
+			Organization:     "3Panel",
 			OrganizationUint: "3Panel",
 			Province:         "Beijing",
 			City:             "Beijing",

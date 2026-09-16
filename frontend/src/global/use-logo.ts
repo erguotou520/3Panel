@@ -5,7 +5,7 @@ export const useLogo = async () => {
     const { themeConfig, watermark, watermarkShow } = useGlobalStore();
     const res = await getXpackSetting();
     if (res) {
-        localStorage.setItem('1p-favicon', res.data.logo);
+        localStorage.setItem('3panel-favicon', res.data.logo);
         themeConfig.value.title = res.data.title;
         themeConfig.value.logo = res.data.logo;
         themeConfig.value.logoWithText = res.data.logoWithText;

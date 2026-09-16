@@ -29,7 +29,7 @@ export const createDefaultFooterNavigationLinks = (isIntl: boolean, docsUrl: str
     },
     forum: {
         visible: true,
-        url: isIntl ? 'https://github.com/3panel-dev/3panel/discussions' : 'https://bbs.fit2cloud.com/c/1p/7',
+        url: isIntl ? 'https://github.com/3panel-dev/3panel/discussions' : 'https://bbs.3panel.pro/c/3p/7',
     },
     documentation: {
         visible: true,

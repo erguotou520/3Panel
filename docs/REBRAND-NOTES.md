@@ -11,6 +11,8 @@
 - **API 鉴权头**：\`1Panel-Token\`/\`1Panel-Timestamp\` → \`3Panel-Token\`/\`3Panel-Timestamp\`。
 - **运行时标识**：容器名、日志文件名（\`3Panel.log\`/\`3Panel-Core.log\`）、CA 名称、nftables 表名、环境变量前缀（\`3PANEL_*\`）、\`.3panel_clash\` 等。
 - **视觉资产**：主 Logo、侧边栏 Logo、\`favicon.svg\`、4 个 favicon PNG 均已基于原图形风格重绘为 3Panel（数字 1 → 3，字标 1Panel → 3Panel，笔画粗细与原字形对齐）。
+- **登录页插图**：\`3panel-login.svg\` / \`3panel-login-enterprise.svg\` 已重绘为 3Panel 品牌矢量图（原上游 1Panel 视觉的 \`3panel-login.jpg\` / \`3panel-login-enterprise.png\` 已删除）。
+- **外部地址**：\`resource.fit2cloud.com\`、\`apps-assets.fit2cloud.com\`、\`community.fit2cloud.com\` 等上游基础设施域名已改为本项目自有域名（\`*.3panel.pro\`）。
 - **合规**：新增 [NOTICE.md](../NOTICE.md)，GPLv3 许可证全文与上游版权信息完整保留。
 
 ## ⚠️ 必须自行接管的外部依赖
@@ -62,7 +64,6 @@
 | --- | --- |
 | \`github.com/1Panel-dev/lego/v5\` | 第三方 Go 依赖（ACME 库），改名会导致依赖解析失败 |
 | \`github.com/1Panel-dev/{MaxKB,KubePi,CordysCRM}\` 链接 | 上游组织的其他独立开源项目，改名会造成事实错误 |
-| 登录页插图 \`3panel-login*.jpg/png\` | 装饰性图片，**建议人工确认是否残留上游视觉元素后自行替换** |
 | WAF 数据目录 `1pwaf` | 由独立的 OpenResty WAF 动态模块创建（不在本仓库内），单改面板侧会导致 WAF 功能失联，需连同 WAF 模块一起改名 |
 
 ## 二次开发的合规要点（依据上游《社区软件许可协议》+ GPLv3）

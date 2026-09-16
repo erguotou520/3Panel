@@ -1768,7 +1768,7 @@ func asyncReportAIProviderInstall(provider string) {
 		query.Set("product", "ai-provider")
 		query.Set("type", "install")
 		query.Set("version", provider)
-		reqURL := "https://community.fit2cloud.com/installation-analytics?" + query.Encode()
+		reqURL := "https://community.3panel.pro/installation-analytics?" + query.Encode()
 		_, _, _ = req_helper.HandleRequest(reqURL, http.MethodGet, constant.TimeOut5s)
 	}(provider)
 }
