@@ -14,7 +14,7 @@
 2. 本项目**完整保留**上游的 GPLv3 许可证文本（LICENSE）与相关版权信息，未做任何移除或篡改。
 3. 依据上游《社区软件许可协议》关于商标、商号、Logo 与产品名称的约定，上述标识的权利归上游权利人所有，且未授权给衍生作品使用。因此本项目已将**产品名称、Logo、图标及界面文案中的品牌标识全部替换为 3Panel**，不再使用 1Panel 的任何商标或标识。
 4. 本项目与上游 1Panel、FIT2CLOUD **不存在任何隶属、合作或背书关系**。本项目的问题反馈请提交至本项目自己的仓库，而非上游项目。
-5. 本项目自行维护安装脚本、升级通道与应用商店等基础设施；上游的在线服务（如 `resource.1panel.pro`、`apps.1panel.pro`）未被本项目使用，相关地址已替换为本项目自己的占位地址（见 `docs/REBRAND-NOTES.md`）。
+5. 本项目自行维护安装脚本、升级通道与应用商店等基础设施；上游的在线服务（如 `resource.1panel.pro`、`apps.1panel.pro`）未被本项目使用，相关地址已替换为本项目自己的地址。
 
 ## 修改范围概要 / Scope of changes
 
@@ -30,4 +30,3 @@
 ## 保留项 / Intentionally unchanged
 
 - `github.com/1Panel-dev/lego/v5`：上游声明使用的第三方 Go 模块依赖（ACME 客户端），为保持依赖完整性未改名。
-- README 中指向 `1Panel-dev/MaxKB`、`1Panel-dev/KubePi`、`1Panel-dev/CordysCRM` 的链接：这些是上游组织的其他独立开源项目，与本项目品牌无关，改名会造成事实错误，故保留原始链接。

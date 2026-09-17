@@ -1,16 +1,14 @@
 # Translation Contribution Guide
 
 Thank you for helping translate 3Panel! A complete locale touches the frontend,
-the Core service, the Agent service, application-store metadata, and the project
-README files. This guide lists the repository changes and validation required
-before opening a pull request.
+the Core service, the Agent service, and application-store metadata. This guide
+lists the repository changes and validation required before opening a pull
+request.
 
 > **Reference pull requests**
 >
 > - [WIP: Dev v2 spanish (#10352)](https://github.com/3panel-dev/3panel/pull/10352)
 >   is a full-locale example for Spanish (`es-ES`).
-> - [docs: add Persian README (#13132)](https://github.com/3panel-dev/3panel/pull/13132)
->   is a localized-README example.
 
 ---
 
@@ -24,7 +22,6 @@ before opening a pull request.
 | Core service | Go i18n | YAML (`.yaml`) |
 | Agent service | Go i18n | YAML (`.yaml`) |
 | Application store | API models and frontend types | Go and TypeScript |
-| Project introduction | GitHub README files | Markdown (`.md`) |
 
 Adding only a frontend module does not provide complete locale support. Follow
 all applicable steps below and state explicitly in the pull request if a surface
@@ -37,14 +34,14 @@ Choose the canonical runtime locale first. Use a
 casing wherever the runtime locale is used. File names and third-party locale
 packs do not always use the same casing.
 
-| Language | Runtime locale | Frontend module | Element Plus pack | Backend YAML | App-store key | README |
-|---|---|---|---|---|---|---|
-| Simplified Chinese | `zh` | `zh.ts` | `zh-cn` | `zh.yaml` | `zh` | `README.zh-Hans.md` |
-| Traditional Chinese | `zh-Hant` | `zh-Hant.ts` | `zh-tw` | `zh-Hant.yaml` | `zh-hant` | `README.zh-Hant.md` |
-| English | `en` | `en.ts` | `en` | `en.yaml` | `en` | `README.md` |
-| Brazilian Portuguese | `pt-BR` | `pt-br.ts` | `pt-br` | `pt-BR.yaml` | `pt-br` | `README.pt-br.md` |
-| Spanish (Spain) | `es-ES` | `es-es.ts` | `es` | `es-ES.yaml` | `es-es` | `README.es-es.md` |
-| Lao | `lo` | `lo.ts` | `lo` | `lo.yaml` | `lo` | `README.lo.md` |
+| Language | Runtime locale | Frontend module | Element Plus pack | Backend YAML | App-store key |
+|---|---|---|---|---|---|
+| Simplified Chinese | `zh` | `zh.ts` | `zh-cn` | `zh.yaml` | `zh` |
+| Traditional Chinese | `zh-Hant` | `zh-Hant.ts` | `zh-tw` | `zh-Hant.yaml` | `zh-hant` |
+| English | `en` | `en.ts` | `en` | `en.yaml` | `en` |
+| Brazilian Portuguese | `pt-BR` | `pt-br.ts` | `pt-br` | `pt-BR.yaml` | `pt-br` |
+| Spanish (Spain) | `es-ES` | `es-es.ts` | `es` | `es-ES.yaml` | `es-es` |
+| Lao | `lo` | `lo.ts` | `lo` | `lo.yaml` | `lo` |
 
 Use lowercase for simple runtime codes (`ja`, `ko`, `lo`) and standard BCP 47
 casing for variants (`pt-BR`, `es-ES`, `zh-Hant`). Do not infer a file name from
@@ -303,31 +300,7 @@ translated application names and descriptions are maintained in the external
 application-store data source and must be coordinated separately. Until that
 data exists, the application store falls back to English.
 
-## Step 9 – Add a localized README
-
-Copy the root README to the documentation directory:
-
-```text
-README.md -> docs/README.<readme-code>.md
-```
-
-Translate prose while preserving Markdown structure, HTML, images, links,
-commands, badges, and code samples. Check every relative link from its new
-location under `docs/`; a link that works from the repository root may need a
-different relative path in the localized file.
-
-Then keep the language navigation synchronized:
-
-1. Add the new README link to the language badge row in `README.md`.
-2. Add the same link to every existing `docs/README.*.md` language badge row.
-3. Add the locale to the table in this guide's
-   [Locale code reference](#locale-code-reference).
-
-Use the native language name for the badge label. The README locale suffix may
-follow an existing documentation convention (`zh-Hans`, `pt-br`, `es-es`) and
-does not have to match the runtime locale casing.
-
-## Step 10 – Format code and regenerate API documentation
+## Step 9 – Format code and regenerate API documentation
 
 Format every changed Go source file:
 
@@ -349,7 +322,7 @@ This updates generated files under `core/cmd/server/docs/`. Do not edit the
 generated Swagger output by hand. If the generator is unavailable, call that
 out explicitly in the pull request instead of committing stale manual changes.
 
-## Step 11 – Validate the locale
+## Step 10 – Validate the locale
 
 ### Automated checks
 
@@ -391,8 +364,7 @@ Also compare each translated catalog with its English source:
 - each Core and Agent YAML file has exactly the same keys as its corresponding
   English file;
 - placeholders, formatting tokens, HTML tags, URLs, and commands are preserved;
-- YAML files parse successfully, with no duplicate keys;
-- all README links and badges resolve to the intended files.
+- YAML files parse successfully, with no duplicate keys.
 
 ### Manual checks
 
@@ -405,7 +377,6 @@ Also compare each translated catalog with its English source:
 - [ ] A public share page recognizes the browser locale and sends the expected `Accept-Language` value.
 - [ ] Operation-log details remain visible through the correct Chinese or English fallback.
 - [ ] Application-store metadata uses the locale when available and falls back to English when absent.
-- [ ] The localized README renders correctly and every README language badge links to it.
 - [ ] Layout, punctuation, truncation, and text direction are correct at common screen sizes.
 
 For right-to-left languages, verify the login page, navigation, forms, tables,
@@ -442,7 +413,6 @@ archives to this repository unless a maintainer requests it.
 - [ ] `agent/i18n/lang/<runtime-locale>.yaml` exists and is registered in `agent/i18n/i18n.go`.
 - [ ] Application-store locale fields are updated in `agent/app/dto/app.go`, `frontend/src/api/interface/app.ts`, and `core/cmd/server/app/app_config.yml`.
 - [ ] Regional or script variants are normalized in `frontend/src/utils/app-store.ts` when needed.
-- [ ] `docs/README.<readme-code>.md` exists and every README language badge is synchronized.
 - [ ] Changed Go files are formatted and Swagger output is regenerated.
 - [ ] Frontend, Core, Agent, catalog-parity, placeholder, and Markdown checks pass.
 - [ ] All applicable manual checks pass.

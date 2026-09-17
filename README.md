@@ -1,109 +1,60 @@
-<p align="center"><a href="https://3panel.pro"><img src="https://resource.3panel.pro/img/3panel-logo.png" alt="3Panel" width="300" /></a></p>
-<p align="center">
-  Loved by a global community of <strong>2.5M+</strong> self-hosters.
-</p>
+# 3Panel
 
-<p align="center">
-  <a href="https://trendshift.io/repositories/2462" target="_blank"><img src="https://trendshift.io/api/badge/repositories/2462" alt="3panel-dev%2F3panel | Trendshift" style="width: 240px; height: auto;" /></a>
-</p>
+3Panel 是基于 [1Panel](https://github.com/1Panel-dev/1Panel) 二次开发的 Linux 服务器管理面板，使用 Go + Vue 3 构建，遵循 GPLv3 协议发布。
 
-<p align="center">
-  <a href="https://www.gnu.org/licenses/gpl-3.0.html"><img src="https://shields.io/github/license/3panel-dev/3panel?color=%231890FF" alt="License: GPL v3"></a>
-  <a href="https://discord.gg/bUpUqWqdRr"><img src="https://img.shields.io/discord/1318846410149335080?logo=discord&labelColor=%20%235462eb&logoColor=%20%23f5f5f5&color=%20%235462eb" alt="Discord"></a>
-  <a href="https://github.com/3panel-dev/3panel/releases"><img src="https://img.shields.io/github/v/release/3panel-dev/3panel" alt="GitHub release"></a>
-  <a href="https://github.com/3panel-dev/3panel"><img src="https://img.shields.io/github/stars/3panel-dev/3panel?color=%231890FF&style=flat-square" alt="Stars"></a>
-</p>
+> 本项目为 1Panel 的衍生作品，产品名称、Logo 等品牌标识已全部替换为 3Panel，与上游项目无隶属关系。合规声明详见 [NOTICE.md](./NOTICE.md)。
 
-<p align="center">
-  <a href="/README.md"><img alt="English" src="https://img.shields.io/badge/English-d9d9d9"></a>
-  <a href="/docs/README.zh-Hans.md"><img alt="中文(简体)" src="https://img.shields.io/badge/中文(简体)-d9d9d9"></a>
-  <a href="/docs/README.ja.md"><img alt="日本語" src="https://img.shields.io/badge/日本語-d9d9d9"></a>
-  <a href="/docs/README.pt-br.md"><img alt="Português (Brasil)" src="https://img.shields.io/badge/Português (Brasil)-d9d9d9"></a>
-  <a href="/docs/README.ar.md"><img alt="العربية" src="https://img.shields.io/badge/العربية-d9d9d9"></a>
-  <a href="/docs/README.de.md"><img alt="Deutsch" src="https://img.shields.io/badge/Deutsch-d9d9d9"></a>
-  <a href="/docs/README.es-es.md"><img alt="Español" src="https://img.shields.io/badge/Español-d9d9d9"></a>
-  <a href="/docs/README.fr.md"><img alt="français" src="https://img.shields.io/badge/français-d9d9d9"></a>
-  <a href="/docs/README.ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-d9d9d9"></a>
-  <a href="/docs/README.id.md"><img alt="Bahasa Indonesia" src="https://img.shields.io/badge/Bahasa Indonesia-d9d9d9"></a>
-  <a href="/docs/README.zh-Hant.md"><img alt="中文(繁體)" src="https://img.shields.io/badge/中文(繁體)-d9d9d9"></a>
-  <a href="/docs/README.tr.md"><img alt="Türkçe" src="https://img.shields.io/badge/Türkçe-d9d9d9"></a>
-  <a href="/docs/README.ru.md"><img alt="Русский" src="https://img.shields.io/badge/Русский-d9d9d9"></a>
-  <a href="/docs/README.ms.md"><img alt="Bahasa Melayu" src="https://img.shields.io/badge/Bahasa Melayu-d9d9d9"></a>
-  <a href="/docs/README.fa.md"><img alt="Persian" src="https://img.shields.io/badge/%D9%81%D8%A7%D8%B1%D8%B3%DB%8C-d9d9d9"></a>
-  <a href="/docs/README.lo.md"><img alt="ພາສາລາວ" src="https://img.shields.io/badge/%E0%BA%9E%E0%BA%B2%E0%BA%AA%E0%BA%B2%E0%BA%A5%E0%BA%B2%E0%BA%A7-d9d9d9"></a>
-</p>
+## 环境要求
 
----
+- Go `1.26.1`（见 `core/go.mod`、`agent/go.mod`）
+- Node.js 与 npm（前端构建，依赖见 `frontend/package.json`）
+- GNU Make（可选，用于一键构建）
 
-> [!IMPORTANT]
-> **二次开发声明 / NOTICE** — 本项目基于 [1Panel](https://github.com/1Panel-dev/1Panel) 二次开发，并遵循 **GPLv3** 开源协议发布。
-> 依据上游许可协议关于商标与标识的约定，本项目已将全部品牌标识（名称 / Logo / 图标）替换为 **3Panel**，与上游项目无隶属关系。详见 [NOTICE.md](/NOTICE.md)。
+## 目录结构
 
-## What is 3Panel?
-
-3Panel is a modern, open-source Linux server management panel and a lightweight AI management platform. Through an intuitive web interface, it provides users with comprehensive, one-stop server management capabilities:
-- **AI Management**: Offers a unified management platform from bare metal to agents (Metal-to-Agent). It integrates an AI gateway, and Skills Hub, while supporting centralized management of agents and models.
-- **Efficient Visual Operations**: Easily manage Linux servers through a web-based GUI, streamlining tasks such as host monitoring, file management, database management, and container management.
-- **Rapid Website Deployment**: Deeply integrates with popular website builders like WordPress and Halo. It enables one-click domain binding and SSL certificate configuration, significantly lowering the barrier to website creation.
-- **Curated App Store**: Features a built-in store of high-quality open-source applications, providing one-click installation and upgrade services to effortlessly extend server capabilities.
-- **Enterprise-Grade Security**: Deploys applications based on container technology to effectively minimize vulnerability exposure. It also provides security features such as WAF and log auditing to ensure comprehensive server protection.
-- **One-Click Data Backup**: Supports one-click backup and restoration, and integrates with various cloud storage solutions to ensure data security and prevent loss.
-
-## Why 3Panel?
-
-| | 3Panel | cPanel / Plesk | aaPanel | Webmin |
-|--|--------|----------------|---------|--------|
-| Free & open source | ✅ | ❌ | Partial | ✅ |
-| AI management | ✅ | ❌ | ❌ | ❌ |
-| One-click app marketplace | ✅ 165+ apps | ❌ | ✅ | ❌ |
-| Modern UI (post-2020) | ✅ | ❌ | Partial | ❌ |
-| Docker / container management | ✅ | ❌ | ❌ | ❌ |
-| Active development | ✅ | ✅ | ✅ | Slow |
-
-## Quick Start
-
-Prepare your Linux server and run the following script:
-
-```bash
-bash -c "$(curl -sSL https://resource.3panel.pro/v2/quick_start.sh)"
+```text
+├── agent/       # Agent 服务（独立 Go module）
+├── core/        # Core 服务（独立 Go module）
+├── frontend/    # 前端（Vue 3 + Vite + TypeScript）
+├── scripts/     # 运维 / 诊断脚本
+├── docs/        # 开发文档
+└── Makefile     # 构建入口
 ```
 
-After installation, open `http://<your-server-ip>:<port>/<security-path>` in your browser.  
-Run `3pctl user-info` via SSH if you need to retrieve your access credentials.
+## 构建
 
-## Screenshot
+```bash
+# 1. 前端
+cd frontend && npm install && npm run build:pro
 
-![3Panel UI](https://resource.3panel.pro/img/overview_en_v2.png)
+# 2. 后端（会先构建前端，再编译 core / agent，产物输出到 ./build）
+make build_all
+```
 
-## Pro Edition
+`make build_all` 会先构建前端并将产物写入 `core/cmd/server/web/assets`，该目录在仓库中默认只有占位文件，属正常现象。
 
-3Panel OSS is free forever. 3Panel Pro and Ent adds features built for teams and production workloads:
+其他常用目标：
 
-| Feature | OSS | Pro | Ent |
-|---------|:---:|:---:|:---:|
-| One-click app installs | ✅ | ✅ | ✅ |
-| AI agents (OpenClaw) | 5 agent | Unlimited | ✅ |
-| WAF & advanced security | Basic | ✅ | ✅ |
-| Website tamper protection | ❌ | ✅ | ✅ |
-| Website uptime monitoring | ❌ | ✅ | ✅ |
-| Multi-node management | ❌ | ✅ | ✅ |
-| Custom logo & theme | ❌ | ✅ | ✅ |
-| KVM Web UI | ❌ | ❌ | ✅ |
-| AI Gateway | ❌ | ❌ | ✅ |
-| Priority support | ❌ | ❌ | ✅ |
+| 命令 | 说明 |
+| --- | --- |
+| `make build_on_local` | 本地（darwin）构建 |
+| `make clean_assets` | 清理前端构建产物 |
+| `make upx_bin` | 压缩已构建的二进制 |
 
-## Community & Support
+前端单独开发：
 
-- **Discord** — [Join the community](https://discord.gg/bUpUqWqdRr) for help, feature requests, and show-and-tell
-- **Docs** — [3panel.pro/docs](https://3panel.pro/docs)
-- **Issues** — [GitHub Issues](https://github.com/3panel-dev/3panel/issues) for bug reports
+```bash
+cd frontend
+npm run dev          # 启动开发服务
+npm run type-check   # 类型检查
+npm run lint:eslint  # ESLint 自动修复
+```
 
-## Security
+## 参与开发
 
-Found a vulnerability? Please read [SECURITY.md](/SECURITY.md) before disclosing.
+- [CONTRIBUTING.md](./CONTRIBUTING.md)：PR / Issue 流程
+- [docs/TRANSLATION.md](./docs/TRANSLATION.md)：新增语言（i18n）改造清单
 
-## License
+## 许可证
 
-Licensed under the [GNU General Public License v3.0](https://www.gnu.org/licenses/gpl-3.0.html).
-
-本项目基于 [1Panel](https://github.com/1Panel-dev/1Panel) 二次开发，原始 GPLv3 许可证文本与上游版权信息已完整保留，详见 [NOTICE.md](/NOTICE.md)。
+基于 [GNU General Public License v3.0](./LICENSE) 发布，上游版权与许可证信息完整保留，详见 [NOTICE.md](./NOTICE.md)。
