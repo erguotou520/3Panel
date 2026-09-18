@@ -2287,7 +2287,6 @@ const message = {
             clamLog: '@:toolbox.clam.clamConf logs',
             freshClam: 'FreshClam',
             freshClamLog: '@:toolbox.clam.freshClam logs',
-            alertHelper: 'Commercial Edition supports scheduled scans and SMS alerts',
             alertTitle: 'Virus scan task 「{0}」 detected infected file alert',
         },
     },
@@ -3286,7 +3285,6 @@ const message = {
         restoreCommunityConfirm:
             'After switching versions, you can sign in to Community Edition with the current Enterprise super administrator account. Enterprise-only data will be removed during the switch. Proceed with caution.',
         restoreCommunityStarting: 'Preparing Community Edition. The panel will restart automatically when ready.',
-        levelUpPro: 'Upgrade to Commercial Edition',
         licenseSync: 'License Sync',
         knowMorePro: 'Learn More',
         closeAlert: 'The current page can be closed in the panel settings',
@@ -6538,7 +6536,6 @@ const message = {
             nodes: 'Nodes',
             selectNode: 'Select Node',
             selectNodeError: 'Select a node',
-            licenseHelper: 'The Pro version supports the custom application repository feature',
             databaseHelper: 'Application associated database, select target node database',
             nodeHelper: 'Cannot select current node',
             migrateHelper:
@@ -6553,7 +6550,6 @@ const message = {
             alertCount: 'Alert Count',
             clamHelper: 'Trigger alert when scanning infected files',
             cronJobHelper: 'Trigger alert when task execution fails',
-            licenseHelper: 'Commercial Edition supports additional alert channels',
             alertCountHelper: 'Maximum daily alarm frequency',
             alert: 'SMS Alert',
             logs: 'Alert Logs',

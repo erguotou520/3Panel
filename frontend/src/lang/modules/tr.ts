@@ -2316,7 +2316,6 @@ const message = {
             clamLog: '@:toolbox.clam.clamConf logları',
             freshClam: 'FreshClam',
             freshClamLog: '@:toolbox.clam.freshClam logları',
-            alertHelper: 'Ticari sürüm zamanlanmış tarama ve SMS uyarılarını destekler',
             alertTitle: 'Virüs tarama görevi「{0}」enfekte dosya tespit uyarısı',
         },
     },
@@ -3338,7 +3337,6 @@ const message = {
             'Sürüm değişikliğinden sonra mevcut Enterprise süper yönetici hesabıyla Community Edition sürümüne giriş yapabilirsiniz. Enterprise sürümüne özel veriler geçiş sırasında silinecektir. Lütfen dikkatli ilerleyin.',
         restoreCommunityStarting:
             'Community Edition hazırlanıyor. Hazır olduğunda panel otomatik olarak yeniden başlatılacaktır.',
-        levelUpPro: 'Ticari sürüme yükselt',
         licenseSync: 'Lisans Senkronizasyonu',
         knowMorePro: 'Daha Fazla Bilgi Edinin',
         closeAlert: 'Geçerli sayfa panel ayarlarında kapatılabilir',
@@ -6628,7 +6626,6 @@ const message = {
             nodes: 'Düğümler',
             selectNode: 'Düğüm Seç',
             selectNodeError: 'Lütfen bir düğüm seçin',
-            licenseHelper: 'Ticari sürümü, özel uygulama deposu özelliğini destekler',
             databaseHelper: 'Uygulama ilişkili veritabanı, lütfen hedef düğüm veritabanını seçin',
             nodeHelper: 'Geçerli düğüm seçilemez',
             migrateHelper:
@@ -6643,7 +6640,6 @@ const message = {
             alertCount: 'Uyarı Sayısı',
             clamHelper: 'Enfekte dosyalar tarandığında uyarısını tetikle',
             cronJobHelper: 'Görev yürütme başarısız olduğunda uyarısını tetikle',
-            licenseHelper: 'Ticari sürüm ek uyarı kanallarını destekler',
             alertCountHelper: 'Günlük maksimum uyarı sıklığı',
             alert: 'SMS Uyarısı',
             logs: 'Uyarı Günlükleri',

@@ -2263,7 +2263,6 @@ const message = {
             clamLog: '@:toolbox.clam.clamConf لاگ‌ها',
             freshClam: 'FreshClam',
             freshClamLog: '@:toolbox.clam.freshClam لاگ‌ها',
-            alertHelper: 'نسخه تجاری از اسکن زمان‌بندی شده و هشدارهای پیامکی پشتیبانی می‌کند',
             alertTitle: 'وظیفه اسکن ویروس «{0}» هشدار فایل آلوده شناسایی شد',
         },
     },
@@ -3255,7 +3254,6 @@ const message = {
             'پس از تغییر نسخه، می‌توانید با حساب ابرمدیر فعلی Enterprise وارد نسخه Community شوید. داده‌های مختص Enterprise در طول تغییر حذف می‌شوند. لطفاً با احتیاط ادامه دهید.',
         restoreCommunityStarting:
             'نسخه Community در حال آماده‌سازی است. پس از تکمیل، پنل به‌طور خودکار راه‌اندازی مجدد می‌شود.',
-        levelUpPro: 'ارتقاء به نسخه تجاری',
         licenseSync: 'همگام‌سازی مجوز',
         knowMorePro: 'بیشتر بدانید',
         closeAlert: 'صفحه فعلی را می‌توان در تنظیمات پنل بست',
@@ -6476,7 +6474,6 @@ const message = {
             nodes: 'گره‌ها',
             selectNode: 'انتخاب گره',
             selectNodeError: 'یک گره انتخاب کنید',
-            licenseHelper: 'نسخه حرفه‌ای از ویژگی مخزن برنامه سفارشی پشتیبانی می‌کند',
             databaseHelper: 'پایگاه داده مرتبط با برنامه، پایگاه داده گره هدف را انتخاب کنید',
             nodeHelper: 'نمی‌توان گره فعلی را انتخاب کرد',
             migrateHelper:
@@ -6491,7 +6488,6 @@ const message = {
             alertCount: 'تعداد هشدار',
             clamHelper: 'هنگام اسکن فایل‌های آلوده، هشدار را فعال کنید',
             cronJobHelper: 'هنگام شکست اجرای وظیفه، هشدار را فعال کنید',
-            licenseHelper: 'نسخه تجاری از کانال‌های هشدار اضافی پشتیبانی می‌کند',
             alertCountHelper: 'حداکثر فرکانس هشدار روزانه',
             alert: 'هشدار پیامکی',
             logs: 'لاگ‌های هشدار',

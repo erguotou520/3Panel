@@ -2219,7 +2219,6 @@ const message = {
             clamLog: 'ບັນທຶກ @:toolbox.clam.clamConf',
             freshClam: 'FreshClam',
             freshClamLog: 'ບັນທຶກ @:toolbox.clam.freshClam',
-            alertHelper: 'ລຸ້ນ Commercial ຮອງຮັບການສະແກນຕາມກຳນົດເວລາ ແລະ ການແຈ້ງເຕືອນຜ່ານ SMS',
             alertTitle: 'ແຈ້ງເຕືອນພົບໄຟລ໌ຕິດເຊື້ອຈາກງານສະແກນໄວຣັດ 「{0}」',
         },
     },
@@ -3196,7 +3195,6 @@ const message = {
         restoreCommunityConfirm:
             'ຫຼັງຈາກສະຫຼັບເວີຊັນ ສາມາດໃຊ້ບັນຊີຜູ້ດູແລສູງສຸດ Enterprise ປັດຈຸບັນເຂົ້າ Community Edition. ຂໍ້ມູນສະເພາະ Enterprise ຈະຖືກລຶບໃນລະຫວ່າງການສະຫຼັບ. ກະລຸນາດຳເນີນການດ້ວຍຄວາມລະມັດລະວັງ.',
         restoreCommunityStarting: 'ກຳລັງກະກຽມ Community Edition. ແຜງຄວບຄຸມຈະເລີ່ມໃໝ່ອັດຕະໂນມັດເມື່ອສຳເລັດ.',
-        levelUpPro: 'ອັບເກຣດເປັນເວີຊັນ Commercial',
         licenseSync: 'ຊິງຄ໌ລິຂະສິດ',
         knowMorePro: 'ຮຽນຮູ້ເພີ່ມເຕີມ',
         closeAlert: 'ໜ້ານີ້ສາມາດປິດໄດ້ໃນການຕັ້ງຄ່າພາເນລ',
@@ -6303,7 +6301,6 @@ const message = {
             nodes: 'ໂນດ',
             selectNode: 'ເລືອກໂນດ',
             selectNodeError: 'ກະລຸນາເລືອກໂນດ',
-            licenseHelper: 'ເວີຊັນ Pro ຮອງຮັບຟີເຈີຄັງແອັບພລິເຄຊັນກຳນົດເອງ',
             databaseHelper: 'ຖານຂໍ້ມູນທີ່ກ່ຽວຂ້ອງ, ເລືອກຖານຂໍ້ມູນໂນດເປົ້າໝາຍ',
             nodeHelper: 'ບໍ່ສາມາດເລືອກໂນດປັດຈຸບັນໄດ້',
             migrateHelper:
@@ -6317,7 +6314,6 @@ const message = {
             alertCount: 'ຈຳນວນແຈ້ງເຕືອນ',
             clamHelper: 'ແຈ້ງເຕືອນເມື່ອສະແກນພົບໄຟລ໌ຕິດໄວຣັສ',
             cronJobHelper: 'ແຈ້ງເຕືອນເມື່ອງານທີ່ຕັ້ງເວລາທຳງານລົ້ມເຫຼວ',
-            licenseHelper: 'ເວີຊັນ Commercial ຮອງຮັບຊ່ອງທາງການແຈ້ງເຕືອນເພີ່ມເຕີມ',
             alertCountHelper: 'ຄວາມຖີ່ການແຈ້ງເຕືອນສູງສຸດຕໍ່ມື້',
             alert: 'ແຈ້ງເຕືອນ SMS',
             logs: 'ບັນທຶກການແຈ້ງເຕືອນ',

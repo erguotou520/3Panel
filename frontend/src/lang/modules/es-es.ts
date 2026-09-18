@@ -2326,7 +2326,6 @@ const message = {
             clamLog: '@:toolbox.clam.clamConf logs',
             freshClam: 'FreshClam',
             freshClamLog: '@:toolbox.clam.freshClam logs',
-            alertHelper: 'La edición comercial admite escaneos programados y alertas por SMS',
             alertTitle: 'La tarea de escaneo de virus 「{0}」 detectó archivos infectados',
         },
     },
@@ -3353,7 +3352,6 @@ const message = {
             'Después de cambiar de versión, podrá iniciar sesión en Community Edition con la cuenta actual de superadministrador de Enterprise. Los datos exclusivos de Enterprise se eliminarán durante el cambio. Proceda con precaución.',
         restoreCommunityStarting:
             'Preparando Community Edition. El panel se reiniciará automáticamente cuando termine.',
-        levelUpPro: 'Actualizar a la edición comercial',
         licenseSync: 'Sincronizar licencia',
         knowMorePro: 'Ver más',
         closeAlert: 'Puede cerrar la página en la configuración del panel',
@@ -6628,7 +6626,6 @@ const message = {
             nodes: 'Nodos',
             selectNode: 'Seleccionar Nodo',
             selectNodeError: 'Por favor, selecciona un nodo',
-            licenseHelper: 'La versión comercial admite la función de repositorio de aplicaciones personalizadas',
             databaseHelper: 'Base de datos asociada a la aplicación, seleccione la base de datos del nodo destino',
             nodeHelper: 'No se puede seleccionar el nodo actual',
             migrateHelper:
@@ -6643,7 +6640,6 @@ const message = {
             alertCount: 'Número de alertas',
             clamHelper: 'Generar alerta al detectar archivos infectados en escaneo',
             cronJobHelper: 'Generar alerta cuando falle la ejecución de una tarea programada',
-            licenseHelper: 'La versión comercial soporta alertas',
             alertCountHelper: 'Frecuencia máxima diaria de alertas',
             alert: 'Alerta SMS',
             logs: 'Logs de alertas',
