@@ -1,7 +1,6 @@
 <template>
     <div :key="$route.fullPath" id="dashboard">
         <RouterButton
-            show-expires-at
             :buttons="[
                 {
                     label: i18n.global.t('menu.home'),

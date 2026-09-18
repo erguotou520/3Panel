@@ -46,7 +46,7 @@
                             </el-text>
                         </template>
                     </el-table-column>
-                    <el-table-column v-if="isProductPro" :label="$t('setting.scope')" :min-width="80" prop="isPublic">
+                    <el-table-column :label="$t('setting.scope')" :min-width="80" prop="isPublic">
                         <template #default="{ row }">
                             <el-button plain size="small">
                                 {{ row.isPublic ? $t('setting.public') : $t('setting.private') }}
@@ -131,7 +131,7 @@ import { MsgSuccess } from '@/utils/message';
 import { Base64 } from 'js-base64';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { isProductPro, isFxplay, docsUrl, isMobile } = useGlobalStore();
+const { isFxplay, docsUrl, isMobile } = useGlobalStore();
 const loading = ref();
 const data = ref();
 const paginationConfig = reactive({

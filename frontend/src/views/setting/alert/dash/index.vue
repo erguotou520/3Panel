@@ -24,16 +24,7 @@
                                 :label="$t('xpack.alert.panelPwdEndTime')"
                             />
                             <el-option value="panelLogin" :label="$t('xpack.alert.panelLogin')" />
-                            <el-option
-                                v-if="isProductPro && !isEE"
-                                value="licenseException"
-                                :label="$t('xpack.alert.licenseException')"
-                            />
-                            <el-option
-                                v-if="isProductPro"
-                                value="nodeException"
-                                :label="$t('xpack.alert.nodeException')"
-                            />
+                            <el-option value="nodeException" :label="$t('xpack.alert.nodeException')" />
                             <el-option v-if="!isEE" value="panelUpdate" :label="$t('xpack.alert.panelUpdate')" />
                         </template>
                         <el-option value="sshLogin" :label="$t('xpack.alert.sshLogin')" />
@@ -168,7 +159,7 @@ import AddTask from '@/views/setting/alert/dash/task/index.vue';
 import { Alert } from '@/api/interface/alert';
 import { UpdateAlertStatus, SearchAlerts, DeleteAlert, PageAlertConfigs } from '@/api/modules/alert';
 
-const { isMobile, isMaster, isProductPro, isEE } = useGlobalStore();
+const { isMobile, isMaster, isEE } = useGlobalStore();
 
 const { t } = i18n.global;
 const loading = ref(false);

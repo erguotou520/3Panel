@@ -7,12 +7,7 @@
                 </el-tag>
                 <el-input v-else v-model="dialogData.rowData!.name" />
             </el-form-item>
-            <el-form-item
-                v-if="isProductPro"
-                :label="$t('setting.scope')"
-                prop="isPublic"
-                :rules="Rules.requiredSelect"
-            >
+            <el-form-item :label="$t('setting.scope')" prop="isPublic" :rules="Rules.requiredSelect">
                 <el-tag v-if="dialogData.title === 'edit'">
                     {{ dialogData.rowData!.isPublic ? $t('setting.public') : $t('setting.private') }}
                 </el-tag>
@@ -425,7 +420,7 @@ import { spliceHttp, splitHttp } from '@/utils/validate';
 import { MsgError, MsgSuccess } from '@/utils/message';
 import { Base64 } from 'js-base64';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-const { docsUrl, isFxplay, isProductPro } = useGlobalStore();
+const { docsUrl, isFxplay } = useGlobalStore();
 
 const loading = ref(false);
 type FormInstance = InstanceType<typeof ElForm>;

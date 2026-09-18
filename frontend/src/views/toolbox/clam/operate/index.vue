@@ -56,7 +56,7 @@
                     <el-form-item prop="hasSpec">
                         <el-checkbox v-model="dialogData.rowData!.hasSpec" :label="$t('toolbox.clam.cron')" />
                     </el-form-item>
-                    <el-form-item prop="spec" v-if="dialogData.rowData!.hasSpec && isProductPro">
+                    <el-form-item prop="spec" v-if="dialogData.rowData!.hasSpec">
                         <div class="grid sm:grid-cols-4 gap-4 grid-cols-1">
                             <el-select v-model="dialogData.rowData!.specObj.specType" @change="changeSpecType()">
                                 <el-option
@@ -226,13 +226,11 @@ import { ElForm } from 'element-plus';
 import { MsgError, MsgSuccess } from '@/utils/message';
 import { Toolbox } from '@/api/interface/toolbox';
 import { createClam, updateClam } from '@/api/modules/toolbox';
-import { useGlobalStore } from '@/composables/useGlobalStore';
 import { Alert } from '@/api/interface/alert';
 import { ListAlertConfigs } from '@/api/modules/alert';
 import { specOptions, transObjToSpec, transSpecToObj, weekOptions } from '@/views/cronjob/cronjob/helper';
 import { splitTimeFromSecond, transferTimeToSecond } from '@/utils/validate';
 import { getAlertConfigDisplayName } from '@/views/setting/alert/setting/drawer/secret-field';
-const { isProductPro } = useGlobalStore();
 
 const alertConfigs = ref<Alert.AlertConfigInfo[]>([]);
 const loadAlertConfigs = async () => {

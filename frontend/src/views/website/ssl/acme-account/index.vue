@@ -27,7 +27,7 @@
                         {{ getKeyName(row.keyType) }}
                     </template>
                 </el-table-column>
-                <el-table-column :label="$t('website.useProxy')" min-width="100px" v-if="isProductPro">
+                <el-table-column :label="$t('website.useProxy')" min-width="100px">
                     <template #default="{ row }">
                         <el-switch v-permission v-model="row.useProxy" @change="update(row)"></el-switch>
                     </template>
@@ -55,9 +55,6 @@ import { reactive, ref } from 'vue';
 import Create from './create/index.vue';
 import { getAccountName, getKeyName } from '@/utils/ssl';
 import { MsgSuccess } from '@/utils/message';
-import { useGlobalStore } from '@/composables/useGlobalStore';
-
-const { isProductPro } = useGlobalStore();
 const open = ref(false);
 const loading = ref(false);
 const data = ref();

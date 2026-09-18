@@ -575,17 +575,12 @@ const allTaskOptions = [
     { value: 'panelPwdEndTime', label: 'xpack.alert.panelPwdEndTime', show: isMaster.value && !isEE.value },
     { value: 'sshLogin', label: 'xpack.alert.sshLogin', show: true },
     { value: 'panelLogin', label: 'xpack.alert.panelLogin', show: isMaster.value },
-    {
-        value: 'licenseException',
-        label: 'xpack.alert.licenseException',
-        show: isMaster.value && isProductPro.value && !isEE.value,
-    },
     { value: 'ssl', label: 'xpack.alert.ssl', show: true },
     { value: 'siteEndTime', label: 'xpack.alert.siteEndTime', show: true },
     {
         value: 'nodeException',
         label: 'xpack.alert.nodeException',
-        show: isMaster.value && isProductPro.value,
+        show: isMaster.value,
     },
     { value: 'cpu', label: 'xpack.alert.cpu', show: true },
     { value: 'memory', label: 'xpack.alert.memory', show: true },

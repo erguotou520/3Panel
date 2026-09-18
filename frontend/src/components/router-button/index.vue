@@ -24,13 +24,6 @@
         <div v-if="currentNodeVersionMismatch" class="mt-3">
             <el-alert type="warning" :closable="false" show-icon :title="$t('setting.currentNodeVersionNotSame')" />
         </div>
-        <div class="mt-3" v-if="showExpiresAt && expiresAlertVisible && productProExpires && productProExpires !== 0">
-            <el-alert type="warning" @close="handleExpiresAlertClose">
-                <template #title>
-                    <span>{{ $t(expiresAlertKey, [expiresInfo]) }}</span>
-                </template>
-            </el-alert>
-        </div>
     </div>
 </template>
 
@@ -50,14 +43,10 @@ const props = defineProps({
         type: Array<RouterButton>,
         required: true,
     },
-    showExpiresAt: {
-        type: Boolean,
-        default: false,
-    },
 });
 
 const router = useRouter();
-const { currentNode, isEnterprise, productProExpires } = useGlobalStore();
+const { currentNode } = useGlobalStore();
 const buttonArray = computed(() => {
     return props.buttons.filter((button) => {
         if (!hasPermissionMetaAccess(button.permission)) {
@@ -73,9 +62,6 @@ const buttonArray = computed(() => {
 
 const activeName = ref('');
 const currentNodeVersionMismatch = ref(false);
-const expiresInfo = ref(0);
-const expiresAlertVisible = ref(false);
-const expiresAlertKey = computed(() => (isEnterprise.value ? 'xpack.expiresEnterpriseAlert' : 'xpack.expiresProAlert'));
 
 const handleChange = (label: string) => {
     const btn = buttonArray.value.find((btn) => btn.label === label);
@@ -87,20 +73,12 @@ const handleChange = (label: string) => {
 
 onMounted(() => {
     syncActiveName();
-    loadExpiresAlert();
 });
 
 watch(
     () => [router.currentRoute.value.path, buttonArray.value.map((button) => button.label).join('|')],
     () => {
         syncActiveName();
-    },
-);
-
-watch(
-    () => [props.showExpiresAt, productProExpires.value],
-    () => {
-        loadExpiresAlert();
     },
 );
 
@@ -150,43 +128,6 @@ function syncActiveName() {
             activeName.value = buttonArray.value[0].label;
         }
     }
-}
-
-function getExpiresAlertDateKey() {
-    const newDate = new Date();
-    return newDate.getFullYear() + '-' + newDate.getMonth() + '-' + newDate.getDate();
-}
-
-function loadExpiresAlert() {
-    const expires = productProExpires.value;
-    if (!props.showExpiresAt || !expires || expires === 0) {
-        expiresInfo.value = 0;
-        expiresAlertVisible.value = false;
-        return;
-    }
-
-    if (getExpiresAlertDateKey() === localStorage.getItem('xpack-expires-alert')) {
-        expiresInfo.value = 0;
-        expiresAlertVisible.value = false;
-        return;
-    }
-
-    const currentTimestamp = Date.now() / 1000;
-    if (expires < currentTimestamp) {
-        expiresInfo.value = 0;
-        expiresAlertVisible.value = false;
-        return;
-    }
-
-    const daySeconds = 24 * 60 * 60;
-    const diffSeconds = Math.abs(expires - currentTimestamp);
-    expiresInfo.value = Math.floor(diffSeconds / daySeconds) + 1;
-    expiresAlertVisible.value = expiresInfo.value <= 15;
-}
-
-function handleExpiresAlertClose() {
-    localStorage.setItem('xpack-expires-alert', getExpiresAlertDateKey());
-    loadExpiresAlert();
 }
 </script>
 
