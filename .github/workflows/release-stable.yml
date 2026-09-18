@@ -220,6 +220,14 @@ jobs:
               aws $ENDPOINT_ARG s3 cp "$f" "$DEST/$VERSION/release/$(basename "$f")" \
                 --content-type application/octet-stream
             done
+
+            # Agent-only package: what a host joining as a node downloads
+            # (packaging/join.sh looks for exactly this name first).
+            for f in "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*.tar.gz "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*.tar.gz.sha256; do
+              [ -e "$f" ] || continue
+              aws $ENDPOINT_ARG s3 cp "$f" "$DEST/$VERSION/release/$(basename "$f")" \
+                --content-type application/octet-stream
+            done
             aws $ENDPOINT_ARG s3 cp \
               "$OUT_DIR/package/$CHANNEL/$VERSION/release/3panel-$VERSION-release-notes" \
               "$DEST/$VERSION/release/3panel-$VERSION-release-notes" \
@@ -247,16 +255,19 @@ jobs:
             echo "::warning::dist/lang.tar.gz missing — /resource/language/lang.tar.gz not updated"
           fi
 
-          # One-line installer. Version-independent by design: end users curl it
-          # directly, so it lives at a fixed path. publish-bootstrap.yml also
-          # uploads it on every change to the file itself, so this is a backstop.
-          if [ -f "$OUT_DIR/quick_start.sh" ]; then
-            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/quick_start.sh" \
-              "s3://$S3_BUCKET/package/quick_start.sh" \
-              --content-type text/plain --cache-control 'no-cache'
-          else
-            echo "::warning::dist/quick_start.sh missing — /package/quick_start.sh not updated"
-          fi
+          # One-line installer / node bootstrap scripts. Version-independent by
+          # design: end users curl them directly, so they live at fixed paths.
+          # publish-bootstrap.yml also uploads them on every change to the files
+          # themselves, so this is a backstop.
+          for asset in quick_start.sh join.sh install-agent.sh; do
+            if [ -f "$OUT_DIR/$asset" ]; then
+              aws $ENDPOINT_ARG s3 cp "$OUT_DIR/$asset" \
+                "s3://$S3_BUCKET/package/$asset" \
+                --content-type text/plain --cache-control 'no-cache'
+            else
+              echo "::warning::dist/$asset missing — /package/$asset not updated"
+            fi
+          done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

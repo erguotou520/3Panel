@@ -12,6 +12,15 @@
 #   ├── initscript/                              -> service definitions
 #   └── lang/                                    -> /usr/local/bin/lang
 #
+# plus, for hosts that only join as a node, a much smaller second package:
+#
+#   3panel-agent-<version>-linux-<arch>/
+#   ├── 3panel-agent                             (the only binary a node needs)
+#   ├── 3pctl                                    (config carrier: BASE_DIR / version)
+#   ├── install-agent.sh                         (installs + joins, no panel core)
+#   ├── initscript/3panel-agent.*                (agent service definitions only)
+#   └── lang/                                    -> /usr/local/bin/lang
+#
 # Usage:
 #   ./packaging/build-release.sh <version> [arch...]
 #
@@ -140,6 +149,12 @@ for ARCH in "${ARCHES[@]}"; do
         go build -trimpath -ldflags '-s -w' -o "$STAGE_DIR/3panel-agent" ./cmd/server)
 
     install -m 0755 "$PACKAGING_DIR/3pctl" "$STAGE_DIR/3pctl"
+    # Stamp the release version now. install.sh reads it back out of the packaged
+    # 3pctl to configure /usr/local/bin/3pctl (line ~204), and core/init/viper
+    # loads the panel's version from there — leaving the "version" placeholder
+    # would make an installed panel report its version as the word "version".
+    sed -i.bak "s|^ORIGINAL_VERSION=.*|ORIGINAL_VERSION=$VERSION|" "$STAGE_DIR/3pctl"
+    rm -f "$STAGE_DIR/3pctl.bak"
     install -m 0755 "$PACKAGING_DIR/install.sh" "$STAGE_DIR/install.sh"
     cp -r "$PACKAGING_DIR/initscript" "$STAGE_DIR/initscript"
 
@@ -194,13 +209,15 @@ for ARCH in "${ARCHES[@]}"; do
     # Read by end users as `bash -c "$(curl -sSL <url>)"`, so it must stay
     # reachable without a version in the path. publish-bootstrap.yml uploads it on
     # every change to this file; this copy keeps a release self-contained.
-    if [[ -f "$PACKAGING_DIR/quick_start.sh" ]]; then
-        cp -f "$PACKAGING_DIR/quick_start.sh" "$OUT_DIR/quick_start.sh"
-        chmod 0644 "$OUT_DIR/quick_start.sh"
-        echo "quick_start.sh: $(du -h "$OUT_DIR/quick_start.sh" | cut -f1)  -> /package/quick_start.sh"
-    else
-        warn "packaging/quick_start.sh missing — /package/quick_start.sh not published"
-    fi
+    for asset in quick_start.sh join.sh install-agent.sh; do
+        if [[ -f "$PACKAGING_DIR/$asset" ]]; then
+            cp -f "$PACKAGING_DIR/$asset" "$OUT_DIR/$asset"
+            chmod 0644 "$OUT_DIR/$asset"
+            echo "$asset: $(du -h "$OUT_DIR/$asset" | cut -f1)  -> /package/$asset"
+        else
+            warn "packaging/$asset missing — /package/$asset not published"
+        fi
+    done
 
     # ---- GeoIP -----------------------------------------------------------------
     step "Fetching GeoIP database"
@@ -248,6 +265,44 @@ for ARCH in "${ARCHES[@]}"; do
 
     echo "built $(du -h "$ARCHIVE" | cut -f1)  $ARCHIVE"
     echo "sha256 $(cat "$ARCHIVE.sha256")"
+
+    # ---- agent-only package ----------------------------------------------------
+    # A node host never runs the panel itself, so shipping it the whole 54MB
+    # bundle (panel binary + 28MB frontend assets + 19MB GeoIP) is pure waste.
+    # This package carries the agent alone — roughly half the size — and is what
+    # the one-line join (packaging/join.sh) downloads. join.sh still falls back
+    # to extracting the agent out of the full package, so a release that forgets
+    # to publish this stays installable.
+    step "Packaging agent-only linux/$ARCH"
+    AGENT_PKG_NAME="3panel-agent-${VERSION}-linux-${ARCH}"
+    AGENT_STAGE_DIR="$OUT_DIR/stage/$AGENT_PKG_NAME"
+    rm -rf "$AGENT_STAGE_DIR"
+    mkdir -p "$AGENT_STAGE_DIR/initscript"
+    install -m 0755 "$STAGE_DIR/3panel-agent" "$AGENT_STAGE_DIR/3panel-agent"
+    # 3pctl is not here to manage a panel: the agent reads BASE_DIR / version out
+    # of it (agent/utils/ctl_conf), and install-agent.sh rewrites those values.
+    install -m 0755 "$PACKAGING_DIR/3pctl" "$AGENT_STAGE_DIR/3pctl"
+    # Stamp the version now. install-agent.sh falls back to reading it from here
+    # when nobody passes --version, and the agent reports it to the master on
+    # join; leaving the "version" placeholder would register the node as such.
+    sed -i.bak "s|^ORIGINAL_VERSION=.*|ORIGINAL_VERSION=$VERSION|" "$AGENT_STAGE_DIR/3pctl"
+    rm -f "$AGENT_STAGE_DIR/3pctl.bak"
+    install -m 0755 "$PACKAGING_DIR/install-agent.sh" "$AGENT_STAGE_DIR/install-agent.sh"
+    cp -f "$PACKAGING_DIR/initscript/3panel-agent."* "$AGENT_STAGE_DIR/initscript/"
+    # Same lang catalog as the full package: the agent's initLang() looks for
+    # /usr/local/bin/lang/zh.sh and would otherwise re-download the pack on start.
+    [[ -d "$STAGE_DIR/lang" ]] && cp -r "$STAGE_DIR/lang" "$AGENT_STAGE_DIR/lang"
+    # No GeoIP here on purpose: only the panel resolves IPs to locations, and the
+    # database alone is 19MB — more than the agent binary's fair share.
+
+    AGENT_ARCHIVE="$OUT_DIR/${AGENT_PKG_NAME}.tar.gz"
+    rm -f "$AGENT_ARCHIVE"
+    # COPYFILE_DISABLE keeps macOS bsdtar from adding ._* AppleDouble entries.
+    COPYFILE_DISABLE=1 tar -czf "$AGENT_ARCHIVE" -C "$OUT_DIR/stage" "$AGENT_PKG_NAME"
+    (cd "$OUT_DIR" && sha256_of "${AGENT_PKG_NAME}.tar.gz" > "${AGENT_PKG_NAME}.tar.gz.sha256")
+
+    echo "built $(du -h "$AGENT_ARCHIVE" | cut -f1)  $AGENT_ARCHIVE"
+    echo "sha256 $(cat "$AGENT_ARCHIVE.sha256")"
 done
 
 # ---------------------------------------------------------------------------
@@ -272,7 +327,11 @@ cat <<EOF
   dist/package/$CHANNEL/latest                                -> /package/$CHANNEL/latest
   dist/<package>.tar.gz                                       -> /package/$CHANNEL/$VERSION/release/
   dist/<package>.tar.gz.sha256                                -> /package/$CHANNEL/$VERSION/release/
+  dist/3panel-agent-<version>-linux-<arch>.tar.gz             -> /package/$CHANNEL/$VERSION/release/
+  dist/3panel-agent-<version>-linux-<arch>.tar.gz.sha256      -> /package/$CHANNEL/$VERSION/release/
   <release notes>                                             -> /package/$CHANNEL/$VERSION/release/3panel-$VERSION-release-notes
   dist/lang.tar.gz                                            -> /resource/language/lang.tar.gz
   dist/quick_start.sh                                         -> /package/quick_start.sh
+  dist/join.sh                                                -> /package/join.sh
+  dist/install-agent.sh                                       -> /package/install-agent.sh
 EOF

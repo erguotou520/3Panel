@@ -1,20 +1,28 @@
-name: Publish quick_start.sh
+name: Publish bootstrap scripts
 
-# The one-line installer is fetched by end users at a FIXED path with no version
-# in it:
+# The bootstrap scripts are fetched by end users at FIXED paths with no version
+# in them:
 #
 #   bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
+#   PANEL3_MASTER=... PANEL3_TOKEN=... bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
 #
-# so a change to packaging/quick_start.sh only reaches users if something uploads
-# it. release-stable.yml does that too, but tying it to a version tag would mean
-# a bug fix in the installer sits unpublished until the next release. This
-# workflow publishes it on every change instead, and can be run by hand.
+# so a change to one of them only reaches users if something uploads it.
+# release-stable.yml does that too, but tying it to a version tag would mean a
+# bug fix in a bootstrap script sits unpublished until the next release. This
+# workflow publishes them on every change instead, and can be run by hand.
+#
+#   packaging/quick_start.sh    -> /package/quick_start.sh     (install a panel)
+#   packaging/join.sh           -> /package/join.sh            (join a node)
+#   packaging/install-agent.sh  -> /package/install-agent.sh   (used by join.sh
+#                                  when it has to fall back to the full package)
 
 on:
   push:
     branches: [main]
     paths:
       - packaging/quick_start.sh
+      - packaging/join.sh
+      - packaging/install-agent.sh
       - .github/workflows/publish-bootstrap.yml
   workflow_dispatch:
 
@@ -33,11 +41,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Sanity-check the script
+      - name: Sanity-check the scripts
         run: |
           set -euo pipefail
-          bash -n packaging/quick_start.sh
-          echo "syntax OK, $(wc -c < packaging/quick_start.sh) bytes"
+          for f in quick_start.sh join.sh install-agent.sh; do
+            bash -n "packaging/$f"
+            echo "$f OK, $(wc -c < "packaging/$f") bytes"
+          done
 
       - name: Publish to object storage
         if: ${{ env.S3_BUCKET != '' }}
@@ -49,15 +59,16 @@ jobs:
           set -euo pipefail
           ENDPOINT_ARG=""
           [ -n "${S3_ENDPOINT:-}" ] && ENDPOINT_ARG="--endpoint-url $S3_ENDPOINT"
-          aws $ENDPOINT_ARG s3 cp packaging/quick_start.sh \
-            "s3://$S3_BUCKET/package/quick_start.sh" \
-            --content-type 'text/plain; charset=utf-8' \
-            --cache-control 'no-cache'
-          echo "published -> s3://$S3_BUCKET/package/quick_start.sh"
+          for f in quick_start.sh join.sh install-agent.sh; do
+            aws $ENDPOINT_ARG s3 cp "packaging/$f" "s3://$S3_BUCKET/package/$f" \
+              --content-type 'text/plain; charset=utf-8' \
+              --cache-control 'no-cache'
+            echo "published -> s3://$S3_BUCKET/package/$f"
+          done
 
       - name: Warn when publishing is not configured
         if: ${{ env.S3_BUCKET == '' }}
         run: |
-          echo "::warning::S3_BUCKET is empty — quick_start.sh was NOT uploaded."
+          echo "::warning::S3_BUCKET is empty — the bootstrap scripts were NOT uploaded."
           echo "Set repository variable/secret S3_BUCKET (and S3_ENDPOINT," \
                "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) to enable publishing."
