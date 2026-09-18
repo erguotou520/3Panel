@@ -7,8 +7,11 @@ import i18n, { setActiveLocale } from '@/lang';
 import { isMasterOnlyPermissionCode, setMasterOnlyPermissionCodes, toManageCode } from '@/utils/permission-codes';
 import { clearPageStateCache } from '@/utils/page-state-cache';
 
-const CN_DOCS_URL = 'https://3panel.erguotou.me/docs/v2';
-const INTL_DOCS_URL = 'https://3panel.erguotou.me/docs/v2';
+// 使用手册直接指向上游 1Panel 官方文档：3Panel 是 1Panel 的分支，
+// 各页面「使用手册」深链（/user_manual/...）用的都是上游文档的路径结构，
+// 自建文档站（3panel.erguotou.me/docs/v2）实测 404，因此这里指回上游。
+const CN_DOCS_URL = 'https://1panel.cn/docs/v2';
+const INTL_DOCS_URL = 'https://1panel.pro/docs/v2';
 
 const GlobalStore = defineStore('GlobalState', {
     state: (): GlobalState => ({

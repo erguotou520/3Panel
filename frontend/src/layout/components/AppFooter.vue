@@ -2,7 +2,7 @@
     <div class="footer" :class="{ 'footer--mobile': isMobile }">
         <div class="footer-content">
             <div class="footer-copyright">
-                <span>Copyright © 2014-{{ year }} {{ $t('commons.fit2cloud') }} (1Panel) · 3Panel · GPLv3</span>
+                <span>Copyright © {{ year }} 3Panel · GPLv3</span>
             </div>
             <FooterNavigation class="footer-navigation-panel" />
             <SystemUpgrade class="footer-upgrade" />

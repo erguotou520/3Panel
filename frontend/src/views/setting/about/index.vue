@@ -51,10 +51,10 @@ const { docsUrl, themeConfig } = useGlobalStore();
 const loading = ref();
 const logoLoadFailed = ref(false);
 
-// The upstream 3panel-dev/3panel links this page shipped with are dead (404);
-// this deployment lives at cnb.cool. Keep the repo / issue / star entries but
-// point them at the real project so they actually resolve.
-const REPO_URL = 'https://cnb.cool/erguotou520/3panel';
+// The upstream 1Panel/3Panel links this page shipped with are dead (404);
+// keep the repo / issue / star entries but point them at the real project.
+// 「使用手册」走全局 docsUrl（上游 1Panel 官方文档），见 store/modules/global.ts。
+const REPO_URL = 'https://github.com/erguotou520/3Panel';
 
 const toDoc = () => {
     window.open(docsUrl.value.endsWith('/') ? docsUrl.value : `${docsUrl.value}/`, '_blank', 'noopener,noreferrer');
@@ -63,10 +63,12 @@ const toRepo = () => {
     window.open(REPO_URL, '_blank', 'noopener,noreferrer');
 };
 const toIssue = () => {
-    window.open(`${REPO_URL}/-/issues`, '_blank', 'noopener,noreferrer');
+    window.open(`${REPO_URL}/issues`, '_blank', 'noopener,noreferrer');
 };
 const toRepoStar = () => {
-    window.open(`${REPO_URL}/-/stargazers`, '_blank', 'noopener,noreferrer');
+    // GitHub 在仓库 0 star 时会对 /stargazers 返回 404，所以先落到仓库首页
+    // （Star 按钮就在右上角），等有 star 后可改回 `${REPO_URL}/stargazers`。
+    window.open(REPO_URL, '_blank', 'noopener,noreferrer');
 };
 
 onMounted(() => {

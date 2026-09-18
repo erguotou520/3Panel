@@ -32,7 +32,7 @@ export const createDefaultFooterNavigationLinks = (docsUrl: string): FooterNavig
     },
     project: {
         visible: true,
-        url: 'https://cnb.cool/erguotou520/3panel',
+        url: 'https://github.com/erguotou520/3Panel',
     },
 });
 

@@ -57,7 +57,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
-const { currentNode, isEnterprise, isXpackOrEE, productProExpires } = useGlobalStore();
+const { currentNode, isEnterprise, productProExpires } = useGlobalStore();
 const buttonArray = computed(() => {
     return props.buttons.filter((button) => {
         if (!hasPermissionMetaAccess(button.permission)) {
@@ -104,11 +104,12 @@ watch(
     },
 );
 
-watch([currentNode, isXpackOrEE], checkCurrentNodeVersion, { immediate: true });
+// 多节点的版本一致性告警对所有部署都生效，不再要求已授权（原实现挂在 isXpackOrEE 上）。
+watch([currentNode], checkCurrentNodeVersion, { immediate: true });
 
 async function checkCurrentNodeVersion() {
     const checkedNode = currentNode.value;
-    if (checkedNode === 'local' || !isXpackOrEE.value) {
+    if (checkedNode === 'local') {
         currentNodeVersionMismatch.value = false;
         return;
     }
