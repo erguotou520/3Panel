@@ -56,8 +56,8 @@
                             <SvgIcon class="icon" iconName="p-zhuji" />
                             <span class="node-name">{{ displayNodeName(item) }}</span>
                             <el-tooltip
-                                v-if="item.status !== 'Online' || !item.isBound"
-                                :content="item.isBound ? $t('xpack.node.nodeUnhealthy') : $t('xpack.node.nodeUnbind')"
+                                v-if="item.status !== 'Online'"
+                                :content="$t('xpack.node.nodeUnhealthy')"
                                 placement="right"
                             >
                                 <el-icon class="icon-status" type="danger">
@@ -213,10 +213,9 @@ const changeNode = async (command: string) => {
                     routerToNameWithQuery('home', { t: Date.now() });
                     return;
                 }
-                if (!item.isBound) {
-                    MsgError(i18n.global.t('xpack.node.nodeUnbindHelper'));
-                    return;
-                }
+                // 这里原本还有一道 `!item.isBound` 校验（报「节点未绑定许可证」）。
+                // 本仓库后端没有许可证校验，isBound 实际含义是 agent 已 join，且 join
+                // 后必然为 true，所以那道校验只会误伤；节点是否可用只看在线状态。
                 if (item.status !== 'Online') {
                     MsgError(i18n.global.t('xpack.node.nodeUnhealthyHelper'));
                     return;

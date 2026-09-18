@@ -6,7 +6,6 @@ const message = {
         false: 'いいえ',
         colon: ':',
         example: '例：',
-        fit2cloud: 'FIT2CLOUD',
         lingxia: 'LXware',
         button: {
             run: '実行',

@@ -46,12 +46,8 @@
                                             {{ displayNodeName(row) }}
                                         </el-button>
                                         <el-tooltip
-                                            v-if="row.status !== 'Online' || !row.isBound"
-                                            :content="
-                                                row.isBound
-                                                    ? $t('xpack.node.nodeUnhealthy')
-                                                    : $t('xpack.node.nodeUnbind')
-                                            "
+                                            v-if="row.status !== 'Online'"
+                                            :content="$t('xpack.node.nodeUnhealthy')"
                                             placement="left"
                                         >
                                             <span class="node-status-wrap">

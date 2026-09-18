@@ -6,7 +6,6 @@ const message = {
         false: 'False',
         colon: ': ',
         example: 'e.g., ',
-        fit2cloud: 'FIT2CLOUD',
         lingxia: 'LXware',
         button: {
             run: 'Run',
@@ -6426,6 +6425,8 @@ const message = {
             memTotal: 'Total Memory',
             nodeManagement: 'Multi-Machine Management',
             multiOverview: 'Multi-Machine',
+            statusOn: 'Online',
+            statusOff: 'Offline',
             commonNodes: 'Frequently Used Nodes',
             searchNodePlaceholder: 'Search node name, group, or address',
             nodeItem: 'Node Management',

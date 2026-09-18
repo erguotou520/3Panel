@@ -6,7 +6,6 @@ const message = {
         false: 'falso',
         colon: ': ',
         example: 'ex.: ',
-        fit2cloud: 'FIT2CLOUD',
         lingxia: 'LXware',
         button: {
             run: 'Executar',

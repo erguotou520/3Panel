@@ -332,6 +332,7 @@ export namespace Setting {
         description: string;
         systemVersion: string;
         securityEntrance: string;
+        status: string;
         cpuUsedPercent: number;
         cpuTotal: number;
         memoryTotal: number;

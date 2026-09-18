@@ -5,7 +5,6 @@ const message = {
         true: '是',
         false: '否',
         example: '例：',
-        fit2cloud: '飞致云',
         lingxia: '凌霞',
         colon: '：',
         button: {
@@ -4923,6 +4922,8 @@ const message = {
             memTotal: '内存总计',
             nodeManagement: '多机管理',
             multiOverview: '多机概览',
+            statusOn: '在线',
+            statusOff: '离线',
             commonNodes: '常用节点',
             searchNodePlaceholder: '搜索节点名称、分组或地址',
             nodeItem: '节点管理',

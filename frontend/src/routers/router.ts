@@ -24,6 +24,15 @@ const homeRouter: RouteRecordRaw = {
             name: 'home',
             component: () => import('@/views/home/index.vue'),
         },
+        {
+            path: '/node-dashboard',
+            name: 'NodeDashboard',
+            component: () => import('@/views/home/node-dashboard/index.vue'),
+            meta: {
+                title: 'xpack.node.multiOverview',
+                activeMenu: '/',
+            },
+        },
     ],
 };
 

@@ -6,7 +6,6 @@ const message = {
         false: 'Yanlış',
         colon: ': ',
         example: 'örnek: ',
-        fit2cloud: 'FIT2CLOUD',
         lingxia: 'LXware',
         button: {
             run: 'Çalıştır',

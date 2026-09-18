@@ -6,7 +6,6 @@ const message = {
         false: 'Palsu',
         colon: ': ',
         example: 'cth., ',
-        fit2cloud: 'FIT2CLOUD',
         lingxia: 'LXware',
         button: {
             run: 'Jalankan',

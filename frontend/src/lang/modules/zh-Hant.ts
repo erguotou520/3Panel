@@ -5,7 +5,6 @@ const message = {
         true: '是',
         false: '否',
         example: '例：',
-        fit2cloud: '飛致雲',
         lingxia: 'LXware',
         colon: '：',
         button: {
