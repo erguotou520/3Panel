@@ -52,7 +52,12 @@
             </template>
         </LayoutContent>
 
-        <el-dialog v-model="createVisible" :title="$t('xpack.node.addNode')" width="560px" :close-on-click-modal="false">
+        <el-dialog
+            v-model="createVisible"
+            :title="$t('xpack.node.addNode')"
+            width="560px"
+            :close-on-click-modal="false"
+        >
             <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="100px">
                 <el-form-item :label="$t('xpack.node.nodeName')" prop="name">
                     <el-input v-model="createForm.name" :placeholder="$t('xpack.node.nodeNameHelper')" />
@@ -72,12 +77,32 @@
             </template>
         </el-dialog>
 
-        <el-dialog v-model="joinVisible" :title="$t('xpack.node.joinCommand')" width="640px">
+        <el-dialog
+            v-model="joinVisible"
+            :title="$t('xpack.node.joinCommand')"
+            width="700px"
+            :close-on-click-modal="false"
+        >
             <el-alert type="success" :title="$t('xpack.node.nodeCreated')" :closable="false" class="mb-3" />
+            <div class="join-hint">{{ $t('xpack.node.joinCommandHelper') }}</div>
             <div class="join-cmd">{{ joinCommand }}</div>
-            <el-button type="primary" class="mt-3" @click="copyJoinCommand">
-                {{ $t('xpack.node.copyCommand') }}
-            </el-button>
+            <div class="join-actions">
+                <el-button type="primary" @click="copyText(joinCommand)">
+                    {{ $t('xpack.node.copyCommand') }}
+                </el-button>
+                <span v-if="joinExpiredAt" class="join-expire">
+                    {{ $t('xpack.node.joinTokenExpire', [joinExpiredAt]) }}
+                </span>
+            </div>
+            <el-collapse>
+                <el-collapse-item :title="$t('xpack.node.joinHasAgent')" name="agent">
+                    <div class="join-hint">{{ $t('xpack.node.agentCommandHelper') }}</div>
+                    <div class="join-cmd">{{ agentCommand }}</div>
+                    <el-button plain size="small" class="mt-2" @click="copyText(agentCommand)">
+                        {{ $t('xpack.node.copyCommand') }}
+                    </el-button>
+                </el-collapse-item>
+            </el-collapse>
         </el-dialog>
     </div>
 </template>
@@ -86,6 +111,7 @@
 import { reactive, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgError, MsgSuccess } from '@/utils/message';
+import { dateFormatSimpleWithSecond } from '@/utils/date';
 import { Setting } from '@/api/interface/setting';
 import { checkNodes, createNode, deleteNode, searchNodes } from '@/api/modules/setting';
 
@@ -103,6 +129,18 @@ const createRules = {
 
 const joinVisible = ref(false);
 const joinCommand = ref('');
+const agentCommand = ref('');
+const joinExpiredAt = ref('');
+
+const copyText = async (text: string) => {
+    if (!text) return;
+    try {
+        await navigator.clipboard.writeText(text);
+        MsgSuccess(i18n.global.t('commons.msg.copySuccess'));
+    } catch {
+        MsgError(i18n.global.t('commons.msg.copyFailed'));
+    }
+};
 
 const search = async () => {
     loading.value = true;
@@ -144,6 +182,8 @@ const submitCreate = async () => {
             description: createForm.description || undefined,
         });
         joinCommand.value = res.data.command;
+        agentCommand.value = res.data.agentCommand;
+        joinExpiredAt.value = res.data.expiredAt ? dateFormatSimpleWithSecond(res.data.expiredAt) : '';
         createVisible.value = false;
         joinVisible.value = true;
         search();
@@ -151,15 +191,6 @@ const submitCreate = async () => {
         /* message already shown by interceptor */
     } finally {
         creating.value = false;
-    }
-};
-
-const copyJoinCommand = async () => {
-    try {
-        await navigator.clipboard.writeText(joinCommand.value);
-        MsgSuccess(i18n.global.t('commons.msg.copySuccess'));
-    } catch {
-        MsgError(i18n.global.t('commons.msg.copyFailed'));
     }
 };
 
@@ -186,6 +217,12 @@ search();
 </script>
 
 <style scoped>
+.join-hint {
+    margin-bottom: 10px;
+    color: var(--el-text-color-regular);
+    line-height: 1.6;
+}
+
 .join-cmd {
     padding: 12px;
     background: var(--panel-main-bg-color-10, #f5f5f5);
@@ -193,5 +230,18 @@ search();
     word-break: break-all;
     font-family: monospace;
     user-select: all;
+}
+
+.join-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.join-expire {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    line-height: 1.4;
 }
 </style>

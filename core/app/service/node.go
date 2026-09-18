@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/3panel-dev/3panel/core/app/dto"
@@ -21,11 +22,11 @@ const (
 	// LocalNodeName is the reserved name of the master itself.
 	LocalNodeName = "local"
 
-	joinTokenTTL      = 30 * time.Minute
-	joinTokenLength   = 32
-	defaultNodePort   = 9999
+	joinTokenTTL       = 30 * time.Minute
+	joinTokenLength    = 32
+	defaultNodePort    = 9999
 	remoteProbeTimeout = 5 * time.Second
-	nodeStatusOnline  = "Online"
+	nodeStatusOnline   = "Online"
 	// nodeStatusOffline must match what the frontend renders as unhealthy; the
 	// node drawer treats anything other than 'Healthy' as a problem.
 	nodeStatusOffline = "Offline"
@@ -229,12 +230,40 @@ func (u *NodeService) Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJo
 		return nil, err
 	}
 	return &dto.NodeJoinCommand{
-		ID:        node.ID,
-		Name:      node.Name,
-		Token:     token.Token,
-		Command:   fmt.Sprintf("3panel-agent join --master %s --token %s", masterAddr, token.Token),
-		ExpiredAt: token.ExpiredAt,
+		ID:           node.ID,
+		Name:         node.Name,
+		Token:        token.Token,
+		Command:      joinBootstrapCommand(masterAddr, token.Token),
+		AgentCommand: fmt.Sprintf("3panel-agent join --master %s --token %s", masterAddr, token.Token),
+		ExpiredAt:    token.ExpiredAt,
 	}, nil
+}
+
+// joinScriptProxy fronts every download with a regional accelerator. The panel's
+// own host is Cloudflare-backed and, from mainland China, frequently stalls on
+// the 25MB+ package — the same reason packaging/quick_start.sh is documented
+// with this prefix.
+const joinScriptProxy = "https://proxy.erguotou.me"
+
+// joinBootstrapCommand builds the line an operator copies onto the target host.
+//
+// It has to be self-sufficient: a fresh host has no 3panel-agent binary and no
+// way to get one, so the command fetches packaging/join.sh, which downloads the
+// agent-only package and runs the packaged installer. Nothing else is required
+// beyond curl.
+//
+// The token is single quoted because it is a credential — it must never end up
+// in the URL, where it would be captured by proxy and access logs.
+//
+// The script is fetched through the accelerator first and straight from the
+// origin when that fails: if the accelerator is down the operator is stuck at
+// step zero with no agent binary to fall back on, whereas everything after this
+// first fetch already retries across bases inside join.sh.
+func joinBootstrapCommand(masterAddr, token string) string {
+	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/join.sh"
+	return fmt.Sprintf(
+		"PANEL3_MASTER='%s' PANEL3_TOKEN='%s' bash -c \"$(curl -sSL %s/%s || curl -sSL %s)\"",
+		masterAddr, token, joinScriptProxy, direct, direct)
 }
 
 // Join redeems a token: the agent proves possession of the secret and receives

@@ -348,7 +348,10 @@ export namespace Setting {
         id: number;
         name: string;
         token: string;
+        // command: 一键加入命令（下载 agent 并加入，目标主机无需预装任何东西）
         command: string;
+        // agentCommand: 目标主机上已有 agent 时可直接执行的原始命令
+        agentCommand: string;
         expiredAt: string;
     }
     export interface ReleasesNotes {

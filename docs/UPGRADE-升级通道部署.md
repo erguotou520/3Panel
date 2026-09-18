@@ -68,7 +68,10 @@
 | 更新说明 | `/package/stable/v1.0.0/release/3panel-v1.0.0-release-notes` | Markdown/纯文本 | 弹窗无说明（不阻断） |
 | **升级包** | `/package/stable/v1.0.0/release/3panel-v1.0.0-linux-amd64.tar.gz` | tar.gz | **升级直接失败** |
 | **完整性校验** | 同上 + `.sha256` | 一行摘要 | 跳过校验并记警告 |
+| **agent 独立包** | `/package/stable/v1.0.0/release/3panel-agent-v1.0.0-linux-amd64.tar.gz` | tar.gz（+ `.sha256`） | 一键加入回退到整包抽取 |
 | **一键安装脚本** | `/package/quick_start.sh` | bash 脚本，**路径里不带版本** | 一键安装命令 404 |
+| **一键加入脚本** | `/package/join.sh` | bash 脚本，**路径里不带版本** | 面板生成的加入命令 404 |
+| **节点安装器** | `/package/install-agent.sh` | bash 脚本 | 仅整包回退时需要 |
 
 > `latest` 由 `loadVersion()` 直接 `string(body)` 使用，**没有 TrimSpace**。
 > 若带尾换行，版本号会变成 `"v1.0.0\n"` 而解析失败 —— 发布时必须用 `printf '%s'`（无换行）写入。
@@ -249,6 +252,68 @@ sudo PANEL_PORT=10086 PANEL_USERNAME=admin PANEL_PASSWORD='<密码>' \
 > 根目录的那份），它会把 `packaging/quick_start.sh` **一起静默忽略** —— 新文件在
 > `git status` 里根本不出现，CI 里也就找不到文件。已锚定为 `/quick_start.sh`，
 > 与 `/3pctl`、`/install.sh` 同一处理。
+
+---
+
+### 2.5 节点一键加入（`/package/join.sh`）
+
+面板「多机管理」里创建节点后，页面直接给出这条命令（主控由
+`core/app/service/node.go` 的 `joinBootstrapCommand()` 生成，token 一次性有效）：
+
+```bash
+PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>' \
+  bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/join.sh || \
+             curl -sSL https://3panel.erguotou.me/package/join.sh)"
+```
+
+先走加速前缀、失败再直连，是**故意的双保险**：这一步拿不到脚本，目标主机上没有任何
+其它途径能弄到 agent 二进制，用户会卡在第 0 步；而脚本一旦拿到手，后面的下载源选择在
+`join.sh` 内部已经有重试和回退。
+
+**为什么需要它**：`3panel-agent join` 能加入，但节点机器上**没有** `3panel-agent`
+这个二进制 —— 上游一直假设运维已经手动装好了。现在由 `join.sh` 把「下载 → 校验 →
+安装 → 换证书 → 起服务」串起来：
+
+1. 探测架构（amd64 / arm64）
+2. 解析版本（默认取 `stable` 的 `latest`，可用 `PANEL3_VERSION` 钉住）
+3. 依次尝试 agent 独立包 → 整包，**按 `.sha256` 是否存在判断**，不做 404 猜测
+4. 下载（`-C -` 续传 + 重试，镜像不支持 Range 时退回整包重下）
+5. 校验 sha256，不一致就删包中止
+6. 解压后交给**包内**的 `install-agent.sh`
+
+安装逻辑放在包里而不是 `join.sh` 里，是为了让它跟二进制同版本演进；`join.sh` 只做引导。
+
+**为什么要有 agent 独立包**：整包 50MB+（面板本体 + 前端产物 + 19MB GeoIP），而节点
+只需要 agent。独立包约 26MB，少了一半。若某个版本没发独立包，`join.sh` 会自动回退到
+整包抽取 agent（只留 `3panel-agent` / `3pctl` / `lang/` / `initscript/3panel-agent.*`，
+并从 `/package/install-agent.sh` 单独取一份安装器），所以「忘了发独立包」不会让节点装不上。
+
+**环境变量**
+
+| 变量 | 含义 | 默认 |
+| --- | --- | --- |
+| `PANEL3_MASTER` / `PANEL3_TOKEN` | 面板地址与一次性 token（必填） | — |
+| `PANEL3_ADDR` / `PANEL3_PORT` | 面板回连本机的地址 / 监听端口 | 自动探测 / `9999` |
+| `PANEL3_BASE_DIR` | 安装目录 | `/opt` |
+| `PANEL3_VERSION` | 钉住版本；留空取 `latest` | — |
+| `PANEL3_ORIGIN` / `PANEL3_PROXY` / `PANEL3_MIRROR` | 发布源 / 加速前缀 / 自建镜像 | `…/package` / `proxy.erguotou.me` / — |
+| `PANEL3_RETRIES` / `PANEL3_PROBE_RETRIES` | 下载重试 / 版本探测重试 | `5` / `6` |
+| `PANEL3_WORKDIR` / `PANEL3_LANG` / `PANEL3_NO_FIREWALL` | 下载目录 / 提示语言 / 不放行端口 | `/tmp/3panel-agent-join` / `zh` / `0` |
+
+**发布方式**
+
+| 文件 | 工作流 | 触发 | 上传目标 |
+| --- | --- | --- | --- |
+| `packaging/join.sh` | `publish-bootstrap.yml` | 改这两个文件并推 `main`，或手动 | `/package/join.sh` |
+| `packaging/install-agent.sh` | 同上 | 同上 | `/package/install-agent.sh` |
+| `3panel-agent-<ver>-linux-<arch>.tar.gz` | `release-stable.yml` | 发版 | `/package/<channel>/<ver>/release/` |
+
+`join.sh` / `install-agent.sh` 的路径同样**不带版本号**。
+
+> ⚠️ `packaging/build-release.sh` 会把发布版本号盖章进两个包内的 `3pctl`
+> （`ORIGINAL_VERSION=<version>`）。这一步**不能省**：`install.sh` 是从包内 `3pctl`
+> 反读版本再写进 `/usr/local/bin/3pctl` 的，`core/init/viper` 又从那里取面板版本；
+> 不盖章的话，装好的面板会把自己的版本报成字面量 `version`，节点上报给主控的也是它。
 
 ---
 
@@ -592,7 +657,12 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 | `core/utils/xpack/helper/multi_node_helper.go`、`agent/utils/xpack/helper/multi_node.go` | 同上（注释本就要求信任系统根证书） |
 | `agent/utils/cloud_storage/client/ali.go` | 移除 8 处 `InsecureSkipVerify`（`api.alipan.com` 是公网 CA 证书） |
 | `core/utils/cloud_storage/refresh_token.go` | 同上（`api.aliyundrive.com`） |
-| `packaging/quick_start.sh` | **新增**：一键安装引导脚本（架构探测 / 多地址回退 / 断点续传 / sha256 校验 / 交接给包内 `install.sh`），见 §2.4 |
+| `packaging/join.sh` | **新增**：节点一键加入引导脚本（取版本 → 选下载源 → 拉 agent 独立包，缺则回退整包 → 校验 → 解压 → 交接给包内 `install-agent.sh`），见 §2.5 |
+| `packaging/install-agent.sh` | **新增**：节点侧安装器（装二进制 + 改写 `3pctl` + 语言包 + 服务定义 → 执行 `3panel-agent join` → 起服务） |
+| `packaging/build-release.sh` | 新增 `3panel-agent-<ver>-linux-<arch>.tar.gz`（+ `.sha256`）产出；产出 `join.sh` / `install-agent.sh`；给两个包内的 `3pctl` 盖章 `ORIGINAL_VERSION=<version>` |
+| `core/app/service/node.go` / `core/app/dto/node.go` | 新增 `joinBootstrapCommand()`：`Create()` 除原始 `3panel-agent join` 命令外，再返回一条带加速前缀、失败回退直连的一键命令；DTO 增加 `agentCommand` |
+| `frontend/src/views/setting/node/index.vue`、`api/interface/setting.ts`、`lang/modules/{zh,en}.ts` | 加入命令对话框展示一键命令（可复制、显示过期时间），折叠区保留原始 `3panel-agent join` |
+| `.github/workflows/publish-bootstrap.yml` | 扩展为同时发布 `join.sh` / `install-agent.sh`（路径同样不带版本） |
 | `.github/workflows/publish-bootstrap.yml` | **新增**：改动 `packaging/quick_start.sh` 即上传 `/package/quick_start.sh`（路径不带版本，用户命令固定） |
 | `.gitignore` | 裸文件名 `quick_start.sh` 锚定为 `/quick_start.sh`（原规则会静默忽略 `packaging/quick_start.sh`） |
 | `packaging/` | **新增**：`3pctl`、`install.sh`、`build-release.sh`、`initscript/`（8 个服务定义）、`lang/`（内置语言包） |
@@ -627,9 +697,21 @@ probe $B/resource/scripts/version.txt
 probe $B/package/stable/latest
 probe $B/package/dev/latest          # mode: dev 的面板只认这个（见 §2.1）
 probe $B/package/quick_start.sh      # 一键安装脚本（路径不带版本，见 §2.4）
+probe $B/package/join.sh             # 节点一键加入（路径不带版本，见 §2.5）
+probe $B/package/install-agent.sh    # 整包回退时 join.sh 会单独取它
 probe $B/dev/3panel.json.zip         # 应用商店也按 mode 分目录
 probe $B/dev/3panel.json.version.txt
+
+# agent 独立包（替换 <ver> / <arch>）
+V=$(curl -sS --max-time 20 "$B/package/stable/latest")
+probe $B/package/stable/$V/release/3panel-agent-$V-linux-amd64.tar.gz
+probe $B/package/stable/$V/release/3panel-agent-$V-linux-amd64.tar.gz.sha256
+probe $B/package/stable/$V/release/3panel-agent-$V-linux-arm64.tar.gz
 ```
+
+> 探测包是否存在时，**路径必须带 `/{version}/release/` 段**：
+> `package/{channel}/{version}/release/{archive}`。写成 `package/{channel}/{archive}`
+> 会拿到一片 404，很容易误报成「这个版本的包丢了」。
 
 **2026-09-18 实测结果**：
 

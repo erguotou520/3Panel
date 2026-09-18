@@ -4868,10 +4868,15 @@ const message = {
             nodeDescription: '节点描述',
             nodeNameHelper: '节点名称必须是唯一标识，且不能为 "local"。',
             nodeAddrHelper: '目标主机的地址，留空则加入时自动探测。',
-            joinCommand: '加入命令',
-            joinCommandHelper: '在目标主机上安装 agent 后执行以下命令，token 一次性有效。',
+            joinCommand: '一键加入命令',
+            joinCommandHelper:
+                '在目标主机上以 root 执行下面的命令即可：它会自动下载安装 agent 并完成加入，无需预先准备任何文件。',
+            joinTokenExpire: 'token 一次性有效，此命令有效期至 {0}，过期后请重新创建节点。',
+            joinHasAgent: '目标主机上已经装过 agent？',
+            agentCommandHelper:
+                '如果目标主机上已有 3panel-agent（例如换主控后重新加入），可以直接执行下面这条命令，省去一次下载：',
             copyCommand: '复制命令',
-            nodeCreated: '节点创建成功，请复制加入命令到目标主机执行。',
+            nodeCreated: '节点创建成功，复制下面的命令到目标主机执行。',
             deleteNodeConfirm: '确定要删除节点 {0} 吗？删除后该节点的证书将失效。',
             nodeDeleted: '节点删除成功。',
             connInfo: '连接信息',

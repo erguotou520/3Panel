@@ -6357,10 +6357,15 @@ const message = {
             nodeDescription: 'Node Description',
             nodeNameHelper: 'The node name must be unique and cannot be "local".',
             nodeAddrHelper: 'Address of the target host; left empty it is auto detected on join.',
-            joinCommand: 'Join Command',
-            joinCommandHelper: 'Install the agent on the target host, then run this command. The token is single use.',
+            joinCommand: 'One-line Join Command',
+            joinCommandHelper:
+                'Run this as root on the target host: it downloads and installs the agent, then joins. Nothing has to be prepared beforehand.',
+            joinTokenExpire: 'The token is single use. This command stays valid until {0}.',
+            joinHasAgent: 'Agent already installed on that host?',
+            agentCommandHelper:
+                'If 3panel-agent is already present (for example when re-joining after a master move), run this instead and skip the download:',
             copyCommand: 'Copy Command',
-            nodeCreated: 'Node created. Copy the join command and run it on the target host.',
+            nodeCreated: 'Node created. Copy the command below and run it on the target host.',
             deleteNodeConfirm: 'Delete node {0}? Its certificate will stop working.',
             nodeDeleted: 'Node deleted.',
             connInfo: 'Connection Information',
