@@ -4238,8 +4238,6 @@ const message = {
                 error: '错误',
             },
         },
-        expiresEnterpriseAlert: '温馨提醒：企业版许可证将于 [{0}] 天后到期，届时将停止使用所有企业版功能。',
-        expiresProAlert: '温馨提醒：专业版许可证将于 [{0}] 天后到期，届时将停止使用所有专业版功能。',
         menu: '高级功能',
         upage: 'AI 建站',
         logExport: {

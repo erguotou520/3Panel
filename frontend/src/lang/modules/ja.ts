@@ -4483,10 +4483,6 @@ const message = {
                 error: 'エラー',
             },
         },
-        expiresEnterpriseAlert:
-            'ご注意: あなたのEnterprise Editionライセンスは{0}日後に終了し、すべてのEnterprise Edition機能が使用できなくなります。継続的な使用のために速やかに更新してください。',
-        expiresProAlert:
-            'ご注意: あなたのPro Editionライセンスは{0}日後に終了し、すべてのPro Edition機能が使用できなくなります。継続的な使用のために速やかに更新してください。',
         menu: 'Pro',
         upage: 'AIウェブサイトビルダー',
         opsReport: {

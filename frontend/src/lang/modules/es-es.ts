@@ -4562,10 +4562,6 @@ const message = {
                 error: 'Error',
             },
         },
-        expiresEnterpriseAlert:
-            'Aviso: Tu licencia de Enterprise Edition expirará en {0} días y todas las funciones de Enterprise Edition dejarán de estar disponibles. Renueva pronto para asegurar el uso continuo.',
-        expiresProAlert:
-            'Aviso: Tu licencia de Pro Edition expirará en {0} días y todas las funciones de Pro Edition dejarán de estar disponibles. Renueva pronto para asegurar el uso continuo.',
         menu: 'Pro',
         upage: 'Constructor Web con IA',
         opsReport: {

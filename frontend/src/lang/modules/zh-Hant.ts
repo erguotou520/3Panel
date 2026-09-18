@@ -4190,8 +4190,6 @@ const message = {
                 error: '錯誤',
             },
         },
-        expiresEnterpriseAlert: '溫馨提醒：您的企業版許可證將在 {0} 天後到期，屆時所有企業版功能將無法繼續使用。',
-        expiresProAlert: '溫馨提醒：您的專業版許可證將在 {0} 天後到期，屆時所有專業版功能將無法繼續使用。',
         menu: '進階功能',
         upage: 'AI 建站',
         opsReport: {

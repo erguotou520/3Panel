@@ -4501,10 +4501,6 @@ const message = {
                 error: 'Error',
             },
         },
-        expiresEnterpriseAlert:
-            'Friendly reminder: Your Enterprise Edition license will expire in {0} days, and all Enterprise Edition features will no longer be accessible. Please renew promptly to ensure continued usage.',
-        expiresProAlert:
-            'Friendly reminder: Your Pro Edition license will expire in {0} days, and all Pro Edition features will no longer be accessible. Please renew promptly to ensure continued usage.',
         menu: 'Pro',
         upage: 'AI Website Builder',
         opsReport: {

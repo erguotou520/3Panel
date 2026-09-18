@@ -4592,10 +4592,6 @@ const message = {
                 error: 'Erro',
             },
         },
-        expiresEnterpriseAlert:
-            'Lembrete: Sua licença da Enterprise Edition expira em {0} dias. Depois disso, todos os recursos da Enterprise Edition deixarão de ficar disponíveis. Renove a licença para manter o uso contínuo.',
-        expiresProAlert:
-            'Lembrete: Sua licença da Pro Edition expira em {0} dias. Depois disso, todos os recursos da Pro Edition deixarão de ficar disponíveis. Renove a licença para manter o uso contínuo.',
         menu: 'Pro',
         upage: 'Construtor de Sites com IA',
         opsReport: {

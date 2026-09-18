@@ -4573,10 +4573,6 @@ const message = {
                 error: 'Hata',
             },
         },
-        expiresEnterpriseAlert:
-            'Nazik hatırlatma: Enterprise Edition lisansınız {0} gün içinde sona erecek ve tüm Enterprise Edition özellikleri kullanılamaz hale gelecektir. Lütfen devam eden kullanım için zamanında yenileyin.',
-        expiresProAlert:
-            'Nazik hatırlatma: Pro Edition lisansınız {0} gün içinde sona erecek ve tüm Pro Edition özellikleri kullanılamaz hale gelecektir. Lütfen devam eden kullanım için zamanında yenileyin.',
         menu: 'Pro',
         upage: 'AI Web Sitesi Oluşturucu',
         opsReport: {

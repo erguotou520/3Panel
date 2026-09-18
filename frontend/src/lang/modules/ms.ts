@@ -4570,10 +4570,6 @@ const message = {
                 error: 'ralat',
             },
         },
-        expiresEnterpriseAlert:
-            'Peringatan mesra: Lesen Enterprise Edition anda akan tamat dalam {0} hari, dan semua ciri Enterprise Edition tidak lagi dapat diakses. Sila perbaharui segera untuk memastikan penggunaan berterusan.',
-        expiresProAlert:
-            'Peringatan mesra: Lesen Pro Edition anda akan tamat dalam {0} hari, dan semua ciri Pro Edition tidak lagi dapat diakses. Sila perbaharui segera untuk memastikan penggunaan berterusan.',
         menu: 'Pro',
         upage: 'Pembina Laman Web AI',
         opsReport: {

@@ -4403,10 +4403,6 @@ const message = {
                 error: '오류',
             },
         },
-        expiresEnterpriseAlert:
-            '친절한 알림: 귀하의 Enterprise Edition 라이선스가 {0}일 후 만료되며, 모든 Enterprise Edition 기능에 더 이상 접근할 수 없습니다. 지속적인 사용을 위해 신속하게 갱신하시기 바랍니다.',
-        expiresProAlert:
-            '친절한 알림: 귀하의 Pro Edition 라이선스가 {0}일 후 만료되며, 모든 Pro Edition 기능에 더 이상 접근할 수 없습니다. 지속적인 사용을 위해 신속하게 갱신하시기 바랍니다.',
         menu: 'Pro',
         upage: 'AI 웹사이트 빌더',
         opsReport: {
