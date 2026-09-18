@@ -122,9 +122,16 @@ jobs:
               echo "- \`$(basename "$f")\`"
             done
             echo
+            echo "### Agent-only packages (for hosts joining as a node)"
+            for f in "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*.tar.gz; do
+              [ -e "$f" ] || continue
+              echo "- \`$(basename "$f")\`"
+            done
+            echo
             echo "### Checksums"
             echo '```'
-            for f in "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz.sha256; do
+            for f in "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz.sha256 \
+                     "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*.tar.gz.sha256; do
               [ -e "$f" ] || continue
               echo "$(cat "$f")  $(basename "$f" .sha256)"
             done
