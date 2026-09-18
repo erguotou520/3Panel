@@ -6553,9 +6553,6 @@ const message = {
             deletedNode: 'O nó excluído {0} não suporta atualmente operações de atualização!',
             nodeUnhealthyHelper:
                 'Estado anormal do nó detectado. Por favor verifique em [Gestão de Nós] e tente novamente!',
-            nodeUnbind: 'Nó não vinculado à licença',
-            nodeUnbindHelper:
-                'Detectamos que este nó não está vinculado a uma licença. Por favor vincule no menu [Configurações do Painel - Licença] e tente novamente!',
             memTotal: 'Memória Total',
             nodeManagement: 'Gerenciamento Multi-Máquina',
             multiOverview: 'Multi-Máquina',
@@ -6600,7 +6597,6 @@ const message = {
             checkSSH: 'Verificar conexão SSH do nó',
             checkUserPermission: 'Verificar permissões de usuário do nó',
             isNotRoot: 'Detectado que sudo sem senha não é suportado neste nó e o usuário atual não é root',
-            checkLicense: 'Verificar status da licença do nó',
             checkService: 'Verificar informações de serviço existentes no nó',
             checkPort: 'Verificar acessibilidade da porta do nó',
             panelExist:
@@ -6613,7 +6609,6 @@ const message = {
                 'Foi detectado que o 3panel-agent não está instalado neste nó, portanto, as informações do nó não podem ser editadas diretamente. Por favor, exclua e adicione novamente.',
             oldDataExist:
                 'Detectados dados históricos do 3Panel V2 neste nó. As seguintes informações serão usadas para sobrescrever as configurações atuais:',
-            errLicense: 'A licença vinculada a este nó está indisponível. Por favor verifique e tente novamente!',
             errNodePort:
                 'A porta do nó [ {0} ] foi detectada como inacessível. Verifique se o firewall ou grupo de segurança liberou esta porta.',
             reinstallHelper: 'Reinstalar o nó {0}, deseja continuar?',

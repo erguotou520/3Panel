@@ -1,11 +1,6 @@
 <template>
     <div>
         <LayoutContent title="vLLM">
-            <template #leftToolBar>
-                <el-button type="primary" @click="goLicense">
-                    {{ $t('license.levelUpPro') }}
-                </el-button>
-            </template>
             <template #prompt>
                 <el-alert type="info" :closable="false">
                     <template #title>
@@ -39,18 +34,14 @@
 </template>
 
 <script setup lang="ts">
-import { routerToName } from '@/utils/router';
-
+// 「升级专业版」按钮已移除：本仓库没有许可证服务，设置里的许可证模块也已整体删除，
+// 那个按钮原本 routerToName('License') 会跳到已不存在的路由。
 const features = [
     { icon: 'p-ai-1', title: 'xpack.helper.vllmTitle1', content: 'xpack.helper.vllmContent1' },
     { icon: 'p-ai-2', title: 'xpack.helper.vllmTitle2', content: 'xpack.helper.vllmContent2' },
     { icon: 'p-ai-3', title: 'xpack.helper.vllmTitle3', content: 'xpack.helper.vllmContent3' },
     { icon: 'p-ai-4', title: 'xpack.helper.vllmTitle4', content: 'xpack.helper.vllmContent4' },
 ];
-
-const goLicense = () => {
-    routerToName('License');
-};
 </script>
 
 <style scoped lang="scss">

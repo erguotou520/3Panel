@@ -6523,9 +6523,6 @@ const message = {
             deletedNode: 'El nodo eliminado {0} no soporta operaciones de actualización.',
             nodeUnhealthyHelper:
                 'Se ha detectado un estado anómalo en el nodo. Revisa [Gestión de Nodos] e inténtalo de nuevo.',
-            nodeUnbind: 'Nodo no vinculado a licencia',
-            nodeUnbindHelper:
-                'Se ha detectado que este nodo no está vinculado a una licencia. Vincúlalo desde [Ajustes del Panel - Licencia] e inténtalo de nuevo.',
             memTotal: 'Memoria Total',
             nodeManagement: 'Gestión Multi-Máquina',
             multiOverview: 'Multimáquina',
@@ -6566,7 +6563,6 @@ const message = {
             checkSSH: 'Verificar conexión SSH del nodo',
             checkUserPermission: 'Verificar permisos de usuario en el nodo',
             isNotRoot: 'Se ha detectado que este nodo no soporta sudo sin contraseña y el usuario actual no es root',
-            checkLicense: 'Verificar estado de licencia del nodo',
             checkService: 'Verificar servicios existentes en el nodo',
             checkPort: 'Verificar accesibilidad del puerto del nodo',
             panelExist:
@@ -6579,7 +6575,6 @@ const message = {
                 'Se ha detectado que 3panel-agent no está instalado en este nodo, por lo que la información no puede editarse directamente. Elimínalo y vuelve a añadirlo.',
             oldDataExist:
                 'Se han detectado datos históricos de 3Panel V2 en este nodo. La siguiente información sobrescribirá la configuración actual:',
-            errLicense: 'La licencia vinculada a este nodo no es válida. Revisa e inténtalo de nuevo.',
             errNodePort:
                 'El puerto del nodo [ {0} ] no es accesible. Verifica si el firewall o el grupo de seguridad permiten este puerto.',
             reinstallHelper: '¿Reinstalar el nodo {0}? ¿Quieres continuar?',

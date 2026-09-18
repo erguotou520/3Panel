@@ -6277,9 +6277,6 @@ const message = {
             nodeUnhealthy: '노드 상태 이상',
             deletedNode: '삭제된 노드 {0}은(는) 현재 업그레이드 작업을 지원하지 않습니다!',
             nodeUnhealthyHelper: '노드 상태 이상이 감지되었습니다. [노드 관리]에서 확인 후 다시 시도하세요!',
-            nodeUnbind: '노드가 라이선스에 바인딩되지 않음',
-            nodeUnbindHelper:
-                '이 노드가 라이선스에 바인딩되지 않은 것으로 감지되었습니다. [패널 설정 - 라이선스] 메뉴에서 바인딩 후 다시 시도하세요!',
             memTotal: '총 메모리',
             nodeManagement: '다중 머신 관리',
             multiOverview: '다중 머신',
@@ -6324,7 +6321,6 @@ const message = {
             checkUserPermission: '노드 사용자 권한 확인',
             isNotRoot:
                 '이 노드에서 비밀번호 없이 sudo를 사용할 수 없으며 현재 사용자가 root가 아닌 것으로 감지되었습니다',
-            checkLicense: '노드 라이선스 상태 확인',
             checkService: '노드의 기존 서비스 정보 확인',
             checkPort: '노드 포트 접근 가능 여부 확인',
             panelExist:
@@ -6337,7 +6333,6 @@ const message = {
                 '이 노드에 3panel-agent가 설치되지 않아 노드 정보를 직접 편집할 수 없습니다. 삭제 후 다시 추가해 주세요.',
             oldDataExist:
                 '이 노드에서 3Panel V2 기록 데이터가 감지되었습니다. 다음 정보를 사용하여 현재 설정을 덮어씁니다:',
-            errLicense: '이 노드에 바인딩된 라이선스를 사용할 수 없습니다. 확인 후 다시 시도하십시오!',
             errNodePort:
                 '노드 포트 [ {0} ]에 접근할 수 없는 것으로 감지되었습니다. 방화벽 또는 보안 그룹에서 해당 포트가 허용되었는지 확인하십시오.',
             reinstallHelper: '노드 {0}를 재설치합니다. 계속하시겠습니까?',

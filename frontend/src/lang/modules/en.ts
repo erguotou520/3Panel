@@ -6419,9 +6419,6 @@ const message = {
             nodeUnhealthy: 'Node status abnormal',
             deletedNode: 'Deleted node {0} does not currently support upgrade operations!',
             nodeUnhealthyHelper: 'Abnormal node status detected. Please check in [Node Management] and try again!',
-            nodeUnbind: 'Node not bound to license',
-            nodeUnbindHelper:
-                'Detected that this node is not bound to a license. Please bind it in [Panel Settings - License] menu and try again!',
             memTotal: 'Total Memory',
             nodeManagement: 'Multi-Machine Management',
             multiOverview: 'Multi-Machine',
@@ -6481,7 +6478,6 @@ const message = {
             checkSSH: 'Check node SSH connection',
             checkUserPermission: 'Check node user permissions',
             isNotRoot: 'Detected that password-less sudo is not supported on this node and current user is non-root',
-            checkLicense: 'Check node license status',
             checkService: 'Check existing service information on node',
             checkPort: 'Check node port reachability',
             panelExist:
@@ -6494,7 +6490,6 @@ const message = {
                 'It is detected that 3panel-agent is not installed on this node, so the node information cannot be edited directly. Please delete it and add it again.',
             oldDataExist:
                 'Detected historical 3Panel V2 data on this node. The following information will be used to overwrite current settings:',
-            errLicense: 'The license bound to this node is unavailable. Please check and try again!',
             errNodePort:
                 'Node port [ {0} ] is detected as inaccessible. Please check if the firewall or security group has allowed this port.',
             reinstallHelper: 'Reinstall node {0}, continue?',

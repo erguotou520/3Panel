@@ -6524,9 +6524,6 @@ const message = {
             deletedNode: 'Silinmiş düğüm {0} şu anda yükseltme işlemlerini desteklemiyor!',
             nodeUnhealthyHelper:
                 'Anormal düğüm durumu algılandı. Lütfen [Düğüm Yönetimi]’nde kontrol edin ve tekrar deneyin!',
-            nodeUnbind: 'Düğüm lisansa bağlı değil',
-            nodeUnbindHelper:
-                'Bu düğümün lisansa bağlı olmadığı algılandı. Lütfen [Panel Ayarları - Lisans] menüsünde bağlayın ve tekrar deneyin!',
             memTotal: 'Toplam Bellek',
             nodeManagement: 'Çoklu Makine Yönetimi',
             multiOverview: 'Çoklu Makine',
@@ -6571,7 +6568,6 @@ const message = {
             checkSSH: 'Düğüm SSH bağlantısını kontrol et',
             checkUserPermission: 'Düğüm kullanıcı izinlerini kontrol et',
             isNotRoot: 'Bu düğümde şifresiz sudo desteklenmediği ve mevcut kullanıcının root olmadığı algılandı',
-            checkLicense: 'Düğüm lisans durumunu kontrol et',
             checkService: 'Düğümdeki mevcut hizmet bilgilerini kontrol et',
             checkPort: 'Düğüm port erişilebilirliğini kontrol et',
             panelExist:
@@ -6584,7 +6580,6 @@ const message = {
                 'Bu düğümde 3panel-agent yüklü olmadığı tespit edildi, düğüm bilgileri doğrudan düzenlenemez. Lütfen silip tekrar ekleyin.',
             oldDataExist:
                 'Bu düğümde geçmiş 3Panel V2 verileri algılandı. Aşağıdaki bilgiler mevcut ayarları üzerine yazmak için kullanılacaktır:',
-            errLicense: 'Bu düğüme bağlı lisans kullanılamıyor. Lütfen kontrol edin ve tekrar deneyin!',
             errNodePort:
                 'Düğüm portu [ {0} ] erişilemez olarak algılandı. Lütfen güvenlik duvarı veya güvenlik grubunun bu portu izin verdiğinden emin olun.',
             reinstallHelper: '{0} düğümünü yeniden kurmak istiyor musunuz?',

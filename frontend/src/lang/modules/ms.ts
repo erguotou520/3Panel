@@ -6515,9 +6515,6 @@ const message = {
             nodeUnhealthy: 'Status nod tidak normal',
             deletedNode: 'Nod {0} yang telah dipadam tidak menyokong operasi naik taraf buat masa ini!',
             nodeUnhealthyHelper: 'Status nod tidak normal dikesan. Sila semak dalam [Pengurusan Nod] dan cuba lagi!',
-            nodeUnbind: 'Nod tidak terikat pada lesen',
-            nodeUnbindHelper:
-                'Terdeteksi nod ini tidak terikat pada lesen. Sila ikat dalam menu [Tetapan Panel - Lesen] dan cuba lagi!',
             memTotal: 'Jumlah Memori',
             nodeManagement: 'Pengurusan Multi-Mesin',
             multiOverview: 'Multi-Mesin',
@@ -6562,7 +6559,6 @@ const message = {
             checkSSH: 'Periksa sambungan SSH nod',
             checkUserPermission: 'Semak kebenaran pengguna nod',
             isNotRoot: 'Dikesan sudo tanpa kata laluan tidak disokong pada nod ini dan pengguna semasa bukan root',
-            checkLicense: 'Periksa status lesen nod',
             checkService: 'Periksa maklumat perkhidmatan sedia ada pada nod',
             checkPort: 'Periksa kebolehcapaian port nod',
             panelExist:
@@ -6575,7 +6571,6 @@ const message = {
                 'Terdapat pengesahan bahawa 3panel-agent tidak dipasang pada nod ini, maklumat nod tidak boleh disunting secara langsung. Sila padam dan tambah semula.',
             oldDataExist:
                 'Mengesan data sejarah 3Panel V2 pada nod ini. Maklumat berikut akan digunakan untuk menimpa tetapan semasa:',
-            errLicense: 'Lesen yang terikat pada nod ini tidak tersedia. Sila semak dan cuba lagi!',
             errNodePort:
                 'Port nod [ {0} ] dikesan tidak boleh diakses. Sila semak sama ada firewall atau kumpulan keselamatan telah membenarkan port ini.',
             reinstallHelper: 'Pasang semula nod {0}, adakah anda ingin meneruskan?',

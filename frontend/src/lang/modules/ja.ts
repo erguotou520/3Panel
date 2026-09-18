@@ -6409,9 +6409,6 @@ const message = {
             nodeUnhealthy: 'ノード状態異常',
             deletedNode: '削除済みノード {0} は現在アップグレード操作をサポートしていません！',
             nodeUnhealthyHelper: 'ノード状態異常を検出しました。[ノード管理]で確認してから再試行してください！',
-            nodeUnbind: 'ノードがライセンスにバインドされていません',
-            nodeUnbindHelper:
-                'このノードがライセンスにバインドされていないことを検出しました。[パネル設定 - ライセンス]メニューでバインドしてから再試行してください！',
             memTotal: '総メモリ',
             nodeManagement: 'マルチマシン管理',
             multiOverview: 'マルチマシン',
@@ -6456,7 +6453,6 @@ const message = {
             checkUserPermission: 'ノードユーザー権限を確認',
             isNotRoot:
                 'このノードではパスワードなしsudoがサポートされておらず、現在のユーザーがrootではないことが検出されました',
-            checkLicense: 'ノードライセンス状態を確認',
             checkService: 'ノードの既存サービス情報を確認',
             checkPort: 'ノードポート到達性を確認',
             panelExist:
@@ -6468,7 +6464,6 @@ const message = {
             agentNotExist:
                 'このノードに3panel-agentがインストールされていないため、ノード情報を直接編集できません。一度削除してから再度追加してください。',
             oldDataExist: 'このノードに3Panel V2の過去データが検出されました。以下の情報で現在の設定を上書きします:',
-            errLicense: 'このノードに紐づけられたライセンスが利用できません。確認して再試行してください！',
             errNodePort:
                 'ノードポート[ {0} ]にアクセスできないことが検出されました。ファイアウォールまたはセキュリティグループでこのポートが開放されているか確認してください。',
             reinstallHelper: 'ノード{0}を再インストールします。続行しますか？',
