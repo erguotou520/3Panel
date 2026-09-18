@@ -226,10 +226,16 @@ packaging/
 
 ### 5.1 触发方式
 
-- **推 tag**：`git tag v1.0.0 && git push origin v1.0.0`
+- **推 tag**：`git tag v2.0.2 && git push github v2.0.2`
 - **手动**：Actions → Release stable → Run workflow，填版本号
 
-版本号含 `beta` 时自动发布到 `beta` 通道，否则 `stable` —— 与面板逻辑一致。
+> 远端说明：本仓库有两个 remote —— `origin` 指向 `cnb.cool`（**不跑**这个 workflow），
+> 发布走 `github`（`git@github.com:erguotou520/3Panel.git`）。别推错。
+> 版本号必须**大于** `core/cmd/server/conf/app.yaml` 里的 `version`（当前 `v2.0.1`），
+> 否则 `checkVersion()` 判定 remote 不大于 current，面板不会提示升级。
+
+版本号含 `beta` 时发布到 `beta` 通道，否则 `stable` **和 `dev`** —— 后者是面板默认
+`mode: dev` 实际会读的频道（见 §2.1）。
 
 ### 5.2 本地先验证一遍
 
@@ -252,6 +258,13 @@ dist/package/stable/latest.current
 dist/package/dev/latest            # 非 beta 版本会同时生成（见 §2.1 的 mode 说明）
 dist/package/dev/latest.current
 ```
+
+> ⚠️ **构建脚本会把 tag 版本写进 `core/cmd/server/conf/app.yaml` 再编译。**
+> 该文件是 `//go:embed` 进 core 二进制的，而 `core/init/hook/hook.go` 的 `Init()`
+> **每次启动**都会把数据库里的 `SystemVersion` 同步成它。版本号不写进包，升级后一重启
+> 就回落到旧值，面板会永远提示同一个版本可升级。
+> `build-release.sh` 在第 2 步做这件事，并在退出时把仓库文件还原（不污染工作区）；
+> 验证方式：`strings <包内>/3panel-core | grep 'version: v'`。
 
 ### 5.3 上传目标（workflow 自动完成，需先配置）
 
@@ -513,7 +526,7 @@ probe $B/dev/3panel.json.version.txt
 表现为「检查更新」一直提示已是最新。要做一次真实发布：
 
 ```bash
-git tag v1.0.0 && git push origin v1.0.0     # 触发 release-stable.yml
+git tag v2.0.2 && git push github v2.0.2    # 触发 release-stable.yml（远端是 github，不是 origin）
 ```
 
 前提是仓库已配置好对象存储：
