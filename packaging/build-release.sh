@@ -110,6 +110,9 @@ restore_stamped() {
     for f in "${STAMPED_FILES[@]:-}"; do
         [[ -n "$f" && -f "$f.bak" ]] && mv -f "$f.bak" "$f"
     done
+    # An EXIT trap that ends on a non-zero status can change the script's exit
+    # code, which would turn a good build into a failed one.
+    return 0
 }
 trap restore_stamped EXIT
 for f in "$ROOT_DIR/core/cmd/server/conf/app.yaml" "$ROOT_DIR/agent/cmd/server/conf/app.yaml"; do
