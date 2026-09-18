@@ -14,11 +14,14 @@
 #
 # Environment knobs (all optional)
 #   PANEL3_MIRROR     use exactly this base URL and skip probing (local mirror)
-#   PANEL3_ORIGIN     release origin                (default https://3panel.erguotou.me)
+#   PANEL3_ORIGIN     release-channel base, INCLUDING the /package segment
+#                     (default https://3panel.erguotou.me/package)
 #   PANEL3_PROXY      proxy prefix put before it     (default https://proxy.erguotou.me)
 #   PANEL3_NO_PROXY   1 = never try the proxy prefix
 #   PANEL3_WORKDIR    where the package is unpacked  (default ./3panel-install)
 #   PANEL3_RETRIES    download attempts per URL      (default 5)
+#   PANEL3_PROBE_RETRIES
+#                     version-probe attempts per base (default 6)
 #   PANEL3_LANG       zh | en                        (default: auto from $LANG)
 #   INSTALL_MODE      stable | dev | beta            (default stable)
 #   ARCH              force amd64 / arm64
@@ -41,11 +44,18 @@ ESC_YELLOW=$'\033[0;33m'
 ESC_BLUE=$'\033[0;34m'
 ESC_OFF=$'\033[0m'
 
-ORIGIN=${PANEL3_ORIGIN:-https://3panel.erguotou.me}
+# The release-channel BASE, not the site root: every lookup below appends
+# /$MODE/latest, so this must already carry the "/package" segment. Getting this
+# wrong produces a plain 404 on https://3panel.erguotou.me/stable/latest, which
+# looks like a network problem rather than a wrong URL.
+ORIGIN=${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}
 PROXY=${PANEL3_PROXY:-https://proxy.erguotou.me}
 MODE=${INSTALL_MODE:-stable}
 WORKDIR=${PANEL3_WORKDIR:-$PWD/3panel-install}
 RETRIES=${PANEL3_RETRIES:-5}
+# The version probe is a tiny request but the most failure-prone step, so it gets
+# a larger budget than the multi-megabyte download.
+PROBE_RETRIES=${PANEL3_PROBE_RETRIES:-6}
 CTL_BIN_NAME="3pctl"
 
 PASSTHRU=("$@")
@@ -148,11 +158,13 @@ Environment:
   INSTALL_MODE=stable|dev|beta     release channel            (default stable)
   ARCH=amd64|arm64                 override architecture detection
   PANEL3_MIRROR=<base url>         use one exact base, skip probing
-  PANEL3_ORIGIN=<base url>         release origin (default https://3panel.erguotou.me)
+  PANEL3_ORIGIN=<base url>         release-channel base, INCLUDING /package
+                                   (default https://3panel.erguotou.me/package)
   PANEL3_PROXY=<base url>          prefix proxy    (default https://proxy.erguotou.me)
   PANEL3_NO_PROXY=1                never try the proxy prefix
   PANEL3_WORKDIR=<dir>             unpack location   (default ./3panel-install)
   PANEL3_RETRIES=<n>               download attempts per URL (default 5)
+  PANEL3_PROBE_RETRIES=<n>         version-probe attempts per base (default 6)
   PANEL3_LANG=zh|en                message language   (default: from $LANG)
   PANEL_PORT / PANEL_USERNAME / PANEL_PASSWORD / PANEL_ENTRANCE / PANEL_BASE_DIR
                                    read by install.sh; set them for an unattended install
@@ -198,6 +210,47 @@ remote_size() {
     # content-length of the final response; empty when the server is chunked
     curl -fsSIL --connect-timeout 15 --max-time 60 "$1" 2>/dev/null |
         tr -d '\r' | awk 'tolower($1) == "content-length:" { n = $2 } END { if (n != "") print n }'
+}
+
+# Small text resources (the version index) still need retries: both the origin
+# and the proxy intermittently reset the TLS handshake — measured between ~1 in
+# 15 and 2 in 5 requests depending on the moment — and without a retry a single
+# reset aborts the whole install. Each attempt is a fresh curl process, i.e. a
+# fresh connection, which is what actually clears the reset.
+# Deliberately avoids --retry-all-errors: it needs curl >= 7.71, and this has to
+# run on old distros too (CentOS 7 ships 7.29).
+fetch_text() {
+    local url="$1" attempt=0 out=''
+    while :; do
+        attempt=$((attempt + 1))
+        out=$(curl -fsSL --connect-timeout 10 --max-time 45 "$url" 2>/dev/null | tr -d '[:space:]')
+        [ -n "$out" ] && {
+            printf '%s' "$out"
+            return 0
+        }
+        [ "$attempt" -ge "$PROBE_RETRIES" ] && return 1
+        warn "$M_ATTEMPT" "$attempt" "$PROBE_RETRIES"
+        sleep 1
+    done
+}
+
+# Returns 0 with the digest, or 2 when the file is definitively absent (HTTP
+# error) — that is a real "not published", not a transient failure, so it must
+# not burn the whole retry budget.
+fetch_sha256() {
+    local url="$1" attempt=0 body='' rc
+    while :; do
+        attempt=$((attempt + 1))
+        body=$(curl -fsSL --connect-timeout 10 --max-time 60 "$url" 2>/dev/null)
+        rc=$?
+        if [ "$rc" -eq 0 ] && [ -n "$body" ]; then
+            printf '%s' "$body" | tr -d '[:space:]'
+            return 0
+        fi
+        [ "$rc" -eq 22 ] && return 2
+        [ "$attempt" -ge "$RETRIES" ] && return 1
+        sleep 2
+    done
 }
 
 human_size() {
@@ -274,8 +327,7 @@ resolve_base() {
     for base in "${candidates[@]}"; do
         tried="$tried
   - $base"
-        ver=$(curl -fsSL --connect-timeout 10 --max-time 45 "$base/$MODE/latest" 2>/dev/null |
-            tr -d '[:space:]')
+        ver=$(fetch_text "$base/$MODE/latest") || ver=''
         if [ -n "$ver" ]; then
             BASE="$base"
             VERSION="$ver"
@@ -357,8 +409,8 @@ main() {
     # A missing .sha256 downgrades to a warning (a checksum outage should not
     # block installs); a published-but-different one is fatal, below.
     local expected=''
-    if expected=$(curl -fsSL --connect-timeout 10 --max-time 60 "$url.sha256" 2>/dev/null); then
-        expected=$(printf '%s' "$expected" | tr -d '[:space:]')
+    if expected=$(fetch_sha256 "$url.sha256"); then
+        :
     else
         expected=''
         warn '%s' "$M_NO_HASH"

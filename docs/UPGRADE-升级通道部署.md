@@ -171,9 +171,23 @@ bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 
 ```
 PANEL3_MIRROR（若设，唯一候选）
-  └→ {PANEL3_PROXY}/{PANEL3_ORIGIN}     # 默认 https://proxy.erguotou.me/https://3panel.erguotou.me
-      └→ {PANEL3_ORIGIN}                # 默认 https://3panel.erguotou.me
+  └→ {PANEL3_PROXY}/{PANEL3_ORIGIN}     # 默认 https://proxy.erguotou.me/https://3panel.erguotou.me/package
+      └→ {PANEL3_ORIGIN}                # 默认 https://3panel.erguotou.me/package
 ```
+
+> ⚠️ `PANEL3_ORIGIN` 是**发布通道的 base，必须带 `/package` 段**。
+> 脚本会在它后面拼 `/$MODE/latest`；写成站点根会得到
+> `https://3panel.erguotou.me/stable/latest` 的 **404**，现象很像网络故障。
+> （这个坑真实踩过：本地测试全都显式传了带 `/package` 的地址，所以直到对真站
+> 探测才暴露。现在有一条静态断言把默认值钉住了。）
+
+**版本探测为什么要单独给更大的重试预算**：`latest` 只有几字节，但它是全流程最易
+失败的一步 —— 实测这台机器到 Cloudflare 该边缘节点的 TLS 握手会被周期性重置
+（连续 15 次里 1 次失败；网络差的窗口能到 2/5 甚至连续 12 次全失败，
+`curl: (35) SSL_ERROR_SYSCALL` / `(28) SSL connection timeout`）。
+所以探测用 `PANEL3_PROBE_RETRIES`（默认 6），下载用 `PANEL3_RETRIES`（默认 5）。
+注意探测判据是**输出是否非空**而非管道退出码 —— `sh` 没有 `pipefail` 时，
+curl 失败而 `tr` 成功会让管道返回 0 但输出为空。
 
 **下载为什么要重试与续传**：实测直连 `3panel.erguotou.me` 拉 60 MB 包会周期性卡住，
 4 次里有 3 次在 300 s 内只跑到 13–26 MB 就断；走代理拿到过 121 s 跑完全量（≈500 KB/s）。
@@ -200,11 +214,12 @@ PANEL3_MIRROR（若设，唯一候选）
 | `INSTALL_MODE` | `stable` | `stable` / `dev` / `beta` |
 | `ARCH` | 自动 | `amd64` / `arm64`，其它值直接报错 |
 | `PANEL3_MIRROR` | 空 | 指定唯一地址，跳过探测 |
-| `PANEL3_ORIGIN` | `https://3panel.erguotou.me` | 发布源 |
+| `PANEL3_ORIGIN` | `https://3panel.erguotou.me/package` | 发布源（**含 `/package` 段**，见下） |
 | `PANEL3_PROXY` | `https://proxy.erguotou.me` | 前缀反代 |
 | `PANEL3_NO_PROXY` | `0` | `1` = 只直连 |
 | `PANEL3_WORKDIR` | `./3panel-install` | 下载与解压目录（重复运行会复用已校验的包） |
 | `PANEL3_RETRIES` | `5` | 每个地址的下载尝试次数 |
+| `PANEL3_PROBE_RETRIES` | `6` | 每个地址的**版本探测**尝试次数（探测请求小但最易失败，故预算更大） |
 | `PANEL3_LANG` | 跟随 `$LANG` | `zh` / `en` |
 | `PANEL_BASE_DIR` / `PANEL_PORT` / `PANEL_*` | 空 | 交给 `install.sh`，填写即无人值守 |
 
@@ -318,8 +333,9 @@ packaging/
 
 > 远端说明：本仓库有两个 remote —— `origin` 指向 `cnb.cool`（**不跑**这个 workflow），
 > 发布走 `github`（`git@github.com:erguotou520/3Panel.git`）。别推错。
-> 版本号必须**大于** `core/cmd/server/conf/app.yaml` 里的 `version`（当前 `v2.0.1`），
-> 否则 `checkVersion()` 判定 remote 不大于 current，面板不会提示升级。
+> 版本号必须**大于当前已安装的版本**，否则 `checkVersion()` 判定 remote 不大于
+> current，面板不会提示升级。仓库里 `app.yaml` 的 `version` 只是开发默认值 ——
+> 构建时会用 tag 覆盖它（见 §5.2），所以它不构成发布门槛。
 
 版本号含 `beta` 时发布到 `beta` 通道，否则 `stable` **和 `dev`** —— 后者是面板默认
 `mode: dev` 实际会读的频道（见 §2.1）。
@@ -608,7 +624,7 @@ probe $B/dev/3panel.json.version.txt
 | `/resource/geo/GeoIP.mmdb` | ✅ 200（19.5 MB） | 正常，见 §5.4 |
 | `/resource/language/lang.tar.gz` | ✅ 200（2.5 KB） | 已上传，与 `dist/lang.tar.gz` 逐字节一致 |
 | `/resource/scripts/*` | ✅ 200（`version.txt` 10 B / `data.yaml` 7.3 KB / `scripts.tar.gz` 10.7 KB） | Worker 的 `/sync-resource` 已部署并跑过；`scripts.tar.gz` 与上游逐字节一致 |
-| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.1` | 发布通道已上线（2026-09-18 首次发布，见下） |
+| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.2` | 发布通道已上线（首次发布 `v2.0.1`，见下） |
 | `/dev/3panel.json.zip`、`.version.txt` | ✅ 200 | 应用商店正常（`mode: dev` 对应这一份） |
 | `/package/beta/latest` | 404 | 正常：还没发过 beta |
 
@@ -629,11 +645,15 @@ probe $B/dev/3panel.json.version.txt
 后续发版：
 
 ```bash
-git tag v2.0.2 && git push github v2.0.2    # 触发 release-stable.yml（远端是 github，不是 origin）
+git tag v2.0.3 && git push github v2.0.3    # 触发 release-stable.yml（远端是 github，不是 origin）
 ```
 
-⚠️ 版本号必须**大于** `core/cmd/server/conf/app.yaml` 里的 `version`（当前 `v2.0.1`），
-否则 `checkVersion()` 判定 remote 不大于 current，面板不会提示升级。
+`v2.0.2` 已按此流程发过（tag 打在 `f2cac58` 上，两个频道 + 两个架构全齐，
+`latest` 与 `latest.current` 都指向它），所以这条链路是真跑通过的。
+
+⚠️ 唯一约束：**新 tag 必须大于当前已安装的版本**，否则 `checkVersion()` 判定 remote
+不大于 current，面板不会提示升级。仓库里 `core/cmd/server/conf/app.yaml` 的 `version`
+只是开发默认值 —— 构建时会用 tag 覆盖它（见 §5.2），所以它**不**构成发布门槛。
 
 前提是仓库已配置好对象存储：
 
