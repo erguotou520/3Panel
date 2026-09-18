@@ -118,7 +118,12 @@ router.beforeEach(async (to, from) => {
         !isRedirecting
     ) {
         const cachedRouteInfo = router.resolve(cachedRoute);
-        if (cachedRouteInfo.matched.length > 0 && hasRouteAccess(cachedRouteInfo)) {
+        // 兜底路由 `/:pathMatch(.*)` 对任何路径都"匹配成功"，所以这里不能只看 matched.length：
+        // 否则 localStorage 里残留的旧路径（例如已删除的 /settings/license）会被当成有效目标，
+        // 导航过去再被兜底路由重定向到 404。有效目标必须能解析出真实的具名路由。
+        const isAliveCachedRoute =
+            Boolean(cachedRouteInfo.name) && cachedRouteInfo.name !== '404' && hasRouteAccess(cachedRouteInfo);
+        if (isAliveCachedRoute) {
             isRedirecting = true;
             NProgress.done();
             return cachedRoute;
