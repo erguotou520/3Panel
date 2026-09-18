@@ -18,6 +18,10 @@ func Init() {
 		global.LOG.Errorf("[core] can not add backup token refresh corn job: %s", err.Error())
 	}
 
+	if _, err := global.Cron.AddJob("@every 1m", job.NewNodeHealthJob()); err != nil {
+		global.LOG.Errorf("[core] can not add node health check cron job: %s", err.Error())
+	}
+
 	service.StartSync()
 	global.Cron.Start()
 }

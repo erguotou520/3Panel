@@ -113,7 +113,7 @@ import NodeDrawer from './node-drawer/index.vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
 const currentUser = ref<Login.AuthInfo>();
-const { globalStore, currentNode, currentNodeAddr, defaultNetwork, entrance, isEnterprise, isXpackOrEE } =
+const { globalStore, currentNode, currentNodeAddr, defaultNetwork, entrance, isEnterprise, isMultiNode } =
     useGlobalStore();
 const menuStore = MenuStore();
 const nodes = ref([]);
@@ -171,7 +171,7 @@ const handleFavoriteChange = async () => {
 const loadNodes = async () => {
     loading.value = true;
     nodes.value = [];
-    if (!isXpackOrEE.value) {
+    if (!isMultiNode.value) {
         changeToLocal();
         loading.value = false;
         return;

@@ -101,6 +101,10 @@ const GlobalStore = defineStore('GlobalState', {
         },
         isEE: (state) => state.isEnterprise && state.isEnterpriseLicensed,
         isMasterPro: (state) => state.isMasterProductPro,
+        // Managing several nodes is a core 3Panel feature rather than a paid
+        // add-on, so the node switcher is always available. Enterprise gating
+        // stays on the license UI where it belongs.
+        isMultiNode: () => true,
     },
     actions: {
         setScreenFull() {

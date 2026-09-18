@@ -101,7 +101,7 @@ const props = defineProps<{
     openSession: (options: TerminalConnectionOptions) => Promise<void>;
 }>();
 const visible = defineModel<boolean>({ default: false });
-const { isNodeAdmin, isXpackOrEE, currentNode, globalStore } = useGlobalStore();
+const { isNodeAdmin, isMultiNode, currentNode, globalStore } = useGlobalStore();
 const hostDialogRef = ref<InstanceType<typeof HostDialog>>();
 const onNewSsh = () => {
     if (isNodeAdmin.value || connecting.value) return;
@@ -169,7 +169,7 @@ const connectionTree = computed<ConnectionTreeItem[]>(() => {
 });
 const loadNodes = async () => {
     nodes.value = [];
-    if (!isXpackOrEE.value) return;
+    if (!isMultiNode.value) return;
     const res = await listNodeOptions('all');
     nodes.value = res.data || [];
 };

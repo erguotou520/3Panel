@@ -17,4 +17,5 @@ var (
 	groupService   = service.NewIGroupService()
 	commandService = service.NewICommandService()
 	scriptService  = service.NewIScriptService()
+	nodeService    = service.NewINodeService()
 )

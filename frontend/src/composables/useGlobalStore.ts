@@ -13,7 +13,8 @@ type GlobalGetterKey =
     | 'isMobile'
     | 'isXpackOrEE'
     | 'isEE'
-    | 'isMasterPro';
+    | 'isMasterPro'
+    | 'isMultiNode';
 
 type GlobalGetterRefs = Record<GlobalGetterKey, ComputedRef<any>>;
 

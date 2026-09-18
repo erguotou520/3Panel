@@ -32,6 +32,9 @@ func PasswordExpired() gin.HandlerFunc {
 			return
 		}
 		if strings.HasPrefix(c.Request.URL.Path, "/api/v2/core/auth") ||
+			// A joining agent has no session and no certificate; the one time
+			// token in its request body is its only credential.
+			c.Request.URL.Path == "/api/v2/core/nodes/join" ||
 			c.Request.URL.Path == "/api/v2/core/settings/search" ||
 			c.Request.URL.Path == "/api/v2/core/settings/search/base" ||
 			c.Request.URL.Path == "/api/v2/core/xpack/settings/search" ||

@@ -27,7 +27,7 @@
                                         <el-button
                                             class="node-favorite-button"
                                             link
-                                            v-if="isAdmin"
+                                            v-if="isAdmin && isXpackOrEE"
                                             :type="row.isFavorite ? 'warning' : 'info'"
                                             :loading="favoriteLoadingIDs.includes(row.id)"
                                             @click.stop="toggleFavorite(row)"
@@ -82,7 +82,7 @@ import i18n from '@/lang';
 import { computed, ref, watch } from 'vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { isAdmin } = useGlobalStore();
+const { isAdmin, isXpackOrEE } = useGlobalStore();
 
 type NodeItem = Setting.NodeItem & {
     group?: string;
