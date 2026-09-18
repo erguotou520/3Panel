@@ -3315,9 +3315,7 @@ const message = {
             'Preparando a Community Edition. O painel será reiniciado automaticamente quando estiver pronto.',
         technicalAdvice: 'Consultoria técnica',
         advice: 'Consultoria',
-        introduce: 'Introdução de recursos',
         deviceID: 'ID do dispositivo',
-        vllm: 'Atualize para a edição comercial para gerenciar serviços vLLM de forma centralizada no 3Panel, incluindo implantação, configuração, operações de ciclo de vida e acompanhamento de tarefas.',
         tamperHelper:
             'Falha na operação, o arquivo ou pasta tem proteção contra alteração habilitada. Verifique e tente novamente!',
     },
@@ -6429,18 +6427,6 @@ const message = {
             modelDownloaderTitle4: 'Gerenciamento local',
             modelDownloaderContent4:
                 'Gerencie diretórios de modelos locais em um só lugar, incluindo caminhos, tamanhos, horários e exclusão de modelos não usados.',
-            vllmTitle1: 'Gestão centralizada',
-            vllmContent1:
-                'Integre instâncias vLLM distribuídas ao 3Panel e monitore versões, status operacional e diretórios de execução de forma centralizada.',
-            vllmTitle2: 'Implantação rápida',
-            vllmContent2:
-                'Utilize formulários visuais para selecionar versões, montar diretórios de modelos e configurar parâmetros de inicialização, reduzindo a complexidade da configuração manual.',
-            vllmTitle3: 'Eficiência operacional',
-            vllmContent3:
-                'Gerencie a criação, edição, inicialização, parada, reinicialização, exclusão de instâncias e o acompanhamento de tarefas em uma única interface, aumentando a eficiência operacional dos serviços de modelos locais.',
-            vllmTitle4: 'Configuração flexível',
-            vllmContent4:
-                'Gerencie portas, contêineres, comandos de inicialização e configurações do Compose de forma unificada por meio de opções avançadas, facilitando implantações padronizadas e ajustes posteriores.',
         },
         node: {
             master: 'Nó Principal',

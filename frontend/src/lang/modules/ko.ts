@@ -3177,9 +3177,7 @@ const message = {
         restoreCommunityStarting: '커뮤니티 버전을 준비 중입니다. 완료되면 패널이 자동으로 다시 시작됩니다.',
         technicalAdvice: '기술 상담',
         advice: '상담',
-        introduce: '기능 소개',
         deviceID: '장치 ID',
-        vllm: '상용 버전으로 업그레이드하면 3Panel에서 vLLM 서비스의 배포, 구성, 수명 주기 작업 및 작업 추적을 중앙에서 관리할 수 있습니다.',
         tamperHelper: '작업 실패, 파일/폴더에 변조 방지가 활성화되어 있습니다. 확인 후 다시 시도하세요!',
     },
     clean: {
@@ -6162,18 +6160,6 @@ const message = {
             modelDownloaderTitle4: '로컬 관리',
             modelDownloaderContent4:
                 '로컬 모델 디렉토리를 중앙에서 관리하고 경로, 크기, 시간을 확인하며 불필요한 모델 파일을 삭제합니다.',
-            vllmTitle1: '통합 관리',
-            vllmContent1:
-                '분산된 vLLM 서비스를 3Panel에 통합하여 인스턴스、버전、상태、실행 디렉토리를 집중 조회할 수 있습니다.',
-            vllmTitle2: '빠른 배포',
-            vllmContent2:
-                '시각적 양식으로 버전 선택、모델 디렉토리 마운트、시작 매개변수 설정을 완료하여 수동 구성 비용을 줄입니다.',
-            vllmTitle3: '운영 효율성',
-            vllmContent3:
-                '같은 페이지에서 생성、편집、시작、중지、재시작、삭제、작업 추적을 완료하여 로컬 모델 서비스 유지보수 효율을 향상시킵니다.',
-            vllmTitle4: '구성 제어',
-            vllmContent4:
-                '고급 설정으로 포트、컨테이너、시작 명령、Compose 구성을 통합 관리하여 표준화된 배포와 후속 조정을 용이하게 합니다.',
         },
         node: {
             master: '주 노드',

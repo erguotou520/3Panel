@@ -3236,9 +3236,7 @@ const message = {
         restoreCommunityStarting: 'コミュニティ版を準備しています。完了後、パネルは自動的に再起動します。',
         technicalAdvice: '技術的な相談',
         advice: '相談',
-        introduce: '機能の紹介',
         deviceID: 'デバイス ID',
-        vllm: '商用版にアップグレードすると、3Panel で vLLM サービスのデプロイ、設定、ライフサイクル操作、タスク追跡を一元管理できます。',
         tamperHelper: '操作失敗。ファイル/フォルダの改ざん保護を確認してください。',
     },
     clean: {
@@ -6292,18 +6290,6 @@ const message = {
             modelDownloaderTitle4: 'ローカル管理',
             modelDownloaderContent4:
                 'ローカルモデルディレクトリを一元管理し、パス、サイズ、日時の確認と不要なモデルファイルの削除を行えます。',
-            vllmTitle1: '一元管理',
-            vllmContent1:
-                '分散した vLLM サービスを 3Panel に統合し、インスタンス、バージョン、状態、実行ディレクトリを一元的に確認できます。',
-            vllmTitle2: '高速デプロイ',
-            vllmContent2:
-                'ビジュアルフォームでバージョン選択、モデルディレクトリマウント、起動パラメータ設定を完了し、手動構成コストを削減します。',
-            vllmTitle3: '運用効率',
-            vllmContent3:
-                '同じページで作成、編集、起動、停止、再起動、削除、タスク追跡を完結し、ローカルモデルサービスの保守効率を向上させます。',
-            vllmTitle4: '設定の可控性',
-            vllmContent4:
-                '高度な設定でポート、コンテナ、起動コマンド、Compose 設定を一元管理し、標準化されたデリバリーと后续調整を容易にします。',
         },
         node: {
             master: '主ノード',

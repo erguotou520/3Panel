@@ -3317,11 +3317,9 @@ const message = {
             'Después de cambiar de versión, podrá iniciar sesión en Community Edition con la cuenta actual de superadministrador de Enterprise. Los datos exclusivos de Enterprise se eliminarán durante el cambio. Proceda con precaución.',
         restoreCommunityStarting:
             'Preparando Community Edition. El panel se reiniciará automáticamente cuando termine.',
-        introduce: 'Introducción de funciones',
         deviceID: 'ID del dispositivo',
         tamperHelper:
             'La operación falló, el archivo/carpeta tiene protección antimanipulación. Revise e intente de nuevo.',
-        vllm: 'Actualiza a la edición comercial para gestionar servicios vLLM en 3Panel con despliegue, configuración, operaciones del ciclo de vida y seguimiento de tareas centralizados.',
     },
     clean: {
         scan: 'Iniciar escaneo',
@@ -6405,18 +6403,6 @@ const message = {
             modelDownloaderTitle4: 'Gestión local',
             modelDownloaderContent4:
                 'Gestiona directorios de modelos locales en un solo lugar, incluyendo rutas, tamaños, fechas y eliminación de modelos no usados.',
-            vllmTitle1: 'Gestión centralizada',
-            vllmContent1:
-                'Centralice la gestión de instancias vLLM distribuidas y supervise versiones, estado de ejecución y directorios de trabajo desde una única plataforma.',
-            vllmTitle2: 'Despliegue rápido',
-            vllmContent2:
-                'Configure y despliegue servicios vLLM en minutos mediante formularios visuales, sin necesidad de complejas operaciones manuales.',
-            vllmTitle3: 'Operación eficiente',
-            vllmContent3:
-                'Realice la creación, edición, inicio, detención, reinicio y eliminación de instancias desde una sola interfaz para simplificar la operación diaria.',
-            vllmTitle4: 'Control avanzado',
-            vllmContent4:
-                'Personalice puertos, contenedores, comandos de arranque y archivos Compose con opciones avanzadas para lograr implementaciones más flexibles y estandarizadas.',
         },
         node: {
             master: 'Nodo Principal',

@@ -3249,10 +3249,8 @@ const message = {
         restoreCommunityConfirm:
             'After switching versions, you can sign in to Community Edition with the current Enterprise super administrator account. Enterprise-only data will be removed during the switch. Proceed with caution.',
         restoreCommunityStarting: 'Preparing Community Edition. The panel will restart automatically when ready.',
-        introduce: 'Feature Introduction',
         deviceID: 'Device ID',
         tamperHelper: 'Operation failed, the file or folder has tamper protection enabled. Please check and try again!',
-        vllm: 'Upgrade to Commercial Edition to manage vLLM services in 3Panel with centralized deployment, configuration, lifecycle operations, and task tracking.',
     },
     clean: {
         scan: 'Start scanning',
@@ -6292,18 +6290,6 @@ const message = {
             clusterTitle3: 'Replication Status',
             clusterContent3:
                 'Displays master-slave replication status and delay information, assisting in troubleshooting synchronization issues',
-            vllmTitle1: 'Centralized Management',
-            vllmContent1:
-                'Bring scattered vLLM services into 3Panel for unified visibility of instances, versions, status, and runtime paths.',
-            vllmTitle2: 'Fast Deployment',
-            vllmContent2:
-                'Use a visual form to configure version selection, model mounts, and startup parameters with less manual orchestration.',
-            vllmTitle3: 'Operational Efficiency',
-            vllmContent3:
-                'Handle create, edit, start, stop, restart, delete, and task tracking from one page to simplify local model operations.',
-            vllmTitle4: 'Controlled Configuration',
-            vllmContent4:
-                'Standardize ports, containers, startup commands, and Compose settings through advanced options for easier delivery and later adjustments.',
             modelDownloaderTitle1: 'Model Discovery',
             modelDownloaderContent1:
                 'Search HuggingFace model repositories directly and view downloads, likes, model details, and file lists.',

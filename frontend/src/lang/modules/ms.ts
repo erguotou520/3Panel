@@ -3311,9 +3311,7 @@ const message = {
             'Community Edition sedang disediakan. Panel akan dimulakan semula secara automatik apabila selesai.',
         technicalAdvice: 'Konsultasi Teknikal',
         advice: 'Konsultasi',
-        introduce: 'Pengenalan Ciri',
         deviceID: 'ID peranti',
-        vllm: 'Naik taraf ke Edisi Komersial untuk mengurus perkhidmatan vLLM secara berpusat dalam 3Panel, termasuk penggunaan, konfigurasi, operasi kitar hayat dan penjejakan tugas.',
         tamperHelper: 'Operasi gagal, fail atau folder mempunyai perlindungan gangguan. Sila semak dan cuba lagi!',
     },
     clean: {
@@ -6397,18 +6395,6 @@ const message = {
             modelDownloaderTitle4: 'Pengurusan Tempatan',
             modelDownloaderContent4:
                 'Urus direktori model tempatan di satu tempat, termasuk laluan, saiz, masa dan pemadaman fail model yang tidak digunakan.',
-            vllmTitle1: 'Pengurusan Berpusat',
-            vllmContent1:
-                'Integrasikan instans vLLM yang diedarkan ke dalam 3Panel dan pantau versi, status operasi serta direktori kerja secara berpusat.',
-            vllmTitle2: 'Penerapan Pantas',
-            vllmContent2:
-                'Gunakan borang visual untuk memilih versi, memasang direktori model dan mengkonfigurasi parameter permulaan, sekali gus mengurangkan kerumitan konfigurasi manual.',
-            vllmTitle3: 'Operasi yang Cekap',
-            vllmContent3:
-                'Urus penciptaan, penyuntingan, permulaan, pemberhentian, mulakan semula, penghapusan instans serta pemantauan tugas dalam satu antara muka bagi meningkatkan kecekapan operasi perkhidmatan model tempatan.',
-            vllmTitle4: 'Konfigurasi Fleksibel',
-            vllmContent4:
-                'Urus port, kontena, arahan permulaan dan konfigurasi Compose secara berpusat melalui tetapan lanjutan untuk memudahkan penerapan piawai serta pelarasan selepas pelaksanaan.',
         },
         node: {
             master: 'Nod Utama',
