@@ -68,6 +68,7 @@
 | 更新说明 | `/package/stable/v1.0.0/release/3panel-v1.0.0-release-notes` | Markdown/纯文本 | 弹窗无说明（不阻断） |
 | **升级包** | `/package/stable/v1.0.0/release/3panel-v1.0.0-linux-amd64.tar.gz` | tar.gz | **升级直接失败** |
 | **完整性校验** | 同上 + `.sha256` | 一行摘要 | 跳过校验并记警告 |
+| **一键安装脚本** | `/package/quick_start.sh` | bash 脚本，**路径里不带版本** | 一键安装命令 404 |
 
 > `latest` 由 `loadVersion()` 直接 `string(body)` 使用，**没有 TrimSpace**。
 > 若带尾换行，版本号会变成 `"v1.0.0\n"` 而解析失败 —— 发布时必须用 `printf '%s'`（无换行）写入。
@@ -142,6 +143,92 @@ curl -s 'https://<worker>/status' | jq .resource
 | 代理连通性检测 | `/`（根路径） | 只需能建连，**不看状态码**，见 §6 |
 | 文档搜索索引 | `/docs/v2/search/search_index.json` | 可选，用于「更新日志」；缺失只是没内容 |
 | 应用商店 | `/package/{mode}/3panel/...` | 已就绪，见 `scripts/appstore-mirror` |
+
+### 2.4 一键安装脚本（`/package/quick_start.sh`）
+
+新装机器的一条命令（`proxy.erguotou.me` 是 `3panel.erguotou.me` 的前缀反代，
+国内访问更稳；两种写法都通，带完整 URL 的那种更明确）：
+
+```bash
+bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
+
+# 直连（同一份文件）
+bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
+```
+
+> ⚠️ **必须用 `bash -c "$(...)"`，不要 `curl ... | bash`。**
+> 包内 `install.sh` 会用 stdin 询问端口/账号/密码；管道会把脚本文本喂给 `read`，
+> 结果是创建出**空用户名空密码**的面板。
+
+**它做什么**（`packaging/quick_start.sh`，只做引导，安装逻辑仍全在包内 `install.sh`）：
+
+1. 校验命令/root/是否已安装 → 2. 解析架构（`uname -m`）→ 3. 取 `{mode}/latest` →
+4. 下载 `3panel-{ver}-linux-{arch}.tar.gz` → 5. 校验 `<pkg>.sha256` →
+6. 解压 → 7. `cd` 进包目录执行 `install.sh`，并把退出码原样返回。
+
+**地址解析顺序**（第一个能返回非空版本号的胜出，失败的会打印
+`unreachable, trying the next base: …`）：
+
+```
+PANEL3_MIRROR（若设，唯一候选）
+  └→ {PANEL3_PROXY}/{PANEL3_ORIGIN}     # 默认 https://proxy.erguotou.me/https://3panel.erguotou.me
+      └→ {PANEL3_ORIGIN}                # 默认 https://3panel.erguotou.me
+```
+
+**下载为什么要重试与续传**：实测直连 `3panel.erguotou.me` 拉 60 MB 包会周期性卡住，
+4 次里有 3 次在 300 s 内只跑到 13–26 MB 就断；走代理拿到过 121 s 跑完全量（≈500 KB/s）。
+所以脚本用 `curl -C -` 续传 + 默认 5 次重试。镜像站若忽略 Range（curl 退出码 33），
+会自动去掉续传标志整包重下 —— 这条路径有专门的故障注入测试覆盖。
+
+**校验和策略**：`.sha256` 取不到 → 只告警不阻断（避免校验文件故障堵塞安装）；
+取到但与实际不符 → **删除包并中止，不执行 install.sh**。
+
+**随脚本生效的安全闸门**（都在下载 60 MB 之前）：
+
+| 条件 | 行为 |
+| --- | --- |
+| 非 root | 直接拒绝（省掉一次 60 MB 下载） |
+| `/usr/local/bin/3pctl` 已存在 | 拒绝：升级请走面板，或先 `3pctl uninstall` |
+| 非交互终端且未提供 `PANEL_USERNAME`/`PANEL_PASSWORD` | 拒绝（否则 `read` 拿到 EOF，会建出空密码账号） |
+| `INSTALL_MODE` 不是 stable/dev/beta | 拒绝 |
+| 架构不是 amd64/arm64（含 `ARCH` 覆盖值） | 拒绝 |
+
+**环境变量**（前缀是 `PANEL3_`，不是 `3PANEL_` —— shell 变量名不能以数字开头）：
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `INSTALL_MODE` | `stable` | `stable` / `dev` / `beta` |
+| `ARCH` | 自动 | `amd64` / `arm64`，其它值直接报错 |
+| `PANEL3_MIRROR` | 空 | 指定唯一地址，跳过探测 |
+| `PANEL3_ORIGIN` | `https://3panel.erguotou.me` | 发布源 |
+| `PANEL3_PROXY` | `https://proxy.erguotou.me` | 前缀反代 |
+| `PANEL3_NO_PROXY` | `0` | `1` = 只直连 |
+| `PANEL3_WORKDIR` | `./3panel-install` | 下载与解压目录（重复运行会复用已校验的包） |
+| `PANEL3_RETRIES` | `5` | 每个地址的下载尝试次数 |
+| `PANEL3_LANG` | 跟随 `$LANG` | `zh` / `en` |
+| `PANEL_BASE_DIR` / `PANEL_PORT` / `PANEL_*` | 空 | 交给 `install.sh`，填写即无人值守 |
+
+无人值守安装 —— 变量必须放进**环境**，`install.sh` 不解析命令行参数：
+
+```bash
+sudo PANEL_PORT=10086 PANEL_USERNAME=admin PANEL_PASSWORD='<密码>' \
+  bash -c "$(curl -sSL <上面的脚本地址>)"
+```
+
+**发布方式**：`packaging/quick_start.sh` 是唯一源文件。
+
+| 工作流 | 触发 | 上传目标 |
+| --- | --- | --- |
+| `publish-bootstrap.yml` | 改动该文件并推 `main`，或手动触发 | `/package/quick_start.sh` |
+| `release-stable.yml` | 发版（兜底，路径同上） | 同上 |
+
+路径里**不带版本号**（用户的命令是固定的），所以改脚本不必发版。
+`dist/quick_start.sh` 也会随构建产出。
+
+> ⚠️ `.gitignore` 里上游留了一条裸文件名 `quick_start.sh`（本意是忽略下载到仓库
+> 根目录的那份），它会把 `packaging/quick_start.sh` **一起静默忽略** —— 新文件在
+> `git status` 里根本不出现，CI 里也就找不到文件。已锚定为 `/quick_start.sh`，
+> 与 `/3pctl`、`/install.sh` 同一处理。
 
 ---
 
@@ -484,6 +571,9 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 | `core/utils/xpack/helper/multi_node_helper.go`、`agent/utils/xpack/helper/multi_node.go` | 同上（注释本就要求信任系统根证书） |
 | `agent/utils/cloud_storage/client/ali.go` | 移除 8 处 `InsecureSkipVerify`（`api.alipan.com` 是公网 CA 证书） |
 | `core/utils/cloud_storage/refresh_token.go` | 同上（`api.aliyundrive.com`） |
+| `packaging/quick_start.sh` | **新增**：一键安装引导脚本（架构探测 / 多地址回退 / 断点续传 / sha256 校验 / 交接给包内 `install.sh`），见 §2.4 |
+| `.github/workflows/publish-bootstrap.yml` | **新增**：改动 `packaging/quick_start.sh` 即上传 `/package/quick_start.sh`（路径不带版本，用户命令固定） |
+| `.gitignore` | 裸文件名 `quick_start.sh` 锚定为 `/quick_start.sh`（原规则会静默忽略 `packaging/quick_start.sh`） |
 | `packaging/` | **新增**：`3pctl`、`install.sh`、`build-release.sh`、`initscript/`（8 个服务定义）、`lang/`（内置语言包） |
 | `packaging/build-release.sh` | 新增 `dist/lang.tar.gz` 产出（资源通道语言包）；GeoIP 多源取源 + `GEOIP_FILE`；新增「把 tag 版本 stamp 进 `go:embed` 的 `conf/app.yaml`，退出时还原」 |
 | `scripts/cf-appstore-sync/src/index.js` | 新增 `/sync-resource` 端点：把上游脚本库（+可选语言包 / GeoIP）镜像进 R2，带发布前校验与 stamp 幂等 |
@@ -506,6 +596,7 @@ probe $B/resource/scripts/scripts.tar.gz
 probe $B/resource/scripts/version.txt
 probe $B/package/stable/latest
 probe $B/package/dev/latest          # mode: dev 的面板只认这个（见 §2.1）
+probe $B/package/quick_start.sh      # 一键安装脚本（路径不带版本，见 §2.4）
 probe $B/dev/3panel.json.zip         # 应用商店也按 mode 分目录
 probe $B/dev/3panel.json.version.txt
 ```
@@ -516,7 +607,7 @@ probe $B/dev/3panel.json.version.txt
 | --- | --- | --- |
 | `/resource/geo/GeoIP.mmdb` | ✅ 200（19.5 MB） | 正常，见 §5.4 |
 | `/resource/language/lang.tar.gz` | ✅ 200（2.5 KB） | 已上传，与 `dist/lang.tar.gz` 逐字节一致 |
-| `/resource/scripts/*` | ⚠️ 404 | Worker 的 `/sync-resource` 会自动补（见 §2.2）；**Worker 还没部署完** |
+| `/resource/scripts/*` | ✅ 200（`version.txt` 10 B / `data.yaml` 7.3 KB / `scripts.tar.gz` 10.7 KB） | Worker 的 `/sync-resource` 已部署并跑过；`scripts.tar.gz` 与上游逐字节一致 |
 | `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.1` | 发布通道已上线（2026-09-18 首次发布，见下） |
 | `/dev/3panel.json.zip`、`.version.txt` | ✅ 200 | 应用商店正常（`mode: dev` 对应这一份） |
 | `/package/beta/latest` | 404 | 正常：还没发过 beta |

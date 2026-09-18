@@ -247,6 +247,17 @@ jobs:
             echo "::warning::dist/lang.tar.gz missing — /resource/language/lang.tar.gz not updated"
           fi
 
+          # One-line installer. Version-independent by design: end users curl it
+          # directly, so it lives at a fixed path. publish-bootstrap.yml also
+          # uploads it on every change to the file itself, so this is a backstop.
+          if [ -f "$OUT_DIR/quick_start.sh" ]; then
+            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/quick_start.sh" \
+              "s3://$S3_BUCKET/package/quick_start.sh" \
+              --content-type text/plain --cache-control 'no-cache'
+          else
+            echo "::warning::dist/quick_start.sh missing — /package/quick_start.sh not updated"
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:

@@ -62,12 +62,14 @@ core/utils/xpack/enterprise.go
 dist/
 # These are release artifacts that the upstream packaging flow drops at the
 # repository ROOT. The leading slash is required: as bare filenames they also
-# matched packaging/3pctl and packaging/install.sh, silently keeping the
-# release tooling out of version control.
+# matched packaging/3pctl, packaging/install.sh and packaging/quick_start.sh,
+# silently keeping the release tooling out of version control. (quick_start.sh
+# was still bare until 2026-09-18 — a new packaging/quick_start.sh was invisible
+# to `git status`, so the publish-bootstrap workflow would have found no file.)
 /3pctl
 /3panel.service
 /install.sh
-quick_start.sh
+/quick_start.sh
 cmd/server/fileList.txt
 .fileList.txt
 3Panel.code-workspace

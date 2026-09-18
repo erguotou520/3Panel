@@ -1,0 +1,63 @@
+name: Publish quick_start.sh
+
+# The one-line installer is fetched by end users at a FIXED path with no version
+# in it:
+#
+#   bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
+#
+# so a change to packaging/quick_start.sh only reaches users if something uploads
+# it. release-stable.yml does that too, but tying it to a version tag would mean
+# a bug fix in the installer sits unpublished until the next release. This
+# workflow publishes it on every change instead, and can be run by hand.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - packaging/quick_start.sh
+      - .github/workflows/publish-bootstrap.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      # `secrets` cannot be referenced from a step `if:` — see the note in
+      # release-stable.yml. Resolve it here and test it in the step instead.
+      S3_BUCKET: ${{ vars.S3_BUCKET || secrets.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT || secrets.S3_ENDPOINT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Sanity-check the script
+        run: |
+          set -euo pipefail
+          bash -n packaging/quick_start.sh
+          echo "syntax OK, $(wc -c < packaging/quick_start.sh) bytes"
+
+      - name: Publish to object storage
+        if: ${{ env.S3_BUCKET != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'auto' }}
+        run: |
+          set -euo pipefail
+          ENDPOINT_ARG=""
+          [ -n "${S3_ENDPOINT:-}" ] && ENDPOINT_ARG="--endpoint-url $S3_ENDPOINT"
+          aws $ENDPOINT_ARG s3 cp packaging/quick_start.sh \
+            "s3://$S3_BUCKET/package/quick_start.sh" \
+            --content-type 'text/plain; charset=utf-8' \
+            --cache-control 'no-cache'
+          echo "published -> s3://$S3_BUCKET/package/quick_start.sh"
+
+      - name: Warn when publishing is not configured
+        if: ${{ env.S3_BUCKET == '' }}
+        run: |
+          echo "::warning::S3_BUCKET is empty — quick_start.sh was NOT uploaded."
+          echo "Set repository variable/secret S3_BUCKET (and S3_ENDPOINT," \
+               "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) to enable publishing."

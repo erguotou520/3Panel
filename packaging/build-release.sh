@@ -190,6 +190,18 @@ for ARCH in "${ARCHES[@]}"; do
         echo "lang.tar.gz: $(du -h "$OUT_DIR/lang.tar.gz" | cut -f1)  -> /resource/language/lang.tar.gz"
     fi
 
+    # ---- one-line installer ----------------------------------------------------
+    # Read by end users as `bash -c "$(curl -sSL <url>)"`, so it must stay
+    # reachable without a version in the path. publish-bootstrap.yml uploads it on
+    # every change to this file; this copy keeps a release self-contained.
+    if [[ -f "$PACKAGING_DIR/quick_start.sh" ]]; then
+        cp -f "$PACKAGING_DIR/quick_start.sh" "$OUT_DIR/quick_start.sh"
+        chmod 0644 "$OUT_DIR/quick_start.sh"
+        echo "quick_start.sh: $(du -h "$OUT_DIR/quick_start.sh" | cut -f1)  -> /package/quick_start.sh"
+    else
+        warn "packaging/quick_start.sh missing — /package/quick_start.sh not published"
+    fi
+
     # ---- GeoIP -----------------------------------------------------------------
     step "Fetching GeoIP database"
     geoip_ok=0
@@ -262,4 +274,5 @@ cat <<EOF
   dist/<package>.tar.gz.sha256                                -> /package/$CHANNEL/$VERSION/release/
   <release notes>                                             -> /package/$CHANNEL/$VERSION/release/3panel-$VERSION-release-notes
   dist/lang.tar.gz                                            -> /resource/language/lang.tar.gz
+  dist/quick_start.sh                                         -> /package/quick_start.sh
 EOF
