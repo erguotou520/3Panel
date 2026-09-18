@@ -3288,46 +3288,11 @@ const message = {
         upgradeCheck: 'Semak kemas kini',
     },
     license: {
-        offLine: 'Versi Luar Talian',
-        community: 'OSS',
-        oss: 'Perisian Sumber Terbuka',
-        ee: 'Edisi Perusahaan',
-        pro: 'Pro',
-        trial: 'Percubaan',
-        add: 'Tambah Edisi Komuniti',
-        licenseBindHelper: 'Kuota nod percuma hanya boleh digunakan apabila lesen terikat pada nod',
-        licenseAlert:
-            'Nod Edisi Komuniti hanya boleh ditambah apabila lesen terikat dengan betul pada nod. Hanya nod yang terikat dengan betul pada lesen menyokong penukaran.',
-        licenseUnbindHelper: 'Nod Edisi Komuniti dikesan untuk lesen ini. Sila lepaskan ikatan dan cuba lagi!',
-        subscription: 'Langganan',
-        perpetual: 'Lesen Perpetual',
-        product: 'Produk',
-        versionConstraint: '{0} Pembelian versi',
-        forceUnbind: 'Paksakan Nyahikat',
-        forceUnbindHelper:
-            'Memaksa nyahikat akan mengabaikan sebarang ralat yang berlaku semasa proses nyahikat dan akhirnya melepaskan ikatan lesen.',
-        updateForce: 'Kemas kini paksa (abaikan semua ralat semasa nyahikatan untuk memastikan operasi akhir berjaya)',
         trialInfo: 'Versi',
-        authorizationId: 'ID Langganan',
-        authorizedUser: 'Pengguna yang Dibenarkan',
-        lostHelper:
-            'Lesen telah mencapai had percubaan semula. Jalankan penyegerakan secara manual untuk memastikan ciri Edisi Komersial terus berfungsi dengan baik. butiran: ',
-        quickUpdate: 'Kemas Kini Pantas',
-        import: 'Import',
-        power: 'Kebenaran',
-        unbindHelper:
-            'Semua Tetapan berkaitan Edisi Komersial akan dibersihkan selepas nyahikat. Adakah anda mahu meneruskan?',
         importLicense: 'Lesen',
-        securityWarningTitle: 'Jangan gunakan lesen retak atau lesen daripada sumber yang tidak diketahui.',
-        securityWarningContent:
-            '3Panel perlu dijalankan oleh pengguna dengan keistimewaan pentadbiran sistem. Lesen tidak rasmi atau versi yang diubah suai boleh menyebabkan pelayan hilang kawalan, kebocoran data dan risiko keselamatan serius lain. Dapatkan lesen dan pakej pemasangan hanya melalui saluran rasmi.',
         importHelper: 'Sila klik atau seret fail lesen ke sini',
-        licenseRequiredTip:
-            'Lesen belum diimport. Salin ID peranti, dapatkan lesen dan importkannya sebelum anda boleh log masuk.',
         licenseRequiredShortTip:
             'Sila salin ID peranti terlebih dahulu untuk mendapatkan lesen. Anda boleh log masuk selepas mengimport lesen.',
-        licenseRequiredUserTip:
-            'Lesen Enterprise Edition belum diikat. Hubungi pentadbir super untuk mengimport lesen.',
         restoreCommunity: 'Pulihkan Community Edition',
         restoreCommunityOnline: 'Pemulihan dalam talian',
         restoreCommunityOffline: 'Pemulihan luar talian',
@@ -3346,39 +3311,9 @@ const message = {
             'Community Edition sedang disediakan. Panel akan dimulakan semula secara automatik apabila selesai.',
         technicalAdvice: 'Konsultasi Teknikal',
         advice: 'Konsultasi',
-        licenseSync: 'Penyegerakan Lesen',
-        knowMorePro: 'Ketahui Lebih Lanjut',
-        closeAlert: 'Halaman semasa boleh ditutup dalam tetapan panel',
         introduce: 'Pengenalan Ciri',
         deviceID: 'ID peranti',
-        corporation: 'Syarikat lesen',
-        expired: 'Masa tamat',
-        edition: 'Edisi',
-        standard: 'Standard',
-        enterprise: 'Perusahaan',
-        count: 'Kuantiti lesen',
-        serialNo: 'Nombor siri',
-        remark: 'Catatan',
-        waf: 'Naik taraf ke Edisi Komersial untuk menggunakan peta sekatan, log, rekod sekatan, sekatan geografi, peraturan tersuai, halaman sekatan tersuai dan banyak lagi.',
-        tamper: 'Naik taraf ke Edisi Komersial untuk melindungi laman web daripada perubahan atau gangguan tanpa kebenaran.',
-        setting: 'Naik taraf ke Edisi Komersial untuk menyesuaikan logo panel, mesej alu-aluan dan maklumat lain.',
-        monitor:
-            'Naik taraf ke Edisi Komersial untuk melihat status laman web masa nyata, trend pelawat, sumber trafik, log permintaan dan lain-lain.',
-        alert: 'Naik taraf ke Edisi Komersial untuk menerima amaran SMS dan melihat log amaran.',
-        vm: 'Naik taraf kepada edisi komersial untuk mengurus mesin maya, imej, templat, rangkaian maya dan sumber storan dalam 3Panel.',
-        node: 'Naik taraf ke Edisi Komersial untuk mengurus berbilang pelayan Linux dengan 3Panel.',
-        nodeApp:
-            'Naik taraf ke Edisi Komersial untuk menaik taraf versi aplikasi berbilang nod tanpa menukar nod secara manual.',
-        nodeDashboard:
-            'Naik taraf ke Edisi Komersial untuk mengurus aplikasi, laman web, pangkalan data dan tugas berjadual berbilang nod secara berpusat.',
-        fileExchange: 'Naik taraf ke Edisi Komersial untuk memindahkan fail dengan pantas antara pelayan.',
-        app: 'Naik taraf ke Edisi Komersial untuk melihat maklumat perkhidmatan dan pemantauan anomali dalam aplikasi mudah alih.',
-        cluster: 'Naik taraf ke Edisi Komersial untuk mengurus kelompok utama-replika MySQL/Postgres/Redis.',
         vllm: 'Naik taraf ke Edisi Komersial untuk mengurus perkhidmatan vLLM secara berpusat dalam 3Panel, termasuk penggunaan, konfigurasi, operasi kitar hayat dan penjejakan tugas.',
-        'model-downloader':
-            'Naik taraf kepada edisi komersial untuk mencari, memuat turun dan mengurus fail model tempatan daripada HuggingFace, ModelScope atau cermin serasi, dengan direktori model dan tugasan muat turun berpusat.',
-        exceptionalHelper:
-            'Pengesahan penyegerakan lesen tidak normal. Klik butang sync secara manual untuk pastikan fungsi Edisi Komersial berjalan baik. butiran: ',
         tamperHelper: 'Operasi gagal, fail atau folder mempunyai perlindungan gangguan. Sila semak dan cuba lagi!',
     },
     clean: {
@@ -4643,7 +4578,6 @@ const message = {
             'Peringatan mesra: Lesen Pro Edition anda akan tamat dalam {0} hari, dan semua ciri Pro Edition tidak lagi dapat diakses. Sila perbaharui segera untuk memastikan penggunaan berterusan.',
         menu: 'Pro',
         upage: 'Pembina Laman Web AI',
-        proAlert: 'Tingkatkan ke Edisi Komersial untuk menggunakan ciri ini',
         opsReport: {
             name: 'Laporan Operasi',
             overview: 'Gambaran Keseluruhan',
@@ -6902,7 +6836,6 @@ const message = {
                 templateVariableInvalid: 'Body mengandungi pemboleh ubah templat yang tidak disokong',
                 secretRequired: 'Masukkan nilai rahsia atau pilih Kekalkan atau Kosongkan',
             },
-            alertConfigProHelper: 'Edisi Komersial menambah lebih banyak saluran pemberitahuan.',
         },
         theme: {
             lingXiaGold: 'LXware Gold',

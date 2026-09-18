@@ -3292,48 +3292,11 @@ const message = {
         upgradeCheck: 'Verificar atualizações',
     },
     license: {
-        offLine: 'Versão Offline',
-        community: 'Gratuito',
-        oss: 'Open Source Software',
-        ee: 'Edição Enterprise',
-        pro: 'Pro',
-        trial: 'Teste',
-        add: 'Adicionar Edição Comunitária',
-        licenseBindHelper: 'As cotas de nó gratuitas só podem ser usadas quando a licença está vinculada a um nó',
-        licenseAlert:
-            'Nós da Edição Comunitária só podem ser adicionados quando a licença está devidamente vinculada a um nó. Apenas nós devidamente vinculados à licença suportam troca.',
-        licenseUnbindHelper:
-            'Nós da Edição Comunitária detectados para esta licença. Por favor, desvincule e tente novamente!',
-        subscription: 'Assinatura',
-        perpetual: 'Licença Perpétua',
-        product: 'Produto',
-        versionConstraint: '{0} Compra do versão',
-        forceUnbind: 'Forçar Desvinculação',
-        forceUnbindHelper:
-            'Forçar a desvinculação ignorará quaisquer erros que ocorram durante o processo de desvinculação e, em última análise, liberará a vinculação da licença.',
-        updateForce:
-            'Atualização forçada (ignora todos os erros durante o desvinculamento para garantir o sucesso da operação final)',
         trialInfo: 'Versão',
-        authorizationId: 'ID da Assinatura',
-        authorizedUser: 'Usuário autorizado',
-        lostHelper:
-            'A licença atingiu o limite de tentativas. Execute a sincronização manualmente para garantir que os recursos da edição comercial continuem funcionando. detalhes: ',
-        quickUpdate: 'Atualização rápida',
-        import: 'Importar',
-        power: 'Autorizar',
-        unbindHelper:
-            'Todas as configurações relacionadas à edição comercial serão limpas após a desvinculação. Você deseja continuar?',
         importLicense: 'Licença',
-        securityWarningTitle: 'Não use licenças crackeadas ou de fontes desconhecidas.',
-        securityWarningContent:
-            'O 3Panel precisa ser executado por um usuário com privilégios de administração do sistema. Licenças não oficiais ou versões adulteradas podem causar perda de controle do servidor, vazamento de dados e outros riscos graves de segurança. Obtenha licenças e instaladores apenas pelos canais oficiais.',
         importHelper: 'Clique ou arraste o arquivo de licença aqui',
-        licenseRequiredTip:
-            'A licença ainda não foi importada. Copie o ID do dispositivo, obtenha a licença e importe-a antes de fazer login.',
         licenseRequiredShortTip:
             'Copie primeiro o ID do dispositivo para obter a licença. Você poderá entrar depois de importá-la.',
-        licenseRequiredUserTip:
-            'A licença Enterprise Edition não está vinculada. Entre em contato com o superadministrador para importar a licença.',
         restoreCommunity: 'Restaurar Community Edition',
         restoreCommunityOnline: 'Restauração online',
         restoreCommunityOffline: 'Restauração offline',
@@ -3352,40 +3315,9 @@ const message = {
             'Preparando a Community Edition. O painel será reiniciado automaticamente quando estiver pronto.',
         technicalAdvice: 'Consultoria técnica',
         advice: 'Consultoria',
-        licenseSync: 'Sincronização de Licença',
-        knowMorePro: 'Saiba mais',
-        closeAlert: 'A página atual pode ser fechada nas configurações do painel',
         introduce: 'Introdução de recursos',
         deviceID: 'ID do dispositivo',
-        corporation: 'Empresa licenciada',
-        expired: 'Horário de expiração',
-        edition: 'Edição',
-        standard: 'Padrão',
-        enterprise: 'Enterprise',
-        count: 'Quantidade licenciada',
-        serialNo: 'Número de série',
-        remark: 'Observação',
-        waf: 'Faça upgrade para a edição comercial para usar mapa de bloqueios, logs, registros de bloqueio, bloqueio geográfico, regras personalizadas, páginas de bloqueio personalizadas e mais.',
-        tamper: 'Faça upgrade para a edição comercial para proteger sites contra alterações ou adulterações não autorizadas.',
-        setting:
-            'Faça upgrade para a edição comercial para personalizar o logo do painel, a mensagem de boas-vindas e mais.',
-        monitor:
-            'Faça upgrade para a edição comercial para acompanhar o status do site em tempo real, tendências de visitantes, origens de tráfego, logs de requisições e mais.',
-        alert: 'Faça upgrade para a edição comercial para receber alertas por SMS e consultar os logs de alertas.',
-        vm: 'Atualize para a edição comercial para gerenciar máquinas virtuais, imagens, modelos, redes virtuais e recursos de armazenamento no 3Panel.',
-        node: 'Atualize para a edição comercial para gerenciar vários servidores Linux com o 3Panel.',
-        nodeApp:
-            'Atualize para a edição comercial para atualizar versões de aplicativos multi-nó sem alternar manualmente entre os nós.',
-        nodeDashboard:
-            'Atualize para a edição comercial para gerenciar aplicativos, sites, bancos de dados e tarefas agendadas multi-nó de forma centralizada.',
-        fileExchange: 'Atualize para a edição comercial para transferir arquivos rapidamente entre vários servidores.',
-        app: 'Faça upgrade para a edição comercial para visualizar informações do serviço e monitoramento de anomalias no aplicativo móvel.',
-        cluster: 'Atualize para a edição comercial para gerenciar clusters primário-réplica de MySQL/Postgres/Redis.',
         vllm: 'Atualize para a edição comercial para gerenciar serviços vLLM de forma centralizada no 3Panel, incluindo implantação, configuração, operações de ciclo de vida e acompanhamento de tarefas.',
-        'model-downloader':
-            'Atualize para a edição comercial para pesquisar, baixar e gerenciar arquivos de modelos locais do HuggingFace, ModelScope ou mirrors compatíveis, com diretórios de modelos e tarefas de download centralizados.',
-        exceptionalHelper:
-            'A verificação da sincronização da licença está anormal. Clique em sincronizar manualmente para garantir o funcionamento da edição comercial. detalhe: ',
         tamperHelper:
             'Falha na operação, o arquivo ou pasta tem proteção contra alteração habilitada. Verifique e tente novamente!',
     },
@@ -4668,7 +4600,6 @@ const message = {
             'Lembrete: Sua licença da Pro Edition expira em {0} dias. Depois disso, todos os recursos da Pro Edition deixarão de ficar disponíveis. Renove a licença para manter o uso contínuo.',
         menu: 'Pro',
         upage: 'Construtor de Sites com IA',
-        proAlert: 'Atualize para comercial para usar este recurso',
         opsReport: {
             name: 'Relatório de Operações',
             overview: 'Visão geral',
@@ -6938,7 +6869,6 @@ const message = {
                 templateVariableInvalid: 'O Body contém uma variável de modelo não compatível',
                 secretRequired: 'Informe um segredo ou escolha Manter inalterado ou Limpar',
             },
-            alertConfigProHelper: 'A edição comercial adiciona mais canais de notificação.',
         },
         theme: {
             lingXiaGold: 'LXware Gold',

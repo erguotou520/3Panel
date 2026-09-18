@@ -3296,46 +3296,11 @@ const message = {
         recoverFailed: 'Error al restaurar la instantánea',
     },
     license: {
-        community: 'OSS',
-        oss: 'Software Open Source',
-        ee: 'Edición Enterprise',
-        pro: 'Pro',
-        trial: 'Prueba',
-        add: 'Agregar versión Community',
-        licenseBindHelper:
-            'Las cuotas de nodo gratuitas solo se pueden utilizar cuando la licencia está vinculada a un nodo',
-        licenseAlert:
-            'Solo se pueden agregar nodos Community cuando la licencia está correctamente vinculada. Solo los nodos vinculados admiten cambios.',
-        licenseUnbindHelper: 'Nodos Community detectados en esta licencia. Desvincule e intente nuevamente.',
-        subscription: 'Suscripción',
-        perpetual: 'Perpetua',
-        product: 'Producto',
-        versionConstraint: '{0} Compra de versión',
-        forceUnbind: 'Desvinculación forzada',
-        forceUnbindHelper: 'La desvinculación forzada ignorará errores y liberará la licencia.',
-        updateForce: 'Forzar actualización (ignorar errores para liberar la licencia)',
         trialInfo: 'Versión',
-        authorizationId: 'ID de autorización',
-        authorizedUser: 'Usuario autorizado',
-        lostHelper:
-            'La licencia alcanzó el máximo de reintentos. Sincronícela manualmente para activar funciones comerciales.',
-        exceptionalHelper:
-            'Verificación de licencia anómala. Sincronícela manualmente para activar funciones comerciales. detalle: ',
-        quickUpdate: 'Actualización rápida',
-        import: 'Importar',
-        power: 'Autorizar',
-        unbindHelper: 'Se eliminarán todos los ajustes comerciales tras desvincular. ¿Desea continuar?',
         importLicense: 'Importar licencia',
-        securityWarningTitle: 'No uses licencias crackeadas ni de origen desconocido.',
-        securityWarningContent:
-            '3Panel debe ejecutarse con un usuario con permisos de administración del sistema. Las licencias no oficiales o las versiones manipuladas pueden causar pérdida de control del servidor, filtraciones de datos y otros riesgos graves de seguridad. Obtén licencias e instaladores solo desde canales oficiales.',
         importHelper: 'Haga clic o arrastre el archivo de licencia aquí',
-        licenseRequiredTip:
-            'La licencia aún no se ha importado. Copie el ID del dispositivo, obtenga la licencia e impórtela antes de iniciar sesión.',
         licenseRequiredShortTip:
             'Primero copie el ID del dispositivo para obtener una licencia. Podrá iniciar sesión después de importarla.',
-        licenseRequiredUserTip:
-            'La licencia Enterprise Edition no está vinculada. Contacte con un superadministrador para importar la licencia.',
         restoreCommunity: 'Restaurar Community Edition',
         restoreCommunityOnline: 'Restauración en línea',
         restoreCommunityOffline: 'Restauración sin conexión',
@@ -3352,40 +3317,11 @@ const message = {
             'Después de cambiar de versión, podrá iniciar sesión en Community Edition con la cuenta actual de superadministrador de Enterprise. Los datos exclusivos de Enterprise se eliminarán durante el cambio. Proceda con precaución.',
         restoreCommunityStarting:
             'Preparando Community Edition. El panel se reiniciará automáticamente cuando termine.',
-        licenseSync: 'Sincronizar licencia',
-        knowMorePro: 'Ver más',
-        closeAlert: 'Puede cerrar la página en la configuración del panel',
         introduce: 'Introducción de funciones',
         deviceID: 'ID del dispositivo',
-        corporation: 'Empresa autorizada',
-        expired: 'Hora de expiración',
-        edition: 'Edición',
-        standard: 'Estándar',
-        enterprise: 'Enterprise',
-        count: 'Cantidad autorizada',
-        serialNo: 'Número de serie',
-        remark: 'Observación',
-        waf: 'Actualizar a la edición comercial permite interceptación, logs, geobloqueo, reglas, páginas personalizadas, etc.',
-        tamper: 'Actualizar a la edición comercial protege sitios ante modificaciones no autorizadas.',
         tamperHelper:
             'La operación falló, el archivo/carpeta tiene protección antimanipulación. Revise e intente de nuevo.',
-        setting: 'Actualizar a la edición comercial permite personalizar logo, mensaje de bienvenida y más.',
-        monitor: 'La edición comercial permite ver estado web en tiempo real, tendencias, logs, etc.',
-        alert: 'La edición comercial permite recibir alertas SMS y ver logs, control total de eventos clave.',
-        vm: 'Actualice a la edición comercial para gestionar máquinas virtuales, imágenes, plantillas, redes virtuales y recursos de almacenamiento en 3Panel.',
-        node: 'Actualizar a la edición comercial permite administrar varios servidores Linux con 3Panel.',
-        nodeApp:
-            'Actualizar a la edición comercial permite actualizar versiones de aplicaciones multinodo sin cambiar de nodo manualmente.',
-        nodeDashboard:
-            'Actualizar a la edición comercial permite la gestión centralizada de aplicaciones, sitios web, bases de datos y tareas programadas multinodo.',
-        fileExchange: 'La edición comercial permite transferir archivos entre varios servidores.',
-        app: 'La edición comercial permite ver información de servicio, monitoreo, etc. vía app móvil.',
-        cluster:
-            'Actualizar a la edición comercial permite gestionar clústeres primario-réplica de MySQL/Postgres/Redis.',
         vllm: 'Actualiza a la edición comercial para gestionar servicios vLLM en 3Panel con despliegue, configuración, operaciones del ciclo de vida y seguimiento de tareas centralizados.',
-        'model-downloader':
-            'Actualiza a la edición comercial para buscar, descargar y gestionar archivos de modelos locales desde HuggingFace, ModelScope o espejos compatibles, con directorios de modelos y tareas de descarga centralizados.',
-        offLine: 'Sin conexión',
     },
     clean: {
         scan: 'Iniciar escaneo',
@@ -4634,7 +4570,6 @@ const message = {
             'Aviso: Tu licencia de Pro Edition expirará en {0} días y todas las funciones de Pro Edition dejarán de estar disponibles. Renueva pronto para asegurar el uso continuo.',
         menu: 'Pro',
         upage: 'Constructor Web con IA',
-        proAlert: 'Actualiza a la edición comercial para usar esta función',
         opsReport: {
             name: 'Informe de operaciones',
             overview: 'Resumen',
@@ -6902,7 +6837,6 @@ const message = {
                 templateVariableInvalid: 'El Body contiene una variable de plantilla no compatible',
                 secretRequired: 'Introduce un secreto o elige Mantener sin cambios o Borrar',
             },
-            alertConfigProHelper: 'La edición comercial añade más canales de notificación.',
         },
         theme: {
             lingXiaGold: 'LXware Gold',

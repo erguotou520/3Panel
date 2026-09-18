@@ -3277,50 +3277,11 @@ const message = {
         recoverFailed: 'Anlık görüntü geri yükleme başarısız',
     },
     license: {
-        offLine: 'Çevrimdışı Sürüm',
-        community: 'OSS',
-        oss: 'Açık Kaynak Yazılım',
-        ee: 'Enterprise Edition',
-        pro: 'Pro',
-        trial: 'Deneme',
-        add: 'Topluluk Sürümünü Ekle',
-        licenseBindHelper: 'Ücretsiz düğüm kotası yalnızca lisans bir düğüme bağlı olduğunda kullanılabilir',
-        licenseAlert:
-            'Topluluk Sürümü düğümleri yalnızca lisans bir düğüme düzgün şekilde bağlandığında eklenebilir. Yalnızca düzgün şekilde bağlanmış düğümler geçiş yapmayı destekler.',
-        licenseUnbindHelper:
-            'Bu lisans için Topluluk Sürümü düğümleri tespit edildi. Lütfen bağlamayı kaldırın ve tekrar deneyin!',
-        subscription: 'Abonelik',
-        perpetual: 'Süresiz',
-        product: 'Ürün',
-        versionConstraint: '{0} Sürüm Satın Alma',
-        forceUnbind: 'Zorla Bağlantıyı Kaldır',
-        forceUnbindHelper:
-            'Zorla bağlantı kaldırma, bağlantı kaldırma işlemi sırasında oluşan hataları yok sayar ve nihayetinde lisans bağını serbest bırakır.',
-        updateForce:
-            'Zorla güncelle (bağlantı kaldırma sırasında tüm hataları yok sayarak son işlemin başarılı olmasını sağla)',
         trialInfo: 'Sürüm',
-        authorizationId: 'Abonelik ID',
-        authorizedUser: 'Yetkili kullanıcı',
-        lostHelper:
-            'Lisans yeniden deneme sınırına ulaştı. Ticari sürüm özelliklerinin düzgün çalışması için lütfen senkronizasyonu manuel olarak çalıştırın.',
-        exceptionalHelper:
-            'Lisans senkronizasyon doğrulaması başarısız oldu. Ticari sürüm özelliklerinin düzgün çalışması için lütfen senkronizasyonu manuel olarak çalıştırın. ayrıntı: ',
-        quickUpdate: 'Hızlı güncelleme',
-        import: 'İçe aktar',
-        power: 'Yetkilendir',
-        unbindHelper:
-            'Bağlantı kaldırıldığında tüm Ticari sürümle ilgili ayarlar temizlenecek. Devam etmek istiyor musunuz? ',
         importLicense: 'Lisansı içe aktar',
-        securityWarningTitle: 'Kırılmış veya kaynağı bilinmeyen lisansları kullanmayın.',
-        securityWarningContent:
-            '3Panel sistem yönetimi yetkilerine sahip bir kullanıcıyla çalışmalıdır. Resmi olmayan lisanslar veya değiştirilmiş sürümler sunucu kontrolünün kaybına, veri sızıntılarına ve diğer ciddi güvenlik risklerine neden olabilir. Lisansları ve kurulum paketlerini yalnızca resmi kanallardan edinin.',
         importHelper: 'Lütfen lisans dosyasını buraya tıklayın veya sürükleyin',
-        licenseRequiredTip:
-            'Lisans henüz içe aktarılmadı. Cihaz kimliğini kopyalayıp lisansı alın ve giriş yapmadan önce içe aktarın.',
         licenseRequiredShortTip:
             'Lütfen önce cihaz kimliğini kopyalayarak lisansı alın. Lisansı içe aktardıktan sonra giriş yapabilirsiniz.',
-        licenseRequiredUserTip:
-            'Enterprise Edition lisansı bağlı değil. Lisansı içe aktarması için süper yöneticiyle iletişime geçin.',
         restoreCommunity: 'Community Edition sürümünü geri yükle',
         restoreCommunityOnline: 'Çevrimiçi geri yükleme',
         restoreCommunityOffline: 'Çevrimdışı geri yükleme',
@@ -3337,40 +3298,11 @@ const message = {
             'Sürüm değişikliğinden sonra mevcut Enterprise süper yönetici hesabıyla Community Edition sürümüne giriş yapabilirsiniz. Enterprise sürümüne özel veriler geçiş sırasında silinecektir. Lütfen dikkatli ilerleyin.',
         restoreCommunityStarting:
             'Community Edition hazırlanıyor. Hazır olduğunda panel otomatik olarak yeniden başlatılacaktır.',
-        licenseSync: 'Lisans Senkronizasyonu',
-        knowMorePro: 'Daha Fazla Bilgi Edinin',
-        closeAlert: 'Geçerli sayfa panel ayarlarında kapatılabilir',
         introduce: 'Özellik Tanıtımı',
         deviceID: 'Cihaz Kimliği',
-        corporation: 'Lisans şirketi',
-        expired: 'Sona erme zamanı',
-        edition: 'Sürüm',
-        standard: 'Standart',
-        enterprise: 'Kurumsal',
-        count: 'Lisans sayısı',
-        serialNo: 'Seri numarası',
-        remark: 'Not',
-        waf: 'Ticari sürüme yükselterek engelleme haritası, günlükler, engelleme kayıtları, coğrafi konum engelleme, özel kurallar ve özel engelleme sayfaları gibi özellikleri açabilirsiniz.',
-        tamper: 'Ticari sürüme yükselterek web sitelerini yetkisiz değişikliklere ve kurcalamaya karşı koruyabilirsiniz.',
         tamperHelper:
             'İşlem başarısız oldu, dosya veya klasörde kurcalama koruması etkin. Lütfen kontrol edin ve tekrar deneyin!',
-        setting:
-            'Ticari sürüme yükselterek panel logosunu, hoş geldiniz mesajını ve diğer bilgileri özelleştirebilirsiniz.',
-        monitor:
-            'Ticari sürüme yükselterek web sitesinin gerçek zamanlı durumunu, ziyaretçi eğilimlerini, kaynaklarını ve istek günlüklerini görüntüleyebilirsiniz.',
-        alert: 'Ticari sürüme yükselterek SMS uyarıları alabilir, uyarı günlüklerini görüntüleyebilir ve kritik olayları takip edebilirsiniz.',
-        vm: '3Panel ile sanal makineleri, imajları, şablonları, sanal ağları ve depolama kaynaklarını yönetmek için ticari sürüme yükseltin.',
-        node: 'Ticari sürüme yükselterek 3Panel ile birden fazla Linux sunucusunu yönetebilirsiniz.',
-        nodeApp:
-            'Ticari sürüme yükselterek düğümleri manuel değiştirmeden çok düğümlü uygulama sürümlerini toplu olarak yükseltebilirsiniz.',
-        nodeDashboard:
-            'Ticari sürüme yükselterek çok düğümlü uygulamaları, web sitelerini, veritabanlarını ve zamanlanmış görevleri merkezi olarak yönetebilirsiniz.',
-        fileExchange: 'Ticari sürüme yükselterek birden fazla sunucu arasında dosyaları hızlıca aktarabilirsiniz.',
-        app: 'Ticari sürüme yükselterek mobil uygulamada hizmet bilgilerini ve anormallik izlemeyi görüntüleyebilirsiniz.',
-        cluster: 'Ticari sürüme yükselterek MySQL/Postgres/Redis birincil-kopya kümelerini yönetebilirsiniz.',
         vllm: 'Ticari sürüme yükselterek vLLM hizmetlerini 3Panel içinde merkezi olarak dağıtabilir, yapılandırabilir, yaşam döngüsünü yönetebilir ve görevleri izleyebilirsiniz.',
-        'model-downloader':
-            'Ticari sürüme yükselterek HuggingFace, ModelScope veya uyumlu aynalardan yerel model dosyalarını arayabilir, indirebilir ve yönetebilir; model dizinlerini ve indirme görevlerini merkezi olarak takip edebilirsiniz.',
     },
     clean: {
         scan: 'Taramayı başlat',
@@ -4649,7 +4581,6 @@ const message = {
             'Nazik hatırlatma: Pro Edition lisansınız {0} gün içinde sona erecek ve tüm Pro Edition özellikleri kullanılamaz hale gelecektir. Lütfen devam eden kullanım için zamanında yenileyin.',
         menu: 'Pro',
         upage: 'AI Web Sitesi Oluşturucu',
-        proAlert: 'Bu özelliği kullanmak için Ticari sürüme yükseltin',
         opsReport: {
             name: 'Operasyon Raporu',
             overview: 'Genel Bakış',
@@ -6912,7 +6843,6 @@ const message = {
                 templateVariableInvalid: 'Body desteklenmeyen bir şablon değişkeni içeriyor',
                 secretRequired: 'Bir gizli değer girin veya Değiştirme ya da Temizle seçeneğini kullanın',
             },
-            alertConfigProHelper: 'Ticari sürüm daha fazla bildirim kanalı ekler.',
         },
         theme: {
             lingXiaGold: 'LXware Gold',

@@ -3214,46 +3214,11 @@ const message = {
         upgradeCheck: '更新を確認',
     },
     license: {
-        offLine: 'オフライン版',
-        community: '無料',
-        oss: '無料',
-        ee: 'Enterprise Edition',
-        pro: '専門',
-        trial: '体験',
-        add: 'コミュニティ版を追加',
-        licenseBindHelper: 'ライセンスがノードにバインドされている場合にのみ、無料ノードクォータを使用できます',
-        licenseAlert:
-            'ライセンスがノードに正常にバインドされている場合のみ、コミュニティ版ノードを追加できます。ライセンスに正常にバインドされているノードのみ切り替えがサポートされます。',
-        licenseUnbindHelper:
-            'このライセンスにコミュニティ版ノードが存在します。バインドを解除してから再試行してください！',
-        subscription: 'サブスクリプション',
-        perpetual: '永久ライセンス',
-        product: '製品',
-        versionConstraint: '{0} バージョン買い取り',
-        forceUnbind: '強制バインド解除',
-        forceUnbindHelper:
-            '強制的にバインド解除を行うと、解除プロセス中に発生するエラーを無視し、最終的にライセンスのバインドを解除します。',
-        updateForce: '強制更新（アンバインド中のすべてのエラーを無視し、最終操作の成功を保証します）',
         trialInfo: 'バージョン',
-        authorizationId: 'サブスクリプションID',
-        authorizedUser: '認定ユーザー',
-        lostHelper:
-            'ライセンスは、再試行の最大数に達しました。商用版機能が適切に機能していることを確認するには、手動で同期ボタンをクリックしてください。詳細: ',
-        quickUpdate: 'クイックアップデート',
-        power: '許可',
-        unbindHelper: 'すべての商用版関連設定は、バインディングを解除した後にクリーニングされます。続けたいですか？',
         importLicense: 'ライセンス',
-        import: 'インポート',
-        securityWarningTitle: 'クラック版または出所不明のライセンスを使用しないでください。',
-        securityWarningContent:
-            '3Panel はシステム管理者権限を持つユーザーで実行する必要があります。非公式ライセンスや改ざんされたバージョンは、サーバーの制御不能、データ漏えいなどの重大なセキュリティリスクを引き起こす可能性があります。ライセンスとインストールパッケージは公式チャネルから入手してください。',
         importHelper: 'ここでライセンスファイルをクリックまたはドラッグしてください',
-        licenseRequiredTip:
-            'まだライセンスがインポートされていません。デバイス ID をコピーしてライセンスを取得し、インポートしてからログインしてください。',
         licenseRequiredShortTip:
             'まずデバイス ID をコピーしてライセンスを取得し、ライセンスをインポートするとログインできます。',
-        licenseRequiredUserTip:
-            'Enterprise Edition のライセンスがバインドされていません。スーパー管理者に連絡してライセンスをインポートしてください。',
         restoreCommunity: 'コミュニティ版に戻す',
         restoreCommunityOnline: 'オンライン復元',
         restoreCommunityOffline: 'オフライン復元',
@@ -3271,39 +3236,9 @@ const message = {
         restoreCommunityStarting: 'コミュニティ版を準備しています。完了後、パネルは自動的に再起動します。',
         technicalAdvice: '技術的な相談',
         advice: '相談',
-        licenseSync: 'ライセンス同期',
-        knowMorePro: 'もっと詳しく知る',
-        closeAlert: '現在のページはパネル設定で閉じることができます',
         introduce: '機能の紹介',
         deviceID: 'デバイス ID',
-        corporation: 'ライセンス会社',
-        expired: '有効期限',
-        edition: 'エディション',
-        standard: 'Standard',
-        enterprise: 'Enterprise',
-        count: '許可数',
-        serialNo: 'シリアル番号',
-        remark: '備考',
-        waf: '商用版にアップグレードすると、インターセプトマップ、ログ、ブロック記録、地域ブロック、カスタムルール、カスタムブロックページなどを利用できます。',
-        tamper: '商用版にアップグレードすると、Web サイトを不正な変更や改ざんから保護できます。',
-        setting: '商用版にアップグレードすると、パネルロゴ、ウェルカムメッセージなどをカスタマイズできます。',
-        monitor:
-            '商用版にアップグレードすると、Web サイトのリアルタイム状態、訪問者トレンド、流入元、リクエストログなどを確認できます。',
-        alert: '商用版にアップグレードすると、SMS アラートの受信やアラートログの確認が可能になります。',
-        app: '商用版にアップグレードすると、モバイルアプリでサービス情報や異常監視を確認できます。',
-        vm: '商用版にアップグレードすると、3Panel で仮想マシン、イメージとテンプレート、仮想ネットワーク、ストレージリソースを一元管理できます。',
-        node: '商用版にアップグレードすると、3Panel で複数の Linux サーバーを管理できます。',
-        nodeApp:
-            '商用版にアップグレードすると、ノードを手動で切り替えずにマルチノードアプリのバージョンを一括アップグレードできます。',
-        nodeDashboard:
-            '商用版にアップグレードすると、マルチノードのアプリ、Web サイト、データベース、スケジュールタスクを一元管理できます。',
-        fileExchange: '商用版にアップグレードすると、複数サーバー間でファイルをすばやく転送できます。',
-        cluster: '商用版にアップグレードすると、MySQL/Postgres/Redis のプライマリ/レプリカ構成を管理できます。',
         vllm: '商用版にアップグレードすると、3Panel で vLLM サービスのデプロイ、設定、ライフサイクル操作、タスク追跡を一元管理できます。',
-        'model-downloader':
-            '商用版にアップグレードすると、HuggingFace、ModelScope、または互換ミラーからローカルモデルファイルを検索、ダウンロード、管理できます。モデルディレクトリとダウンロードタスクを一元管理できます。',
-        exceptionalHelper:
-            'ライセンス同期検証が異常です。手動で同期して商用版機能が正常に動作していることを確認してください。詳細: ',
         tamperHelper: '操作失敗。ファイル/フォルダの改ざん保護を確認してください。',
     },
     clean: {
@@ -4556,7 +4491,6 @@ const message = {
             'ご注意: あなたのPro Editionライセンスは{0}日後に終了し、すべてのPro Edition機能が使用できなくなります。継続的な使用のために速やかに更新してください。',
         menu: 'Pro',
         upage: 'AIウェブサイトビルダー',
-        proAlert: 'この機能を使用するには商用版にアップグレードしてください',
         opsReport: {
             name: '運用レポート',
             overview: '概要',
@@ -6789,7 +6723,6 @@ const message = {
                 templateVariableInvalid: 'Body に未対応のテンプレート変数が含まれています',
                 secretRequired: 'シークレット値を入力するか、変更しない/クリアを選択してください',
             },
-            alertConfigProHelper: '商用版では、追加の通知チャネルを利用できます。',
         },
         theme: {
             lingXiaGold: 'LXware Gold',
