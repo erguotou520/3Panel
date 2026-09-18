@@ -224,12 +224,12 @@ const message = {
             mfaTitle: 'MFA認定',
             mfaCode: 'MFA検証コード',
             title: 'Linuxサーバー管理パネル',
-            licenseHelper: '<コミュニティライセンス契約>',
+            licenseHelper: '<GPLv3 ライセンス契約>',
             errorAgree: 'クリックして、コミュニティソフトウェアライセンスに同意します',
             logout: 'ログアウト',
             agreeTitle: '合意',
             agreeContent:
-                'あなたの正当な権利と利益をよりよく保護するために、次の契約とラコを読んで同意してください。<a href = "https://www.fit2cloud.com/legal/licenses.html" target="_blank">コミュニティライセンス契約</a>＆raquo;',
+                'あなたの正当な権利と利益をよりよく保護するために、次の契約とラコを読んで同意してください。<a href = "https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">GPLv3 ライセンス契約</a>＆raquo;',
             passkeyFailed: 'パスキーでのログインに失敗しました。再試行してください',
             passkeyNotSupported: '現在のブラウザまたは環境はパスキーに対応していません',
             passkeyToPassword: 'パスキーが使えませんか？パスワードでログインしてください',
@@ -2133,12 +2133,6 @@ const message = {
         backgroundColor: '背景色',
         foregroundColor: '前景色',
         cursorBlink: 'カーソル点滅',
-        cursorStyle: 'カーソルスタイル',
-        cursorUnderline: '下線',
-        cursorBlock: 'ブロック',
-        cursorBar: 'バー',
-        scrollback: 'スクロールバック',
-        scrollSensitivity: 'スクロール感度',
         aiAssistant: 'AI アシスタント',
         aiAccountHelper:
             '選択したモデルアカウントでコマンドを生成して補完します。Ollama や vLLM などのローカルモデルはカスタムモデルアカウントを使用してください。',
@@ -3254,7 +3248,7 @@ const message = {
         import: 'インポート',
         securityWarningTitle: 'クラック版または出所不明のライセンスを使用しないでください。',
         securityWarningContent:
-            '3Panel はシステム管理者権限を持つユーザーで実行する必要があります。非公式ライセンスや改ざんされたバージョンは、サーバーの制御不能、データ漏えいなどの重大なセキュリティリスクを引き起こす可能性があります。ライセンスとインストールパッケージは FIT2CLOUD 公式チャネルから入手してください。',
+            '3Panel はシステム管理者権限を持つユーザーで実行する必要があります。非公式ライセンスや改ざんされたバージョンは、サーバーの制御不能、データ漏えいなどの重大なセキュリティリスクを引き起こす可能性があります。ライセンスとインストールパッケージは公式チャネルから入手してください。',
         importHelper: 'ここでライセンスファイルをクリックまたはドラッグしてください',
         licenseRequiredTip:
             'まだライセンスがインポートされていません。デバイス ID をコピーしてライセンスを取得し、インポートしてからログインしてください。',

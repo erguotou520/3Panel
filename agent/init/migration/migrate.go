@@ -52,6 +52,7 @@ func agentDBMigrations() []*gormigrate.Migration {
 		migrations.UpdateMcpServerGatewayConfig,
 		migrations.InitLocalSSHConn,
 		migrations.InitLocalSSHShow,
+		migrations.RefreshLocalSSHConn,
 		migrations.InitRecordStatus,
 		migrations.AddShowNameForQuickJump,
 		migrations.AddAgentQuickJump,

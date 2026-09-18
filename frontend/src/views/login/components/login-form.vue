@@ -135,11 +135,7 @@
                             <template #default>
                                 <span class="agree-title">
                                     {{ $t('commons.button.agree') }}
-                                    <a
-                                        class="agree"
-                                        href="https://www.fit2cloud.com/legal/licenses.html"
-                                        target="_blank"
-                                    >
+                                    <a class="agree" href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank">
                                         {{ $t('commons.login.licenseHelper') }}
                                     </a>
                                 </span>
@@ -319,7 +315,7 @@
                                         {{ $t('commons.button.agree') }}
                                         <a
                                             class="agree"
-                                            href="https://www.fit2cloud.com/legal/licenses.html"
+                                            href="https://www.gnu.org/licenses/gpl-3.0.html"
                                             target="_blank"
                                         >
                                             {{ $t('commons.login.licenseHelper') }}

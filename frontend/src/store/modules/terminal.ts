@@ -13,9 +13,6 @@ export const TerminalStore = defineStore('TerminalState', {
         backgroundColor: '#000000',
         foregroundColor: '#f5f5f5',
         cursorBlink: 'enable',
-        cursorStyle: 'underline',
-        scrollback: 1000,
-        scrollSensitivity: 6,
     }),
     persist: piniaPersistConfig('TerminalState'),
 }) as StoreDefinition<'TerminalState', TerminalState, any, any>;

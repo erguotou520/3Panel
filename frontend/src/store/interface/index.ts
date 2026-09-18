@@ -92,7 +92,4 @@ export interface TerminalState {
     backgroundColor: string;
     foregroundColor: string;
     cursorBlink: string;
-    cursorStyle: string;
-    scrollback: number;
-    scrollSensitivity: number;
 }

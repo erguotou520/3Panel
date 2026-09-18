@@ -225,12 +225,12 @@ const message = {
             mfaTitle: 'Pengesahan MFA',
             mfaCode: 'Kod pengesahan MFA',
             title: 'Panel Pengurusan Pelayan Linux',
-            licenseHelper: '<Perjanjian Lesen Komuniti>',
+            licenseHelper: '<Perjanjian Lesen GPLv3>',
             errorAgree: 'Klik untuk bersetuju dengan Lesen Perisian Komuniti',
             logout: 'Log keluar',
             agreeTitle: 'Agreement',
             agreeContent:
-                'Untuk melindungi hak dan kepentingan sah anda dengan lebih baik, sila baca dan setuju dengan perjanjian berikut &laquo; <a href = "https://www.fit2cloud.com/legal/licenses.html" target = "_blank" > Perjanjian Lesen Komuniti </a> &raquo;',
+                'Untuk melindungi hak dan kepentingan sah anda dengan lebih baik, sila baca dan setuju dengan perjanjian berikut &laquo; <a href = "https://www.gnu.org/licenses/gpl-3.0.html" target = "_blank" > Perjanjian Lesen GPLv3 </a> &raquo;',
             passkeyFailed: 'Log masuk Passkey gagal, sila cuba lagi',
             passkeyNotSupported: 'Pelayar atau persekitaran semasa tidak menyokong passkey',
             passkeyToPassword: 'Ada masalah menggunakan passkey? Gunakan kata laluan sahaja',
@@ -2171,12 +2171,6 @@ const message = {
         backgroundColor: 'Warna latar belakang',
         foregroundColor: 'Warna teks',
         cursorBlink: 'Kedipan kursor',
-        cursorStyle: 'Gaya kursor',
-        cursorUnderline: 'Garis bawah',
-        cursorBlock: 'Blok',
-        cursorBar: 'Bar',
-        scrollback: 'Skrol balik',
-        scrollSensitivity: 'Kepekaan skrol',
         aiAssistant: 'Pembantu AI',
         aiAccountHelper:
             'Gunakan akaun model yang dipilih untuk menjana dan mengisi arahan. Untuk model tempatan seperti Ollama dan vLLM, gunakan akaun model tersuai.',
@@ -3328,7 +3322,7 @@ const message = {
         importLicense: 'Lesen',
         securityWarningTitle: 'Jangan gunakan lesen retak atau lesen daripada sumber yang tidak diketahui.',
         securityWarningContent:
-            '3Panel perlu dijalankan oleh pengguna dengan keistimewaan pentadbiran sistem. Lesen tidak rasmi atau versi yang diubah suai boleh menyebabkan pelayan hilang kawalan, kebocoran data dan risiko keselamatan serius lain. Dapatkan lesen dan pakej pemasangan hanya melalui saluran rasmi FIT2CLOUD.',
+            '3Panel perlu dijalankan oleh pengguna dengan keistimewaan pentadbiran sistem. Lesen tidak rasmi atau versi yang diubah suai boleh menyebabkan pelayan hilang kawalan, kebocoran data dan risiko keselamatan serius lain. Dapatkan lesen dan pakej pemasangan hanya melalui saluran rasmi.',
         importHelper: 'Sila klik atau seret fail lesen ke sini',
         licenseRequiredTip:
             'Lesen belum diimport. Salin ID peranti, dapatkan lesen dan importkannya sebelum anda boleh log masuk.',

@@ -809,38 +809,130 @@ var UpdateMcpServerGatewayConfig = &gormigrate.Migration{
 var InitLocalSSHConn = &gormigrate.Migration{
 	ID: "20250905-init-local-ssh",
 	Migrate: func(tx *gorm.DB) error {
-		itemPath := ""
-		currentInfo, _ := user.Current()
-		if len(currentInfo.HomeDir) == 0 {
-			itemPath = "/root/.ssh/id_ed25519_3panel"
-		} else {
-			itemPath = path.Join(currentInfo.HomeDir, ".ssh/id_ed25519_3panel")
+		privateKey, err := ensureLocalSSHKeyPair()
+		if err != nil || len(privateKey) == 0 {
+			return nil
 		}
-		if _, err := os.Stat(itemPath); err != nil {
-			_ = service.NewISSHService().CreateRootCert(dto.RootCertOperate{EncryptionMode: "ed25519", Name: "id_ed25519_3panel", Description: "3Panel Terminal"})
+		connWithKey, ok := probeLocalSSHConn(privateKey)
+		if !ok {
+			return nil
 		}
-		privateKey, _ := os.ReadFile(itemPath)
+		return saveLocalSSHConn(tx, connWithKey)
+	},
+}
+
+// RefreshLocalSSHConn repairs the stored local SSH connection on hosts where
+// InitLocalSSHConn could not establish one. That happened whenever sshd did not
+// listen on the hardcoded default port 22 (containers, customized sshd_config,
+// conf.d drop-ins): the probe failed and the migration silently gave up, leaving
+// LocalSSHConn empty so the terminal reported "unable to authenticate
+// automatically". Re-probing every detected candidate port heals such installs.
+var RefreshLocalSSHConn = &gormigrate.Migration{
+	ID: "20260917-refresh-local-ssh-conn",
+	Migrate: func(tx *gorm.DB) error {
+		if isLocalSSHConnUsable(tx) {
+			return nil
+		}
+		privateKey, err := ensureLocalSSHKeyPair()
+		if err != nil || len(privateKey) == 0 {
+			return nil
+		}
+		connWithKey, ok := probeLocalSSHConn(privateKey)
+		if !ok {
+			if global.LOG != nil {
+				global.LOG.Warnf("local ssh connection is unavailable, ports tried: %v", migrationutils.CandidateLocalSSHPorts())
+			}
+			return nil
+		}
+		if global.LOG != nil {
+			global.LOG.Infof("local ssh connection restored on port %d", connWithKey.Port)
+		}
+		return saveLocalSSHConn(tx, connWithKey)
+	},
+}
+
+// localSSHKeyPath returns the panel-owned private key used for the local terminal.
+func localSSHKeyPath() string {
+	itemPath := "/root/.ssh/id_ed25519_3panel"
+	if currentInfo, err := user.Current(); err == nil && len(currentInfo.HomeDir) > 0 {
+		itemPath = path.Join(currentInfo.HomeDir, ".ssh/id_ed25519_3panel")
+	}
+	return itemPath
+}
+
+// ensureLocalSSHKeyPair returns the panel private key, generating it when absent.
+func ensureLocalSSHKeyPair() ([]byte, error) {
+	itemPath := localSSHKeyPath()
+	if _, err := os.Stat(itemPath); err != nil {
+		_ = service.NewISSHService().CreateRootCert(dto.RootCertOperate{EncryptionMode: "ed25519", Name: "id_ed25519_3panel", Description: "3Panel Terminal"})
+	}
+	return os.ReadFile(itemPath)
+}
+
+// localSSHProbeTimeout bounds each candidate probe so that a filtered or
+// unreachable port cannot stall startup.
+const localSSHProbeTimeout = 3 * time.Second
+
+// probeLocalSSHConn returns the first detected loopback port the key can log in to.
+func probeLocalSSHConn(privateKey []byte) (ssh.ConnInfo, bool) {
+	for _, port := range migrationutils.CandidateLocalSSHPorts() {
 		connWithKey := ssh.ConnInfo{
 			Addr:       "127.0.0.1",
 			User:       "root",
-			Port:       22,
+			Port:       port,
 			AuthMode:   "key",
 			PrivateKey: privateKey,
 		}
-		if _, err := ssh.NewClient(connWithKey); err != nil {
-			return nil
+		probe := connWithKey
+		probe.DialTimeOut = localSSHProbeTimeout
+		client, err := ssh.NewClient(probe)
+		if err != nil {
+			continue
 		}
-		var conn model.LocalConnInfo
-		_ = copier.Copy(&conn, &connWithKey)
-		conn.PrivateKey = string(privateKey)
-		conn.PassPhrase = ""
-		localConn, _ := json.Marshal(&conn)
-		connAfterEncrypt, _ := encrypt.StringEncrypt(string(localConn))
-		if err := tx.Model(&model.Setting{}).Where("key = ?", "LocalSSHConn").Updates(map[string]interface{}{"value": connAfterEncrypt}).Error; err != nil {
-			return err
-		}
-		return nil
-	},
+		client.Close()
+		return connWithKey, true
+	}
+	return ssh.ConnInfo{}, false
+}
+
+func saveLocalSSHConn(tx *gorm.DB, connWithKey ssh.ConnInfo) error {
+	var conn model.LocalConnInfo
+	_ = copier.Copy(&conn, &connWithKey)
+	conn.PrivateKey = string(connWithKey.PrivateKey)
+	conn.PassPhrase = ""
+	localConn, _ := json.Marshal(&conn)
+	connAfterEncrypt, _ := encrypt.StringEncrypt(string(localConn))
+	return tx.Model(&model.Setting{}).Where("key = ?", "LocalSSHConn").Updates(map[string]interface{}{"value": connAfterEncrypt}).Error
+}
+
+// isLocalSSHConnUsable reports whether the stored connection still authenticates.
+func isLocalSSHConnUsable(tx *gorm.DB) bool {
+	var setting model.Setting
+	if err := tx.Model(&model.Setting{}).Where("key = ?", "LocalSSHConn").First(&setting).Error; err != nil {
+		return false
+	}
+	plain, err := encrypt.StringDecrypt(setting.Value)
+	if err != nil || len(plain) == 0 {
+		return false
+	}
+	var conn model.LocalConnInfo
+	if err := json.Unmarshal([]byte(plain), &conn); err != nil || len(conn.Addr) == 0 || conn.Port == 0 {
+		return false
+	}
+	client, err := ssh.NewClient(ssh.ConnInfo{
+		Addr:       conn.Addr,
+		Port:       int(conn.Port),
+		User:       conn.User,
+		AuthMode:   conn.AuthMode,
+		Password:   conn.Password,
+		PrivateKey: []byte(conn.PrivateKey),
+		PassPhrase: []byte(conn.PassPhrase),
+	})
+	if err != nil {
+		return false
+	}
+	client.Close()
+	return true
 }
 
 var InitLocalSSHShow = &gormigrate.Migration{

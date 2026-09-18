@@ -222,12 +222,12 @@ const message = {
             mfaTitle: 'Autenticación MFA',
             mfaCode: 'Código de verificación MFA',
             title: 'Panel de gestión de servidores Linux',
-            licenseHelper: '<Acuerdo de Licencia Comunitaria>',
+            licenseHelper: '<Acuerdo de Licencia GPLv3>',
             errorAgree: 'Haga clic para aceptar la Licencia de Software Comunitaria',
             logout: 'Cerrar sesión',
             agreeTitle: 'Acuerdo',
             agreeContent:
-                'Para proteger mejor sus derechos e intereses legítimos, por favor lea y acepte el siguiente acuerdo &laquo; <a href = "https://www.fit2cloud.com/legal/licenses.html" target = "_blank" > Acuerdo de Licencia Comunitaria </a> &raquo;',
+                'Para proteger mejor sus derechos e intereses legítimos, por favor lea y acepte el siguiente acuerdo &laquo; <a href = "https://www.gnu.org/licenses/gpl-3.0.html" target = "_blank" > Acuerdo de Licencia GPLv3 </a> &raquo;',
             passkeyFailed: 'El inicio de sesión con Passkey falló, inténtalo de nuevo',
             passkeyNotSupported: 'El navegador o entorno actual no admite Passkey',
             passkeyToPassword: '¿Tienes problemas para usar una passkey? Usa la contraseña en su lugar',
@@ -2186,12 +2186,6 @@ const message = {
         backgroundColor: 'Color de fondo',
         foregroundColor: 'Color de primer plano',
         cursorBlink: 'Parpadeo del cursor',
-        cursorStyle: 'Estilo de cursor',
-        cursorUnderline: 'Subrayado',
-        cursorBlock: 'Bloque',
-        cursorBar: 'Barra',
-        scrollback: 'Scrollback',
-        scrollSensitivity: 'Sensibilidad de scroll',
         aiAssistant: 'Asistente de IA',
         aiAccountHelper:
             'Use la cuenta de modelo seleccionada para generar y rellenar comandos. Para modelos locales como Ollama y vLLM, use una cuenta de modelo personalizada.',
@@ -3336,7 +3330,7 @@ const message = {
         importLicense: 'Importar licencia',
         securityWarningTitle: 'No uses licencias crackeadas ni de origen desconocido.',
         securityWarningContent:
-            '3Panel debe ejecutarse con un usuario con permisos de administración del sistema. Las licencias no oficiales o las versiones manipuladas pueden causar pérdida de control del servidor, filtraciones de datos y otros riesgos graves de seguridad. Obtén licencias e instaladores solo desde canales oficiales de FIT2CLOUD.',
+            '3Panel debe ejecutarse con un usuario con permisos de administración del sistema. Las licencias no oficiales o las versiones manipuladas pueden causar pérdida de control del servidor, filtraciones de datos y otros riesgos graves de seguridad. Obtén licencias e instaladores solo desde canales oficiales.',
         importHelper: 'Haga clic o arrastre el archivo de licencia aquí',
         licenseRequiredTip:
             'La licencia aún no se ha importado. Copie el ID del dispositivo, obtenga la licencia e impórtela antes de iniciar sesión.',

@@ -60,13 +60,13 @@ func ResourceURL() string {
 }
 func AppRepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://apps.3panel.pro"
+		return "https://3panel.erguotou.me"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://apps.3panel.pro"
+		return "https://3panel.erguotou.me"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://apps.3panel.pro"
+		return "https://3panel.erguotou.me"
 	}
-	return "https://apps.3panel.pro"
+	return "https://3panel.erguotou.me"
 }

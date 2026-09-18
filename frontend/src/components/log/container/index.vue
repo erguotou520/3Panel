@@ -30,7 +30,15 @@
         </el-button>
     </div>
     <div class="log-container" :style="styleVars">
-        <div class="xterm-log-viewer" ref="terminalElement"></div>
+        <WTerm
+            v-if="termMounted"
+            :key="termKey"
+            class="log-viewer"
+            :auto-resize="true"
+            :cursor-blink="false"
+            @ready="onTermReady"
+            @data="onLogInput"
+        />
     </div>
     <DialogPro
         v-model="downloadDialogVisible"
@@ -71,9 +79,10 @@
 
 <script lang="ts" setup>
 import { cleanComposeLog, cleanContainerLog, DownloadFile } from '@/api/modules/container';
-import { FitAddon } from '@xterm/addon-fit';
-import { Terminal } from '@xterm/xterm';
-import '@xterm/xterm/css/xterm.css';
+import { Terminal as WTerm } from '@wterm/vue';
+import type { WTerm as WTermInstance } from '@wterm/vue';
+import '@wterm/vue/css';
+import { WTERM_RESET, toWtermNewlines } from '@/utils/wterm';
 import i18n from '@/lang';
 import { dateFormatForName } from '@/utils/date';
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue';
@@ -124,12 +133,10 @@ const styleVars = computed(() => ({
     '--custom-height': `${props.highlightDiff || 320}px`,
 }));
 
-const terminalElement = ref<HTMLDivElement | null>(null);
 let eventSource: EventSource | null = null;
-let term: Terminal | null = null;
-const fitAddon = new FitAddon();
-let onScrollDisposable: { dispose: () => void } | null = null;
-const MAX_VIEW_LINES = 20000;
+let term: WTermInstance | null = null;
+const termMounted = ref(false);
+const termKey = ref(0);
 const followBottom = ref(true);
 
 const logSearch = reactive({
@@ -175,67 +182,57 @@ const stopListening = () => {
 };
 
 const clearTerminal = () => {
-    term?.reset();
+    term?.write(WTERM_RESET);
     followBottom.value = true;
+};
+
+const scrollLogToBottom = () => {
+    const element = term?.element;
+    if (element) element.scrollTop = element.scrollHeight;
 };
 
 const writeLogLine = (data: string) => {
     if (!term) return;
-    term.writeln(data);
+    // wterm keeps `\n` only; the log stream is line based, so normalise the endings.
+    term.write(`${toWtermNewlines(data)}\r\n`);
     if (followBottom.value) {
-        term.scrollToBottom();
+        scrollLogToBottom();
     }
 };
 
-const bindXTermEvents = () => {
-    if (!term) return;
-    onScrollDisposable?.dispose();
-    onScrollDisposable = term.onScroll(() => {
-        if (!term) return;
-        const active = term.buffer.active;
-        followBottom.value = active.baseY + active.cursorY >= active.length - 2;
-    });
+const onLogScroll = () => {
+    const element = term?.element;
+    if (!element) return;
+    followBottom.value = element.scrollTop + element.clientHeight >= element.scrollHeight - 2;
 };
+
+const bindScrollEvents = () => {
+    const element = term?.element;
+    if (!element) return;
+    element.removeEventListener('scroll', onLogScroll);
+    element.addEventListener('scroll', onLogScroll, { passive: true });
+};
+
+// The viewer is read only. wterm echoes locally when nothing listens to `data`, so the
+// handler has to exist and swallow the input.
+const onLogInput = () => {};
 
 const showEventSourceAuthError = (message: string) => {
     MsgError(message);
     writeLogLine(message);
 };
 
-const initTerminal = () => {
-    if (!terminalElement.value || term) return;
-    term = new Terminal({
-        cursorBlink: false,
-        cursorStyle: 'block',
-        disableStdin: true,
-        convertEol: true,
-        scrollback: MAX_VIEW_LINES,
-        fontSize: 14,
-        fontFamily: "'JetBrains Mono', Monaco, Menlo, Consolas, 'Courier New', monospace",
-        fontWeight: '500',
-        lineHeight: 1.2,
-        theme: {
-            background: '#111827',
-            foreground: '#e5e7eb',
-            cursor: '#e5e7eb',
-            black: '#111827',
-            brightBlack: '#6b7280',
-            red: '#f87171',
-            green: '#34d399',
-            yellow: '#fbbf24',
-            blue: '#60a5fa',
-            magenta: '#c084fc',
-            cyan: '#22d3ee',
-            white: '#e5e7eb',
-            brightWhite: '#f9fafb',
-            selectionBackground: 'rgba(102, 178, 255, 0.30)',
-            selectionInactiveBackground: 'rgba(102, 178, 255, 0.20)',
-        },
-    });
-    term.open(terminalElement.value);
-    term.loadAddon(fitAddon);
-    fitAddon.fit();
-    bindXTermEvents();
+// wterm loads its WASM core asynchronously, so mounting and the log stream are split:
+// `searchLogs()` only starts once the terminal is ready, otherwise early lines are lost.
+const mountTerminal = () => {
+    termKey.value += 1;
+    termMounted.value = true;
+};
+
+const onTermReady = (instance: WTermInstance) => {
+    term = instance;
+    bindScrollEvents();
+    searchLogs();
 };
 
 const handleClose = async () => {
@@ -345,8 +342,6 @@ const onClean = async () => {
     });
 };
 
-const resizeObserver = ref<ResizeObserver | null>(null);
-
 onMounted(() => {
     logSearch.container = props.container;
     logSearch.compose = props.compose;
@@ -357,25 +352,16 @@ onMounted(() => {
     logSearch.isWatch = true;
 
     nextTick(() => {
-        initTerminal();
-        if (terminalElement.value) {
-            resizeObserver.value = new ResizeObserver(() => {
-                fitAddon.fit();
-            });
-            resizeObserver.value.observe(terminalElement.value);
-        }
-        searchLogs();
+        mountTerminal();
     });
 });
 
 onUnmounted(() => {
     handleClose();
-    onScrollDisposable?.dispose();
-    if (term) {
-        term.dispose();
-        term = null;
-    }
-    resizeObserver.value?.disconnect();
+    const element = term?.element;
+    if (element) element.removeEventListener('scroll', onLogScroll);
+    term = null;
+    termMounted.value = false;
 });
 </script>
 
@@ -423,16 +409,36 @@ onUnmounted(() => {
     margin-top: 10px;
 }
 
-.xterm-log-viewer {
+// `.log-viewer` is merged onto wterm's root element, so it styles the terminal itself;
+// the palette is provided through wterm's CSS custom properties.
+.log-viewer {
     width: 100%;
     height: 100%;
-}
-
-:deep(.xterm) {
-    padding: 6px 8px !important;
-}
-
-:deep(.xterm-viewport) {
-    background-color: #111827 !important;
+    padding: 6px 8px;
+    border-radius: 0;
+    box-shadow: none;
+    font-weight: 500;
+    --term-font-size: 14px;
+    --term-font-family: 'JetBrains Mono', Monaco, Menlo, Consolas, 'Courier New', monospace;
+    --term-line-height: 1.2;
+    --term-bg: #111827;
+    --term-fg: #e5e7eb;
+    --term-cursor: #e5e7eb;
+    --term-color-0: #111827;
+    --term-color-1: #f87171;
+    --term-color-2: #34d399;
+    --term-color-3: #fbbf24;
+    --term-color-4: #60a5fa;
+    --term-color-5: #c084fc;
+    --term-color-6: #22d3ee;
+    --term-color-7: #e5e7eb;
+    --term-color-8: #6b7280;
+    --term-color-9: #f87171;
+    --term-color-10: #34d399;
+    --term-color-11: #fbbf24;
+    --term-color-12: #60a5fa;
+    --term-color-13: #c084fc;
+    --term-color-14: #22d3ee;
+    --term-color-15: #f9fafb;
 }
 </style>

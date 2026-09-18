@@ -1,6 +1,19 @@
 <template>
     <div class="terminal-shell">
-        <div ref="terminalElement" class="terminal-container"></div>
+        <WTerm
+            v-if="termMounted"
+            :key="termKey"
+            ref="termRef"
+            class="terminal-container"
+            :class="{ 'cursor-blink': cursorBlinkEnabled }"
+            :style="termStyleVars"
+            :auto-resize="true"
+            :cursor-blink="false"
+            @ready="onTermReady"
+            @data="onTermData"
+            @resize="onTermResized"
+            @error="onTermError"
+        />
         <transition name="ai-mask-fade">
             <div v-if="aiNotice.loading" class="ai-notice-mask"></div>
         </transition>
@@ -17,10 +30,11 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, shallowRef, watch, onActivated, onBeforeUnmount, nextTick, computed, onMounted } from 'vue';
-import { Terminal } from '@xterm/xterm';
-import '@xterm/xterm/css/xterm.css';
-import { FitAddon } from '@xterm/addon-fit';
+import { ref, shallowRef, onActivated, onBeforeUnmount, nextTick, computed } from 'vue';
+import { Terminal as WTerm } from '@wterm/vue';
+import type { WTerm as WTermInstance } from '@wterm/vue';
+import '@wterm/vue/css';
+import { WTERM_RESET, wtermStyleVars } from '@/utils/wterm';
 import { decodeBase64, encodeBase64 } from '@/utils/base64';
 import { TerminalStore } from '@/store';
 import { MsgError } from '@/utils/message';
@@ -38,11 +52,17 @@ const CLOSE_SESSION_NOT_FOUND = 4404;
 const CLOSE_ATTACHED_ELSEWHERE = 4409;
 const CLOSE_REVALIDATE = 4410;
 
-const terminalElement = ref<HTMLDivElement | null>(null);
-const fitAddon = new FitAddon();
+const termRef = ref<null | { instance: WTermInstance | null }>(null);
+const termMounted = ref(false);
+const termKey = ref(0);
 const termReady = ref(false);
 const webSocketReady = ref(false);
-const term = shallowRef<Terminal>();
+const term = shallowRef<WTermInstance | null>(null);
+// connection requested by acceptParams(), started once the terminal reports `ready`
+let pendingConnect = false;
+let pendingEndpoint = '';
+let pendingArgs = '';
+let pendingWrite = '';
 const terminalSocket = ref<WebSocket>();
 const heartbeatTimer = ref<NodeJS.Timer>();
 let initWebSocketToken = 0;
@@ -73,19 +93,8 @@ const aiNotice = ref({
     message: '',
 });
 let aiNoticeTimer: ReturnType<typeof setTimeout> | null = null;
-let resizeFrame: number | undefined;
 let lastResizeColumns = 0;
 let lastResizeRows = 0;
-
-const readyWatcher = watch(
-    () => webSocketReady.value && termReady.value,
-    (ready) => {
-        if (ready) {
-            changeTerminalSize();
-            readyWatcher(); // unwatch self
-        }
-    },
-);
 
 const terminalStore = TerminalStore();
 const lineHeight = computed(() => terminalStore.lineHeight);
@@ -94,46 +103,19 @@ const fontFamily = computed(() => terminalStore.fontFamily);
 const backgroundColor = computed(() => terminalStore.backgroundColor);
 const foregroundColor = computed(() => terminalStore.foregroundColor);
 const letterSpacing = computed(() => terminalStore.letterSpacing);
-watch(
-    [lineHeight, fontSize, letterSpacing, fontFamily],
-    ([newLineHeight, newFontSize, newLetterSpacing, newFontFamily]) => {
-        if (!term.value) return;
-        term.value.options.lineHeight = newLineHeight;
-        term.value.options.letterSpacing = newLetterSpacing;
-        term.value.options.fontSize = newFontSize;
-        term.value.options.fontFamily = newFontFamily;
-        changeTerminalSize();
-    },
+// wterm takes its appearance from CSS custom properties on the `.wterm` root element,
+// so font/colour settings are applied reactively instead of mutating terminal options.
+const cursorBlinkEnabled = computed(() => String(terminalStore.cursorBlink).toLowerCase() === 'enable');
+const termStyleVars = computed(() =>
+    wtermStyleVars({
+        fontSize: fontSize.value,
+        lineHeight: lineHeight.value,
+        letterSpacing: letterSpacing.value,
+        fontFamily: fontFamily.value,
+        backgroundColor: backgroundColor.value,
+        foregroundColor: foregroundColor.value,
+    }),
 );
-watch([backgroundColor, foregroundColor], ([newBackgroundColor, newForegroundColor]) => {
-    if (!term.value) return;
-    term.value.options.theme = {
-        ...(term.value.options.theme || {}),
-        background: newBackgroundColor,
-        foreground: newForegroundColor,
-    };
-    applyTerminalBackground(newBackgroundColor);
-});
-const cursorStyle = computed(() => terminalStore.cursorStyle);
-watch(cursorStyle, () => {
-    if (!term.value) return;
-    term.value.options.cursorStyle = getStyle();
-});
-const cursorBlink = computed(() => terminalStore.cursorBlink);
-watch(cursorBlink, (newCursorBlink) => {
-    if (!term.value) return;
-    term.value.options.cursorBlink = String(newCursorBlink).toLowerCase() === 'enable';
-});
-const scrollback = computed(() => terminalStore.scrollback);
-watch(scrollback, (newScrollback) => {
-    if (!term.value) return;
-    term.value.options.scrollback = newScrollback;
-});
-const scrollSensitivity = computed(() => terminalStore.scrollSensitivity);
-watch(scrollSensitivity, (newScrollSensitivity) => {
-    if (!term.value) return;
-    term.value.options.scrollSensitivity = newScrollSensitivity;
-});
 
 interface WsProps {
     endpoint: string;
@@ -144,10 +126,6 @@ interface WsProps {
     sessionId?: string;
 }
 
-interface TerminalBufferLine {
-    isWrapped?: boolean;
-    translateToString(trimRight?: boolean, startColumn?: number, endColumn?: number): string;
-}
 const acceptParams = (props: WsProps) => {
     nextTick(() => {
         if (props.error.length !== 0) {
@@ -162,66 +140,50 @@ const acceptParams = (props: WsProps) => {
     });
 };
 
-const newTerm = () => {
-    const bg = terminalStore.backgroundColor || '#000000';
-    const fg = terminalStore.foregroundColor || '#f5f5f5';
-    term.value = new Terminal({
-        lineHeight: terminalStore.lineHeight || 1.2,
-        fontSize: terminalStore.fontSize || 12,
-        fontFamily: terminalStore.fontFamily || "Monaco, Menlo, Consolas, 'Courier New', monospace",
-        theme: {
-            background: bg,
-            foreground: fg,
-        },
-        cursorBlink: terminalStore.cursorBlink ? String(terminalStore.cursorBlink).toLowerCase() === 'enable' : true,
-        cursorStyle: terminalStore.cursorStyle ? getStyle() : 'underline',
-        scrollback: terminalStore.scrollback || 1000,
-        scrollSensitivity: terminalStore.scrollSensitivity || 6,
-    });
-};
-
-const applyTerminalBackground = (color: string) => {
-    if (!terminalElement.value) return;
-    terminalElement.value.style.backgroundColor = color || '#000000';
-    terminalElement.value.style.backgroundImage = '';
-    terminalElement.value.style.backgroundSize = '';
-    terminalElement.value.style.backgroundPosition = '';
-    terminalElement.value.style.backgroundRepeat = '';
-    terminalElement.value.style.imageRendering = '';
-};
-
-const getStyle = (): 'underline' | 'block' | 'bar' => {
-    switch (terminalStore.cursorStyle) {
-        case 'bar':
-            return 'bar';
-        case 'block':
-            return 'block';
-        default:
-            return 'underline';
-    }
-};
-
 const init = (endpoint: string, args: string) => {
-    if (initTerminal(true)) {
-        initWebSocket(endpoint, args);
-    }
+    mountTerminal(true, endpoint, args);
 };
 
 const initError = (errorInfo: string) => {
-    if (initTerminal(false)) {
-        term.value.write(errorInfo);
+    mountTerminal(false, '', '', errorInfo);
+};
+
+// wterm initialises asynchronously (it loads a WASM core), so the socket is only opened
+// once the component reports `ready`; the terminal is re-created for every new session.
+const mountTerminal = (online: boolean, endpoint: string, args: string, errorInfo: string = '') => {
+    pendingConnect = online;
+    pendingEndpoint = endpoint;
+    pendingArgs = args;
+    pendingWrite = errorInfo;
+    lastResizeColumns = 0;
+    lastResizeRows = 0;
+    termKey.value += 1;
+    termMounted.value = true;
+};
+
+const onTermReady = (instance: WTermInstance) => {
+    term.value = instance;
+    termReady.value = true;
+    if (pendingWrite) {
+        instance.write(pendingWrite);
+        pendingWrite = '';
     }
+    if (pendingConnect) {
+        pendingConnect = false;
+        initWebSocket(pendingEndpoint, pendingArgs);
+    }
+};
+
+const onTermError = (err: unknown) => {
+    termReady.value = false;
+    console.error('[wterm] init failed', err);
+    MsgError(err instanceof Error ? err.message : 'terminal init failed');
 };
 
 function onClose(isKeepShow: boolean = false) {
     initWebSocketToken++;
     closing = true;
     stopReconnect();
-    window.removeEventListener('resize', changeTerminalSize);
-    if (resizeFrame !== undefined) {
-        cancelAnimationFrame(resizeFrame);
-        resizeFrame = undefined;
-    }
     lastResizeColumns = 0;
     lastResizeRows = 0;
     clearAINotice();
@@ -235,68 +197,41 @@ function onClose(isKeepShow: boolean = false) {
         heartbeatTimer.value = undefined;
     }
     terminalSocket.value = undefined;
+    pendingConnect = false;
+    pendingWrite = '';
     if (!isKeepShow) {
-        try {
-            term.value.dispose();
-        } catch {}
-    }
-    if (terminalElement.value) {
-        terminalElement.value.innerHTML = '';
+        // unmounting the component destroys the underlying WTerm instance
+        termReady.value = false;
+        termMounted.value = false;
+        term.value = null;
     }
 }
 
 // terminal 相关代码 start
 
-const initTerminal = (online: boolean = false): boolean => {
-    newTerm();
-    lastResizeColumns = 0;
-    lastResizeRows = 0;
-    if (terminalElement.value) {
-        term.value.open(terminalElement.value);
-        applyTerminalBackground(terminalStore.backgroundColor);
-        term.value.loadAddon(fitAddon);
-        window.addEventListener('resize', changeTerminalSize);
-        if (online) {
-            term.value.onData((data) => onTermData(data));
-        }
-        termReady.value = true;
+// wterm keeps the grid fitted to its container by itself (`autoResize`), so the only job
+// left here is telling the agent about the new dimensions.
+const pushTerminalSize = (force: boolean = false) => {
+    const instance = term.value;
+    if (!instance || !isWsOpen()) return;
+    const { cols, rows } = instance;
+    if (cols <= 0 || rows <= 0) return;
+    if (!force && cols === lastResizeColumns && rows === lastResizeRows) {
+        return;
     }
-    return termReady.value;
+    lastResizeColumns = cols;
+    lastResizeRows = rows;
+    terminalSocket.value!.send(
+        JSON.stringify({
+            type: 'resize',
+            cols: cols,
+            rows: rows,
+        }),
+    );
 };
 
-function changeTerminalSize() {
-    if (resizeFrame !== undefined) {
-        return;
-    }
-    resizeFrame = requestAnimationFrame(() => {
-        resizeFrame = undefined;
-        resizeTerminal();
-    });
-}
-
-function resizeTerminal() {
-    if (!terminalElement.value || !term.value) return;
-    if (terminalElement.value.clientWidth <= 0 || terminalElement.value.clientHeight <= 0) {
-        return;
-    }
-
-    fitAddon.fit();
-    if (isWsOpen()) {
-        const { cols, rows } = term.value;
-        if (cols === lastResizeColumns && rows === lastResizeRows) {
-            return;
-        }
-        lastResizeColumns = cols;
-        lastResizeRows = rows;
-        terminalSocket.value!.send(
-            JSON.stringify({
-                type: 'resize',
-                cols: cols,
-                rows: rows,
-            }),
-        );
-    }
-}
+const onTermResized = () => pushTerminalSize();
+const changeTerminalSize = () => pushTerminalSize();
 
 // terminal 相关代码 end
 
@@ -362,7 +297,7 @@ const showWebSocketAuthError = (message: string) => {
 
 const runRealTerminal = () => {
     webSocketReady.value = true;
-    changeTerminalSize();
+    pushTerminalSize(true);
     term.value?.focus();
     // a reattached shell already ran its init command
     if (initCmd.value !== '' && !sessionId.value) {
@@ -421,7 +356,7 @@ const onWSReceive = (message: MessageEvent) => {
                 if (!receiveMsg) {
                     break;
                 }
-                term.value.write(receiveMsg);
+                term.value?.write(receiveMsg);
             }
             break;
         }
@@ -438,7 +373,7 @@ const onWSReceive = (message: MessageEvent) => {
             sessionId.value = wsMsg.id || '';
             if (wasReconnect && !wasRevalidate) {
                 // replay is a tail of recent output, start from a clean screen
-                term.value?.reset();
+                term.value?.write(WTERM_RESET);
             }
             emit('session', sessionId.value);
             break;
@@ -459,7 +394,7 @@ const errorRealTerminal = (ex: any) => {
     if (reconnecting) return;
     let message = ex.message;
     if (!message) message = 'disconnected';
-    term.value.write(`\x1b[31m${message}\x1b[m\r\n`);
+    term.value?.write(`\x1b[31m${message}\x1b[m\r\n`);
 };
 
 const closeRealTerminal = (ev: CloseEvent) => {
@@ -553,36 +488,20 @@ function isEnterInputData(data: string): boolean {
     return data === '\r' || data === '\n' || data === '\r\n';
 }
 
+// wterm exposes the cell grid instead of an xterm-style buffer, and it has no soft-wrap
+// flag, so only the physical row under the cursor can be read: a wrapped command reports
+// just its last row.
 function getCurrentTerminalLine(): string {
-    const xterm = term.value;
-    if (!xterm?.buffer?.active) return '';
-    const buffer = xterm.buffer.active;
-    const cursorRow = buffer.baseY + buffer.cursorY;
-    let startRow = cursorRow;
-    let endRow = cursorRow;
-
-    for (let row = cursorRow; row > 0; row--) {
-        const line = buffer.getLine(row) as TerminalBufferLine | undefined;
-        if (!line?.isWrapped) {
-            startRow = row;
-            break;
-        }
-        startRow = row - 1;
-    }
-
-    for (let row = cursorRow + 1; row < buffer.length; row++) {
-        const line = buffer.getLine(row) as TerminalBufferLine | undefined;
-        if (!line?.isWrapped) {
-            break;
-        }
-        endRow = row;
-    }
-
+    const bridge = term.value?.bridge;
+    if (!bridge) return '';
+    const cursor = bridge.getCursor();
+    if (!cursor) return '';
+    const cols = bridge.getCols();
     let content = '';
-    for (let row = startRow; row <= endRow; row++) {
-        const line = buffer.getLine(row) as TerminalBufferLine | undefined;
-        if (!line) continue;
-        content += line.translateToString(false);
+    for (let col = 0; col < cols; col++) {
+        const cell = bridge.getCell(cursor.row, col);
+        if (!cell || cell.width === 0) continue;
+        content += cell.chars ?? String.fromCodePoint(cell.char || 32);
     }
     return content.trimEnd();
 }
@@ -644,34 +563,20 @@ function showAINotice(level: string, message: string) {
 
 // websocket 相关代码 end
 
-const resizeObserver = ref<ResizeObserver>();
-
-onMounted(() => {
-    // 使用 ResizeObserver 监听容器大小变化
-    resizeObserver.value = new ResizeObserver(() => {
-        if (termReady.value && webSocketReady.value) {
-            changeTerminalSize();
-        }
-    });
-
-    if (terminalElement.value) {
-        resizeObserver.value.observe(terminalElement.value);
-    }
-});
-
 defineExpose({
     acceptParams,
     onClose,
     isWsOpen,
     sendMsg,
     getLatency: () => latency.value,
-    // re-fit after the element was moved back into a visible container
+    // kept for callers that re-fit after the element was moved back into a visible
+    // container; wterm re-fits itself via its own ResizeObserver, so this only re-syncs
+    // the dimensions with the agent
     refit: () => changeTerminalSize(),
 });
 
 onBeforeUnmount(() => {
     onClose();
-    resizeObserver.value?.disconnect();
 });
 
 onActivated(() => {
@@ -680,9 +585,48 @@ onActivated(() => {
 </script>
 
 <style lang="scss" scoped>
+// `.terminal-container` is merged onto wterm's own root element, so these rules target
+// `.wterm` itself (scoped styles keep working because the root carries the scope id).
 .terminal-container {
     width: 100%;
     height: 100%;
+    padding: 5px;
+    border-radius: 0;
+    box-shadow: none;
+    letter-spacing: var(--panel-term-letter-spacing, 0px);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
+}
+
+.terminal-container::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.terminal-container::-webkit-scrollbar-thumb {
+    border-radius: 6px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+.terminal-container::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.45);
+}
+
+.terminal-container::-webkit-scrollbar-corner {
+    background: transparent;
+}
+
+// wterm renders block elements and wide glyphs inside fixed `1ch`/`2ch` boxes, so the
+// configured letter spacing has to be added back to those boxes.
+:deep(.term-block) {
+    width: calc(1ch + var(--panel-term-letter-spacing, 0px));
+}
+
+:deep(.term-wide) {
+    width: calc(2ch + 2 * var(--panel-term-letter-spacing, 0px));
 }
 
 .terminal-shell {
@@ -773,37 +717,5 @@ onActivated(() => {
 .ai-mask-fade-enter-from,
 .ai-mask-fade-leave-to {
     opacity: 0;
-}
-
-:deep(.xterm) {
-    padding: 5px !important;
-    background-color: transparent !important;
-}
-
-:deep(.xterm .xterm-viewport) {
-    background-color: transparent !important;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.3) rgba(255, 255, 255, 0.1);
-}
-
-:deep(.xterm .xterm-viewport::-webkit-scrollbar) {
-    width: 10px;
-    height: 10px;
-    background: rgba(255, 255, 255, 0.1);
-}
-
-:deep(.xterm .xterm-viewport::-webkit-scrollbar-thumb) {
-    border-radius: 6px;
-    border: 2px solid transparent;
-    background-clip: content-box;
-    background-color: rgba(255, 255, 255, 0.3);
-}
-
-:deep(.xterm .xterm-viewport::-webkit-scrollbar-thumb:hover) {
-    background-color: rgba(255, 255, 255, 0.45);
-}
-
-:deep(.xterm .xterm-viewport::-webkit-scrollbar-corner) {
-    background: transparent;
 }
 </style>

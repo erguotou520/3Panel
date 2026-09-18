@@ -224,12 +224,12 @@ const message = {
             mfaTitle: 'MFA Sertifikasyonu',
             mfaCode: 'MFA doğrulama kodu',
             title: 'Linux Sunucu Yönetim Paneli',
-            licenseHelper: '<Topluluk Lisans Sözleşmesi>',
+            licenseHelper: '<GPLv3 Lisans Sözleşmesi>',
             errorAgree: 'Topluluk Yazılım Lisansını kabul etmek için tıklayın',
             logout: 'Çıkış',
             agreeTitle: 'Sözleşme',
             agreeContent:
-                'Meşru hak ve çıkarlarınızı daha iyi korumak için lütfen aşağıdaki sözleşmeyi okuyun ve kabul edin &laquo; <a href = "https://www.fit2cloud.com/legal/licenses.html" target = "_blank" > Topluluk Lisans Sözleşmesi </a> &raquo;',
+                'Meşru hak ve çıkarlarınızı daha iyi korumak için lütfen aşağıdaki sözleşmeyi okuyun ve kabul edin &laquo; <a href = "https://www.gnu.org/licenses/gpl-3.0.html" target = "_blank" > GPLv3 Lisans Sözleşmesi </a> &raquo;',
             passkeyFailed: 'Passkey ile giriş başarısız oldu, lütfen tekrar deneyin',
             passkeyNotSupported: 'Mevcut tarayıcı veya ortam passkey desteklemiyor',
             passkeyToPassword: 'Passkey kullanırken sorun mu yaşıyorsunuz? Şifreyi kullanın',
@@ -2165,12 +2165,6 @@ const message = {
         backgroundColor: 'Arka plan rengi',
         foregroundColor: 'Ön plan rengi',
         cursorBlink: 'İmleç Yanıp Sönme',
-        cursorStyle: 'İmleç Stili',
-        cursorUnderline: 'Alt Çizgi',
-        cursorBlock: 'Blok',
-        cursorBar: 'Çubuk',
-        scrollback: 'Geri Kaydırma',
-        scrollSensitivity: 'Kaydırma Hassasiyeti',
         aiAssistant: 'AI Asistani',
         aiAccountHelper:
             'Komut üretmek ve doldurmak için seçili model hesabını kullanın. Ollama ve vLLM gibi yerel modeller için özel model hesabı kullanın.',
@@ -3321,7 +3315,7 @@ const message = {
         importLicense: 'Lisansı içe aktar',
         securityWarningTitle: 'Kırılmış veya kaynağı bilinmeyen lisansları kullanmayın.',
         securityWarningContent:
-            '3Panel sistem yönetimi yetkilerine sahip bir kullanıcıyla çalışmalıdır. Resmi olmayan lisanslar veya değiştirilmiş sürümler sunucu kontrolünün kaybına, veri sızıntılarına ve diğer ciddi güvenlik risklerine neden olabilir. Lisansları ve kurulum paketlerini yalnızca resmi FIT2CLOUD kanallarından edinin.',
+            '3Panel sistem yönetimi yetkilerine sahip bir kullanıcıyla çalışmalıdır. Resmi olmayan lisanslar veya değiştirilmiş sürümler sunucu kontrolünün kaybına, veri sızıntılarına ve diğer ciddi güvenlik risklerine neden olabilir. Lisansları ve kurulum paketlerini yalnızca resmi kanallardan edinin.',
         importHelper: 'Lütfen lisans dosyasını buraya tıklayın veya sürükleyin',
         licenseRequiredTip:
             'Lisans henüz içe aktarılmadı. Cihaz kimliğini kopyalayıp lisansı alın ve giriş yapmadan önce içe aktarın.',

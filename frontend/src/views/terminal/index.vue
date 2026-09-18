@@ -76,9 +76,6 @@ const loadTerminalSetting = async () => {
             backgroundColor: res.data.backgroundColor || '#000000',
             foregroundColor: res.data.foregroundColor || '#f5f5f5',
             cursorBlink: res.data.cursorBlink,
-            cursorStyle: res.data.cursorStyle,
-            scrollback: Number(res.data.scrollback),
-            scrollSensitivity: Number(res.data.scrollSensitivity),
         });
     });
 };

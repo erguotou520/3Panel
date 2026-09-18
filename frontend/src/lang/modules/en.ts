@@ -221,12 +221,12 @@ const message = {
             mfaTitle: 'MFA Verification',
             mfaCode: 'MFA verification code',
             title: 'Linux Server Management Panel',
-            licenseHelper: '<Community License Agreement>',
+            licenseHelper: '<GPLv3 License Agreement>',
             errorAgree: 'Please accept the Community License Agreement',
             logout: 'Logout',
             agreeTitle: 'Agreement',
             agreeContent:
-                'In order to better protect your legitimate rights and interests, please read and agree to the following agreement &laquo; <a href = "https://www.fit2cloud.com/legal/licenses.html" target = "_blank" > Community License Agreement </a> &raquo;',
+                'In order to better protect your legitimate rights and interests, please read and agree to the following agreement &laquo; <a href = "https://www.gnu.org/licenses/gpl-3.0.html" target = "_blank" > GPLv3 License Agreement </a> &raquo;',
             passkeyFailed: 'Passkey sign-in failed, please try again',
             passkeyNotSupported:
                 'Current browser or environment does not support passkeys, confirm you have bound a domain name and are accessing through HTTPS',
@@ -2142,12 +2142,6 @@ const message = {
         backgroundColor: 'Background Color',
         foregroundColor: 'Foreground Color',
         cursorBlink: 'Cursor Blink',
-        cursorStyle: 'Cursor Style',
-        cursorUnderline: 'Underline',
-        cursorBlock: 'Block',
-        cursorBar: 'Bar',
-        scrollback: 'Scrollback',
-        scrollSensitivity: 'Scroll Sensitivity',
         aiAssistant: 'AI Assistant',
         aiAccountHelper:
             'Use the selected model account to generate and fill commands. For local models like Ollama and vLLM, use a custom model account.',
@@ -3270,7 +3264,7 @@ const message = {
         importLicense: 'Import license',
         securityWarningTitle: 'Do not use cracked licenses or licenses from unknown sources.',
         securityWarningContent:
-            '3Panel runs with system administration privileges. Unofficial licenses or tampered builds may cause server takeover, data leaks, and other serious security risks. Obtain licenses and installers only from official FIT2CLOUD channels.',
+            '3Panel runs with system administration privileges. Unofficial licenses or tampered builds may cause server takeover, data leaks, and other serious security risks. Obtain licenses and installers only from official channels.',
         importHelper: 'Click or drag the license file here',
         licenseRequiredTip:
             'The license has not been imported yet. Copy the device ID, obtain the license, and import it before logging in.',

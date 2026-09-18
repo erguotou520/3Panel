@@ -2,12 +2,7 @@
     <div class="footer" :class="{ 'footer--mobile': isMobile }">
         <div class="footer-content">
             <div class="footer-copyright">
-                <a v-if="!isIntl && !isFxplay" href="https://fit2cloud.com/" target="_blank">
-                    Copyright © 2014-{{ year }} {{ $t('commons.fit2cloud') }}
-                </a>
-                <a v-else href="https://3panel.pro/" target="_blank">
-                    Copyright © {{ year }} {{ $t('commons.lingxia') }}
-                </a>
+                <span>Copyright © 2014-{{ year }} {{ $t('commons.fit2cloud') }} (1Panel) · 3Panel · GPLv3</span>
             </div>
             <FooterNavigation class="footer-navigation-panel" />
             <SystemUpgrade class="footer-upgrade" />
@@ -20,7 +15,7 @@ import SystemUpgrade from '@/components/system-upgrade/index.vue';
 import FooterNavigation from '@/components/footer-navigation/index.vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { isFxplay, isIntl, isMobile } = useGlobalStore();
+const { isMobile } = useGlobalStore();
 
 const year = new Date().getFullYear();
 </script>

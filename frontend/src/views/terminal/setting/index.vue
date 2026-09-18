@@ -66,7 +66,17 @@
                             </el-form-item>
 
                             <el-form-item>
-                                <div class="terminal" ref="terminalElement"></div>
+                                <WTerm
+                                    v-if="termMounted"
+                                    :key="termKey"
+                                    ref="termRef"
+                                    class="terminal"
+                                    :class="{ 'cursor-blink': form.cursorBlink === 'Enable' }"
+                                    :style="termStyleVars"
+                                    :auto-resize="true"
+                                    :cursor-blink="false"
+                                    @ready="onTermReady"
+                                />
                             </el-form-item>
 
                             <el-form-item :label="$t('terminal.cursorBlink')">
@@ -74,33 +84,6 @@
                                     v-model="form.cursorBlink"
                                     active-value="Enable"
                                     inactive-value="Disable"
-                                    @change="changeItem()"
-                                />
-                            </el-form-item>
-                            <el-form-item :label="$t('terminal.cursorStyle')">
-                                <el-select class="formInput" v-model="form.cursorStyle" @change="changeItem()">
-                                    <el-option value="block" :label="$t('terminal.cursorBlock')" />
-                                    <el-option value="underline" :label="$t('terminal.cursorUnderline')" />
-                                    <el-option value="bar" :label="$t('terminal.cursorBar')" />
-                                </el-select>
-                            </el-form-item>
-                            <el-form-item :label="$t('terminal.scrollback')">
-                                <el-input-number
-                                    class="formInput"
-                                    :step="50"
-                                    :min="0"
-                                    :max="10000"
-                                    v-model="form.scrollback"
-                                    @change="changeItem()"
-                                />
-                            </el-form-item>
-                            <el-form-item :label="$t('terminal.scrollSensitivity')">
-                                <el-input-number
-                                    class="formInput"
-                                    :step="1"
-                                    :min="0"
-                                    :max="16"
-                                    v-model="form.scrollSensitivity"
                                     @change="changeItem()"
                                 />
                             </el-form-item>
@@ -153,12 +136,13 @@
 </template>
 
 <script lang="ts" setup>
-import { ref, reactive, watch, onMounted, onBeforeUnmount } from 'vue';
+import { ref, reactive, computed, watch } from 'vue';
 import { getTerminalInfo, UpdateTerminalInfo } from '@/api/modules/setting';
-import { Terminal } from '@xterm/xterm';
+import { Terminal as WTerm } from '@wterm/vue';
+import type { WTerm as WTermInstance } from '@wterm/vue';
+import '@wterm/vue/css';
+import { wtermStyleVars } from '@/utils/wterm';
 import OperateDialog from '@/views/terminal/setting/default-conn/index.vue';
-import '@xterm/xterm/css/xterm.css';
-import { FitAddon } from '@xterm/addon-fit';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
 import { TerminalDockSessionStore, TerminalStore } from '@/store';
@@ -170,10 +154,10 @@ const terminalStore = TerminalStore();
 const dockSessions = TerminalDockSessionStore();
 const dialogRef = ref();
 
-const terminalElement = ref<HTMLDivElement | null>(null);
-const fitAddon = new FitAddon();
-const term = ref();
-const previewResizeObserver = ref<ResizeObserver>();
+const termRef = ref<null | { instance: WTermInstance | null }>(null);
+const term = ref<WTermInstance | null>(null);
+const termMounted = ref(false);
+const termKey = ref(0);
 const DEFAULT_FONT_FAMILY = "Monaco, Menlo, Consolas, 'Courier New', monospace";
 const selectedFontFamilies = ref<string[]>([]);
 const fontFamilyOptions = [
@@ -199,9 +183,6 @@ const form = reactive({
     backgroundColor: '#000000',
     foregroundColor: '#f5f5f5',
     cursorBlink: 'Enable',
-    cursorStyle: 'underline',
-    scrollback: 1000,
-    scrollSensitivity: 6,
     showDefaultConn: false,
     defaultConn: '',
 });
@@ -245,19 +226,18 @@ const acceptParams = () => {
     iniTerm();
 };
 
-onMounted(() => {
-    previewResizeObserver.value = new ResizeObserver(() => {
-        if (!term.value) return;
-        fitAddon.fit();
-    });
-    if (terminalElement.value) {
-        previewResizeObserver.value.observe(terminalElement.value);
-    }
-});
-
-onBeforeUnmount(() => {
-    previewResizeObserver.value?.disconnect();
-});
+// The preview mirrors the panel terminal settings through wterm's CSS variables, so it
+// only needs to be created once; every change re-renders `termStyleVars` below.
+const termStyleVars = computed(() =>
+    wtermStyleVars({
+        fontSize: form.fontSize,
+        lineHeight: form.lineHeight,
+        letterSpacing: form.letterSpacing,
+        fontFamily: form.fontFamily || DEFAULT_FONT_FAMILY,
+        backgroundColor: form.backgroundColor,
+        foregroundColor: form.foregroundColor,
+    }),
+);
 
 const search = async (withReset?: boolean) => {
     loading.value = true;
@@ -273,9 +253,6 @@ const search = async (withReset?: boolean) => {
             form.backgroundColor = res.data.backgroundColor || '#000000';
             form.foregroundColor = res.data.foregroundColor || '#f5f5f5';
             form.cursorBlink = res.data.cursorBlink;
-            form.cursorStyle = res.data.cursorStyle;
-            form.scrollback = Number(res.data.scrollback);
-            form.scrollSensitivity = Number(res.data.scrollSensitivity);
             terminalStore.fontFamily = res.data.fontFamily || '';
 
             if (withReset) {
@@ -354,60 +331,19 @@ const submitChangeShow = async () => {
 };
 
 const iniTerm = () => {
-    const defaultFontFamily = "Monaco, Menlo, Consolas, 'Courier New', monospace";
-    const fontFamily = form.fontFamily || defaultFontFamily;
-
-    term.value = new Terminal({
-        lineHeight: 1.2,
-        fontSize: 12,
-        fontFamily: fontFamily,
-        theme: {
-            background: '#000000',
-            foreground: '#f5f5f5',
-        },
-        cursorBlink: true,
-        cursorStyle: 'block',
-        scrollback: 1000,
-        scrollSensitivity: 6,
-    });
-    term.value.open(terminalElement.value);
-    applyPreviewBackground();
-    term.value.loadAddon(fitAddon);
-    term.value.write('the first line \r\nthe second line');
-    fitAddon.fit();
+    if (termMounted.value) return;
+    termKey.value += 1;
+    termMounted.value = true;
 };
 
-const applyPreviewBackground = () => {
-    if (!terminalElement.value) return;
-    terminalElement.value.style.backgroundColor = form.backgroundColor || '#000000';
-    terminalElement.value.style.backgroundImage = '';
-    terminalElement.value.style.backgroundSize = '';
-    terminalElement.value.style.backgroundPosition = '';
-    terminalElement.value.style.backgroundRepeat = '';
-    terminalElement.value.style.imageRendering = '';
+const onTermReady = (instance: WTermInstance) => {
+    term.value = instance;
+    instance.write('the first line\r\nthe second line');
 };
 
-const changeItem = () => {
-    const defaultFontFamily = "Monaco, Menlo, Consolas, 'Courier New', monospace";
-    const fontFamily = form.fontFamily || defaultFontFamily;
-
-    term.value.options.lineHeight = form.lineHeight;
-    term.value.options.letterSpacing = form.letterSpacing;
-    term.value.options.fontSize = form.fontSize;
-    term.value.options.fontFamily = fontFamily;
-    term.value.options.theme = {
-        ...(term.value.options.theme || {}),
-        background: form.backgroundColor,
-        foreground: form.foregroundColor,
-    };
-    term.value.options.cursorBlink = form.cursorBlink === 'Enable';
-    term.value.options.cursorStyle = form.cursorStyle;
-    term.value.options.scrollback = form.scrollback;
-    term.value.options.scrollSensitivity = form.scrollSensitivity;
-    applyPreviewBackground();
-
-    fitAddon.fit();
-};
+// The preview follows the form reactively through `termStyleVars`; the handler is kept
+// because every field in the form is wired to it.
+const changeItem = () => {};
 
 const onSetDefault = () => {
     form.lineHeight = 1.2;
@@ -418,9 +354,6 @@ const onSetDefault = () => {
     form.backgroundColor = '#000000';
     form.foregroundColor = '#f5f5f5';
     form.cursorBlink = 'Enable';
-    form.cursorStyle = 'block';
-    form.scrollback = 1000;
-    form.scrollSensitivity = 6;
 
     changeItem();
 };
@@ -442,9 +375,6 @@ const onSave = () => {
                 backgroundColor: form.backgroundColor,
                 foregroundColor: form.foregroundColor,
                 cursorBlink: form.cursorBlink,
-                cursorStyle: form.cursorStyle,
-                scrollback: form.scrollback + '',
-                scrollSensitivity: form.scrollSensitivity + '',
             };
             await UpdateTerminalInfo(param);
             MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
@@ -456,9 +386,6 @@ const onSave = () => {
                 backgroundColor: form.backgroundColor,
                 foregroundColor: form.foregroundColor,
                 cursorBlink: form.cursorBlink,
-                cursorStyle: form.cursorStyle,
-                scrollback: form.scrollback,
-                scrollSensitivity: form.scrollSensitivity,
             });
         } finally {
             loading.value = false;
@@ -478,5 +405,19 @@ defineExpose({
 .terminal {
     width: 100%;
     height: 100px;
+    padding: 5px;
+    border-radius: 0;
+    box-shadow: none;
+    letter-spacing: var(--panel-term-letter-spacing, 0px);
+}
+
+/* wterm renders block elements and wide glyphs inside fixed `1ch`/`2ch` boxes, so the
+   configured letter spacing has to be added back to those boxes. */
+:deep(.term-block) {
+    width: calc(1ch + var(--panel-term-letter-spacing, 0px));
+}
+
+:deep(.term-wide) {
+    width: calc(2ch + 2 * var(--panel-term-letter-spacing, 0px));
 }
 </style>
