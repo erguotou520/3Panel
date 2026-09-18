@@ -14,7 +14,6 @@ import (
 	"github.com/3panel-dev/3panel/core/init/proxy"
 	"github.com/3panel-dev/3panel/core/utils/common"
 	"github.com/3panel-dev/3panel/core/utils/nodecert"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
 	"github.com/jinzhu/copier"
 )
 
@@ -66,7 +65,9 @@ func (u *NodeService) SimpleAll() ([]dto.SimpleNodeItem, error) {
 	if err != nil {
 		return items, nil
 	}
-	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	// Node agents only accept certificates signed by this panel's CA and
+	// require core's client cert (mTLS), so the probe must use the nodecert
+	// configuration rather than a plain system-roots transport.
 	for _, node := range nodes {
 		item := dto.SimpleNodeItem{
 			ID:          node.ID,
@@ -75,8 +76,8 @@ func (u *NodeService) SimpleAll() ([]dto.SimpleNodeItem, error) {
 			Description: node.Description,
 			Status:      nodeStatusOffline,
 		}
-		if transport != nil && node.Addr != "" {
-			if err := u.fillRemoteSimpleItem(transport, node, &item); err != nil {
+		if node.Addr != "" {
+			if err := u.fillRemoteSimpleItem(node, &item); err != nil {
 				global.LOG.Debugf("load simple info for node %s failed: %v", node.Name, err)
 			}
 		}
@@ -93,7 +94,7 @@ func (u *NodeService) localSimpleItem() dto.SimpleNodeItem {
 	}
 	client := proxy.LocalClient()
 	var info agentNodeInfo
-	if err := u.getJSON(client, "http://3panel.local/api/v2/nodes/current/info", &info); err == nil {
+	if err := u.getJSON(client, "http://3panel.local/api/v2/dashboard/current/node", &info); err == nil {
 		item.SystemVersion = info.Version
 		item.SecurityEntrance = info.Scope
 		item.Status = nodeStatusOnline
@@ -101,30 +102,31 @@ func (u *NodeService) localSimpleItem() dto.SimpleNodeItem {
 	return item
 }
 
-func (u *NodeService) fillRemoteSimpleItem(transport *http.Transport, node model.Node, item *dto.SimpleNodeItem) error {
-	client := &http.Client{Transport: transport, Timeout: remoteProbeTimeout}
+func (u *NodeService) fillRemoteSimpleItem(node model.Node, item *dto.SimpleNodeItem) error {
+	// Per-node TLS config: ServerName must be the host part of the dial
+	// address so the node's certificate (SAN carries the same host) verifies.
+	tlsCfg, err := nodecert.TLSConfig(node.Addr)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{
+		Timeout:   remoteProbeTimeout,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
 	var info agentNodeInfo
-	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/nodes/current/info", &info); err != nil {
+	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/dashboard/current/node", &info); err != nil {
 		return err
 	}
 	item.Status = nodeStatusOnline
 	item.SystemVersion = info.Version
 	item.SecurityEntrance = info.Scope
 
-	var base struct {
-		CPUUsedPercent    float64 `json:"cpuUsedPercent"`
-		CPUTotal          int     `json:"cpuTotal"`
-		MemoryTotal       uint64  `json:"memoryTotal"`
-		MemoryUsedPercent float64 `json:"memoryUsedPercent"`
-	}
-	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/dashboard/base", &base); err != nil {
-		global.LOG.Debugf("load node %s dashboard base failed: %v", node.Name, err)
-		return nil
-	}
-	item.CPUUsedPercent = base.CPUUsedPercent
-	item.CPUTotal = base.CPUTotal
-	item.MemoryTotal = base.MemoryTotal
-	item.MemoryUsedPercent = base.MemoryUsedPercent
+	// The current/node payload already carries CPU/memory stats; no extra
+	// dashboard call needed.
+	item.CPUUsedPercent = info.CPUUsedPercent
+	item.CPUTotal = info.CPUTotal
+	item.MemoryTotal = info.MemoryTotal
+	item.MemoryUsedPercent = info.MemoryUsedPercent
 	return nil
 }
 
@@ -141,8 +143,12 @@ func (u *NodeService) getJSON(client *http.Client, url string, out interface{}) 
 }
 
 type agentNodeInfo struct {
-	Version string `json:"version"`
-	Scope   string `json:"scope"`
+	Version           string  `json:"version"`
+	Scope             string  `json:"scope"`
+	CPUUsedPercent    float64 `json:"cpuUsedPercent"`
+	CPUTotal          int     `json:"cpuTotal"`
+	MemoryTotal       uint64  `json:"memoryTotal"`
+	MemoryUsedPercent float64 `json:"memoryUsedPercent"`
 }
 
 func (u *NodeService) List(req dto.NodeSearch) ([]dto.NodeInfo, error) {
