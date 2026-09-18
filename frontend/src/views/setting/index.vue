@@ -11,7 +11,10 @@
 import { computed } from 'vue';
 import i18n from '@/lang';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-const { globalStore, isOffline, isFxplay, isAdmin, isEnterprise } = useGlobalStore();
+// 「许可证」入口已移除：本仓库是自托管的 GPLv3 分支，没有官方许可证服务，
+// 该 tab 只会指向不可用的 /settings/license（企业版路径 /enterprise/license 更是未注册）。
+// 路由与页面文件保留，避免 views/ai/model/vllm 的 routerToName('License') 失效。
+const { globalStore, isFxplay, isAdmin } = useGlobalStore();
 
 const buttons = computed<RouterButton[]>(() => {
     const items = [
@@ -57,14 +60,6 @@ const buttons = computed<RouterButton[]>(() => {
                   },
               ]
             : []),
-        ...((isOffline.value && !isEnterprise.value) || (isEnterprise.value && !isAdmin.value)
-            ? []
-            : [
-                  {
-                      label: i18n.global.t('setting.license'),
-                      path: isEnterprise.value ? '/enterprise/license' : '/settings/license',
-                  },
-              ]),
         ...(isFxplay.value
             ? []
             : [

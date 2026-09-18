@@ -82,7 +82,7 @@
                             <span v-if="language === 'en'">{{ row.detailEN }}</span>
                         </template>
                     </el-table-column>
-                    <el-table-column v-if="isXpackOrEE" :label="$t('xpack.node.node')" prop="node">
+                    <el-table-column :label="$t('xpack.node.node')" prop="node">
                         <template #default="{ row }">
                             <span>{{ loadNodeName(row.node) }}</span>
                         </template>
@@ -132,7 +132,7 @@ const searchStatus = ref<string>('');
 const searchNode = ref<string>('');
 const nodes = ref();
 
-const { globalStore, currentNode, isAdmin, isXpackOrEE, language } = useGlobalStore();
+const { globalStore, currentNode, isAdmin, language } = useGlobalStore();
 
 const search = async () => {
     let params = {
@@ -309,7 +309,8 @@ const onSubmitClean = async () => {
 };
 
 onMounted(() => {
-    if (isAdmin.value && isXpackOrEE.value) {
+    // 节点筛选/节点列属于多节点基础能力，不再要求已有许可证
+    if (isAdmin.value) {
         loadNodes();
     }
     searchNode.value = isAdmin.value ? '' : currentNode.value;
