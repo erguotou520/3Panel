@@ -609,7 +609,16 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 
 ```bash
 B=https://3panel.erguotou.me
-probe() { printf '%-6s %s\n' "$(curl -s -o /dev/null -w '%{http_code} %{size_download}' -L --max-time 25 "$1")" "$1"; }
+# 用 HEAD 的 content-length 报「对象真实大小」。不要用 GET 的 %{size_download}：
+# 链路慢时 curl 会在 --max-time 内被掐断，那个数字是「已下载多少」，看着像文件变小了
+# （实测 GeoIP 19.5 MB 被报成 3.5 MB / 6.8 MB，极易误判成文件损坏）。
+probe() {
+    h=$(curl -sS -I -L --max-time 25 "$1" 2>/dev/null)
+    printf '%-4s %-11s %s\n' \
+        "$(printf '%s' "$h" | awk '/^HTTP/{c=$2} END{print c}')" \
+        "$(printf '%s' "$h" | tr -d '\r' | awk 'tolower($1)=="content-length:"{n=$2} END{print n+0}')" \
+        "$1"
+}
 probe $B/resource/geo/GeoIP.mmdb
 probe $B/resource/language/lang.tar.gz
 probe $B/resource/scripts/data.yaml
