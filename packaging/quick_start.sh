@@ -87,6 +87,7 @@ if [ "$LANG_CODE" = "zh" ]; then
     M_PROBE_FAIL='地址不可用，改试下一个：%s'
     M_RESOLVED='目标版本 %s（%s）'
     M_REUSE='本地已有安装包且校验通过，跳过下载'
+    M_RESUME='检测到未完成的分片（%s / %s），从断点继续'
     M_DOWNLOAD='正在下载 %s（%s）'
     M_DL_FROM='来源：%s'
     M_DL_FAIL='下载失败（已尝试 %s 次）：%s'
@@ -117,6 +118,7 @@ else
     M_PROBE_FAIL='unreachable, trying the next base: %s'
     M_RESOLVED='target version %s (%s)'
     M_REUSE='local package present and verified — skipping download'
+    M_RESUME='incomplete partial found (%s of %s) — resuming'
     M_DOWNLOAD='Downloading %s (%s)'
     M_DL_FROM='from %s'
     M_DL_FAIL='download failed after %s attempts: %s'
@@ -420,9 +422,21 @@ main() {
     if [ -f "$file" ] && [ -n "$expected" ] && [ "$(sha256_of "$file")" = "$expected" ]; then
         log '%s' "$M_REUSE"
     else
-        rm -f "$file"
-        local want label
+        local want label have
         want=$(remote_size "$url")
+        if [ -f "$file" ]; then
+            have=$(size_of "$file" 2>/dev/null || echo 0)
+            # Keep a short partial file so `-C -` can pick up where it stopped: on
+            # this link a 60 MB transfer stalls often, and discarding 40 MB of
+            # progress on every re-run is worse than useless. Anything at or past
+            # the expected size is unusable — that is exactly what just failed the
+            # checksum — so it gets deleted.
+            if [ -z "$want" ] || [ "$have" -ge "$want" ]; then
+                rm -f "$file"
+            else
+                log "$M_RESUME" "$(human_size "$have")" "$(human_size "$want")"
+            fi
+        fi
         label='?'
         [ -n "$want" ] && label=$(human_size "$want")
         log "$M_DOWNLOAD" "$archive" "$label"
