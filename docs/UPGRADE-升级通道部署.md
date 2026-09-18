@@ -485,9 +485,9 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 | `agent/utils/cloud_storage/client/ali.go` | 移除 8 处 `InsecureSkipVerify`（`api.alipan.com` 是公网 CA 证书） |
 | `core/utils/cloud_storage/refresh_token.go` | 同上（`api.aliyundrive.com`） |
 | `packaging/` | **新增**：`3pctl`、`install.sh`、`build-release.sh`、`initscript/`（8 个服务定义）、`lang/`（内置语言包） |
-| `packaging/build-release.sh` | 新增 `dist/lang.tar.gz` 产出（资源通道语言包）；GeoIP 多源取源 + `GEOIP_FILE` |
+| `packaging/build-release.sh` | 新增 `dist/lang.tar.gz` 产出（资源通道语言包）；GeoIP 多源取源 + `GEOIP_FILE`；新增「把 tag 版本 stamp 进 `go:embed` 的 `conf/app.yaml`，退出时还原」 |
 | `scripts/cf-appstore-sync/src/index.js` | 新增 `/sync-resource` 端点：把上游脚本库（+可选语言包 / GeoIP）镜像进 R2，带发布前校验与 stamp 幂等 |
-| `.github/workflows/release-stable.yml` | **新增**：tag 触发自动打包并发布到约定路径；含 `resource/language/lang.tar.gz` 上传 |
+| `.github/workflows/release-stable.yml` | **新增**：tag 触发自动打包并发布到约定路径；含 `resource/language/lang.tar.gz` 上传。非 beta 版本同时发 `stable`+`dev`；`S3_*` 改由 job 级 `env` 取值（`secrets` 不能用于 `if:`），未配置打 `::warning::` |
 | `frontend/src/**` | 移除商业版推广/论坛/定价外链（详见安全报告） |
 
 ---
@@ -516,18 +516,33 @@ probe $B/dev/3panel.json.version.txt
 | --- | --- | --- |
 | `/resource/geo/GeoIP.mmdb` | ✅ 200（19.5 MB） | 正常，见 §5.4 |
 | `/resource/language/lang.tar.gz` | ✅ 200（2.5 KB） | 已上传，与 `dist/lang.tar.gz` 逐字节一致 |
-| `/resource/scripts/*` | ⚠️ 404 | Worker 的 `/sync-resource` 会自动补（见 §2.2） |
-| `/package/stable/latest`、`/package/dev/latest` | ⚠️ 404 | **发布通道还没上线**：本地无 `v*` tag，工作流未跑过 |
+| `/resource/scripts/*` | ⚠️ 404 | Worker 的 `/sync-resource` 会自动补（见 §2.2）；**Worker 还没部署完** |
+| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.1` | 发布通道已上线（2026-09-18 首次发布，见下） |
 | `/dev/3panel.json.zip`、`.version.txt` | ✅ 200 | 应用商店正常（`mode: dev` 对应这一份） |
+| `/package/beta/latest` | 404 | 正常：还没发过 beta |
 
-### 发布通道未上线的含义
+### 首次发布已完成（2026-09-18，v2.0.1）
 
-`upgrade.go` 的版本探测会请求 `{RepoURL}/{mode}/latest`，**404 时面板拿不到新版本**，
-表现为「检查更新」一直提示已是最新。要做一次真实发布：
+`v2.0.1` 是发布通道的第一次真实发布，端到端核过（不只是看 CI 变绿）：
+
+| 校验项 | 结果 |
+| --- | --- |
+| `gh run watch` | 12 步全绿，6m17s |
+| `/package/{stable,dev}/latest` | `v2.0.1`，hex 确认**无尾换行** |
+| `/package/{stable,dev}/latest.current` | `{"v2.0": "v2.0.1"}` |
+| 包体（两个频道各一份） | 200 / 60,729,158 B |
+| 下载后本地重算 sha256 | `47385b39…187a`，与已发布 `.sha256` **完全一致** |
+| 包顶层目录 | `3panel-v2.0.1-linux-amd64`（符合 `upgrade.go` 取路径的契约） |
+| `strings 3panel-core` | `version: v2.0.1` —— 构建期的版本 stamp 生效 |
+
+后续发版：
 
 ```bash
 git tag v2.0.2 && git push github v2.0.2    # 触发 release-stable.yml（远端是 github，不是 origin）
 ```
+
+⚠️ 版本号必须**大于** `core/cmd/server/conf/app.yaml` 里的 `version`（当前 `v2.0.1`），
+否则 `checkVersion()` 判定 remote 不大于 current，面板不会提示升级。
 
 前提是仓库已配置好对象存储：
 
