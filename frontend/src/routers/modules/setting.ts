@@ -123,6 +123,18 @@ const settingRouter = {
                     },
                 },
                 {
+                    path: 'node',
+                    name: 'SettingNode',
+                    hidden: true,
+                    component: () => import('@/views/setting/node/index.vue'),
+                    meta: {
+                        parent: 'menu.settings',
+                        title: 'xpack.node.nodeManagement',
+                        activeMenu: '/settings',
+                        adminOnly: true,
+                    },
+                },
+                {
                     path: 'expired',
                     name: 'Expired',
                     hidden: true,

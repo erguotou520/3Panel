@@ -1,4 +1,7 @@
-export const footerNavigationKeys = ['learnMore', 'forum', 'documentation', 'project'] as const;
+// Only informational links are kept. The upstream "learn more / pro" and
+// "forum" entries were commercial promotion pointing at domains this
+// deployment does not own, so they have been removed rather than repointed.
+export const footerNavigationKeys = ['documentation', 'project'] as const;
 
 export type FooterNavigationKey = (typeof footerNavigationKeys)[number];
 
@@ -22,22 +25,14 @@ export interface FooterNavigationSettingEditor {
     isDirty: () => boolean;
 }
 
-export const createDefaultFooterNavigationLinks = (isIntl: boolean, docsUrl: string): FooterNavigationLinks => ({
-    learnMore: {
-        visible: true,
-        url: isIntl ? 'https://3panel.pro/pricing' : 'https://3panel.cn/versions.html',
-    },
-    forum: {
-        visible: true,
-        url: isIntl ? 'https://github.com/3panel-dev/3panel/discussions' : 'https://bbs.3panel.pro/c/3p/7',
-    },
+export const createDefaultFooterNavigationLinks = (docsUrl: string): FooterNavigationLinks => ({
     documentation: {
         visible: true,
         url: docsUrl.endsWith('/') ? docsUrl : `${docsUrl}/`,
     },
     project: {
         visible: true,
-        url: 'https://github.com/3panel-dev/3panel',
+        url: 'https://cnb.cool/erguotou520/3panel',
     },
 });
 

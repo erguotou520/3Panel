@@ -27,7 +27,7 @@
                                         <el-button
                                             class="node-favorite-button"
                                             link
-                                            v-if="isAdmin && isXpackOrEE"
+                                            v-if="isAdmin && isMultiNode"
                                             :type="row.isFavorite ? 'warning' : 'info'"
                                             :loading="favoriteLoadingIDs.includes(row.id)"
                                             @click.stop="toggleFavorite(row)"
@@ -46,7 +46,7 @@
                                             {{ displayNodeName(row) }}
                                         </el-button>
                                         <el-tooltip
-                                            v-if="row.status !== 'Healthy' || !row.isBound"
+                                            v-if="row.status !== 'Online' || !row.isBound"
                                             :content="
                                                 row.isBound
                                                     ? $t('xpack.node.nodeUnhealthy')
@@ -82,7 +82,7 @@ import i18n from '@/lang';
 import { computed, ref, watch } from 'vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
-const { isAdmin, isXpackOrEE } = useGlobalStore();
+const { isAdmin, isMultiNode } = useGlobalStore();
 
 type NodeItem = Setting.NodeItem & {
     group?: string;

@@ -278,6 +278,233 @@ function buildManifest(store, mode, srcOrigin, syncPackages) {
     return [...items.values()];
 }
 
+/* ------------------------------------------------------- resource channel */
+
+/**
+ * Besides the app store, the panel pulls a second group of objects from the same
+ * bucket - the "resource channel" (ResourceURL(), default `<host>/resource`):
+ *
+ *   /resource/scripts/data.yaml        script-library index
+ *   /resource/scripts/scripts.tar.gz   the scripts themselves
+ *   /resource/scripts/version.txt      freshness stamp (unix seconds)
+ *   /resource/language/lang.tar.gz     language pack
+ *   /resource/geo/GeoIP.mmdb           IP -> location database
+ *
+ * Upstream deliberately splits these across two prefixes: the script library moved
+ * to `/resource/v2/`, while the language pack and GeoIP stayed under `/resource/`.
+ * Do NOT "unify" the base - the v1 script path and the v2 language/geo paths are 404.
+ */
+const RESOURCE_SRC_DEFAULT = 'https://resource.fit2cloud.com/1panel';
+const MMDB_MARKER = 'MaxMind.com';
+
+function resourceSource(env) {
+    return (env.RESOURCE_SRC || RESOURCE_SRC_DEFAULT).replace(/\/+$/, '');
+}
+
+async function gunzip(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/** Walk a tar archive and return `{name, size, dir}` per entry. Null = unusable header. */
+function listTarEntries(bytes) {
+    const decoder = new TextDecoder();
+    const entries = [];
+    let offset = 0;
+    while (offset + 512 <= bytes.length) {
+        const header = bytes.subarray(offset, offset + 512);
+        if (header.every((b) => b === 0)) break;
+
+        const rawName = decoder.decode(header.subarray(0, 100));
+        const nul = rawName.indexOf('\0');
+        const name = nul === -1 ? rawName : rawName.slice(0, nul);
+
+        const sizeField = decoder.decode(header.subarray(124, 136)).replace(/\0/g, '').trim();
+        const size = sizeField === '' ? 0 : parseInt(sizeField, 8);
+        if (!Number.isFinite(size)) return null; // base-256 size or a corrupt header
+
+        entries.push({ name, size, dir: String.fromCharCode(header[156]) === '5' });
+        offset += 512 + Math.ceil(size / 512) * 512;
+    }
+    return entries;
+}
+
+/**
+ * Never publish a script library the panel cannot serve.
+ *
+ * `script_library.go` reads `$tmpDir/scripts/sh/<key>.sh` for every key listed in
+ * data.yaml. One missing file becomes an empty script in the UI, with no error
+ * surfacing anywhere - which is exactly what this check exists to prevent.
+ * Throw = the current (working) copy in R2 is left untouched.
+ */
+function checkScriptLibrary(yamlText, entries) {
+    if (!/^\s*scripts:\s*$/m.test(yamlText) || !/^\s*sh:\s*$/m.test(yamlText)) {
+        throw new Error('data.yaml: scripts/sh section not found (upstream layout changed?)');
+    }
+    const keys = [...yamlText.matchAll(/^\s*-\s*key:\s*([A-Za-z0-9_.-]+)\s*$/gm)].map((match) => match[1]);
+    if (keys.length === 0) throw new Error('data.yaml: no script keys found (upstream layout changed?)');
+
+    const files = new Map();
+    for (const entry of entries) {
+        if (entry.dir) continue;
+        const match = /^(?:\.\/)?scripts\/sh\/([^/]+)\.sh$/.exec(entry.name);
+        if (match) files.set(match[1], entry.size);
+    }
+    if (files.size === 0) throw new Error('scripts.tar.gz: no scripts/sh/*.sh entries');
+
+    const missing = keys.filter((key) => !files.has(key));
+    if (missing.length) throw new Error(`scripts.tar.gz: no file for key(s) ${missing.join(', ')}`);
+
+    const empty = [...files].filter(([, size]) => size === 0).map(([key]) => key);
+    if (empty.length) throw new Error(`scripts.tar.gz: empty script(s) ${empty.join(', ')}`);
+
+    return { keys: keys.length, files: files.size, orphans: [...files.keys()].filter((key) => !keys.includes(key)) };
+}
+
+/** `initLang()` uses /usr/local/bin/lang/zh.sh as its "pack installed" sentinel. */
+function checkLangPack(entries) {
+    const names = new Set(entries.map((entry) => entry.name.replace(/^\.\//, '')));
+    if (!names.has('lang/zh.sh')) throw new Error('lang.tar.gz: lang/zh.sh missing (initLang sentinel)');
+    if (!names.has('lang/en.sh')) throw new Error('lang.tar.gz: lang/en.sh missing (install.sh fallback)');
+    return { files: [...names].filter((name) => name.endsWith('.sh')).length };
+}
+
+/** Reject anything that is not a plausible MaxMind database (e.g. an error page). */
+function checkGeoIp(bytes) {
+    if (bytes.length < 1024 * 1024) throw new Error(`GeoIP.mmdb: implausibly small (${bytes.length} bytes)`);
+    const tail = new TextDecoder('latin1').decode(bytes.subarray(Math.max(0, bytes.length - 131072)));
+    if (!tail.includes(MMDB_MARKER)) throw new Error('GeoIP.mmdb: MaxMind metadata marker not found');
+    return { bytes: bytes.length };
+}
+
+const RESOURCE_SCRIPTS = [
+    { key: 'resource/scripts/version.txt', path: '/resource/v2/scripts/version.txt', type: 'text/plain; charset=utf-8' },
+    { key: 'resource/scripts/data.yaml', path: '/resource/v2/scripts/data.yaml', type: 'text/yaml; charset=utf-8' },
+    { key: 'resource/scripts/scripts.tar.gz', path: '/resource/v2/scripts/scripts.tar.gz', type: 'application/gzip' },
+];
+
+/**
+ * Mirror the resource channel into R2.
+ *
+ * The script library is gated by upstream's version.txt, so an unchanged upstream
+ * costs one fetch and no write. The language pack and GeoIP are opt-in (default
+ * off): the language pack is produced by release-stable.yml from the repo's own
+ * `packaging/lang/`, and letting a cron overwrite it would make the two fight.
+ */
+async function runResourceSync(env, { force = false, dry = false, lang, geoip } = {}) {
+    const bucket = env.APPSTORE;
+    if (!bucket) throw new Error('missing R2 binding APPSTORE');
+
+    const wantLang = lang === undefined ? String(env.SYNC_RESOURCE_LANG || 'false') === 'true' : lang;
+    const wantGeoip = geoip === undefined ? String(env.SYNC_RESOURCE_GEOIP || 'false') === 'true' : geoip;
+    const src = resourceSource(env);
+    const dst = (env.DST_ORIGIN || '').replace(/\/+$/, '');
+
+    const stateKey = 'resource/scripts/.sync-state.json';
+    const state = (await readJson(bucket, stateKey)) || {};
+    const notes = [];
+    const published = [];
+    const skipped = [];
+
+    const put = async (key, body, contentType) => {
+        if (dry) return;
+        await bucket.put(key, body, { httpMetadata: { contentType } });
+    };
+
+    // ---------------------------------------------------------- script library
+    const stampRes = await fetch(`${src}${RESOURCE_SCRIPTS[0].path}`, { cf: { cacheTtl: 0 } });
+    if (!stampRes.ok) throw new Error(`scripts/version.txt: HTTP ${stampRes.status}`);
+    const stamp = (await stampRes.text()).trim();
+    if (!stamp) throw new Error('scripts/version.txt: empty stamp');
+
+    const heads = await Promise.all(RESOURCE_SCRIPTS.slice(1).map((item) => bucket.head(item.key)));
+    let validation = state.scripts || null;
+
+    if (!force && state.stamp === stamp && heads.every(Boolean)) {
+        skipped.push(`scripts (stamp=${stamp} unchanged)`);
+    } else {
+        const [dataRes, tarRes] = await Promise.all([
+            fetch(`${src}${RESOURCE_SCRIPTS[1].path}`, { cf: { cacheTtl: 0 } }),
+            fetch(`${src}${RESOURCE_SCRIPTS[2].path}`, { cf: { cacheTtl: 0 } }),
+        ]);
+        if (!dataRes.ok) throw new Error(`scripts/data.yaml: HTTP ${dataRes.status}`);
+        if (!tarRes.ok) throw new Error(`scripts/scripts.tar.gz: HTTP ${tarRes.status}`);
+
+        const dataYaml = await dataRes.text();
+        const tarBytes = new Uint8Array(await tarRes.arrayBuffer());
+        const entries = listTarEntries(await gunzip(tarBytes));
+        if (!entries) throw new Error('scripts.tar.gz: unreadable tar header');
+
+        validation = checkScriptLibrary(dataYaml, entries);
+        if (validation.orphans.length) {
+            notes.push(`scripts.tar.gz: ${validation.orphans.length} file(s) not referenced by data.yaml (panel ignores them)`);
+        }
+
+        await put(RESOURCE_SCRIPTS[0].key, stamp, RESOURCE_SCRIPTS[0].type);
+        await put(RESOURCE_SCRIPTS[1].key, dataYaml, RESOURCE_SCRIPTS[1].type);
+        await put(RESOURCE_SCRIPTS[2].key, tarBytes, RESOURCE_SCRIPTS[2].type);
+
+        state.stamp = stamp;
+        state.scripts = validation;
+        published.push(...RESOURCE_SCRIPTS.map((item) => item.key));
+        notes.push(
+            `scripts published: ${validation.keys} scripts / ${validation.files} files (stamp=${stamp}, ${tarBytes.length} bytes)`,
+        );
+    }
+
+    // ------------------------------------------------------- optional extras
+    const extras = [];
+    if (wantLang) {
+        extras.push({ key: 'resource/language/lang.tar.gz', path: '/resource/language/lang.tar.gz', type: 'application/gzip', check: 'lang' });
+    }
+    if (wantGeoip) {
+        extras.push({ key: 'resource/geo/GeoIP.mmdb', path: '/resource/geo/GeoIP.mmdb', type: 'application/octet-stream', check: 'mmdb' });
+    }
+
+    state.etags = state.etags || {};
+    for (const item of extras) {
+        const headers = !force && state.etags[item.key] ? { 'If-None-Match': state.etags[item.key] } : {};
+        const res = await fetch(`${src}${item.path}`, { headers, cf: { cacheTtl: 0 } });
+        if (res.status === 304) {
+            skipped.push(`${item.key} (unchanged)`);
+            continue;
+        }
+        if (!res.ok) throw new Error(`${item.key}: HTTP ${res.status}`);
+
+        const bytes = new Uint8Array(await res.arrayBuffer());
+        if (item.check === 'lang') {
+            const entries = listTarEntries(await gunzip(bytes));
+            if (!entries) throw new Error('lang.tar.gz: unreadable tar header');
+            checkLangPack(entries);
+        } else {
+            checkGeoIp(bytes);
+        }
+
+        await bucket.put(item.key, bytes, { httpMetadata: { contentType: item.type } });
+        const etag = res.headers.get('ETag');
+        if (etag) state.etags[item.key] = etag;
+        published.push(item.key);
+        notes.push(`${item.key} mirrored (${bytes.length} bytes)`);
+    }
+
+    state.checkedAt = new Date().toISOString();
+    if (!dry) await bucket.put(stateKey, JSON.stringify(state), { httpMetadata: { contentType: 'application/json; charset=utf-8' } });
+
+    for (const note of notes) console.log(`[resource-sync] ${note}`);
+
+    const managed = [...RESOURCE_SCRIPTS.map((item) => item.key), ...extras.map((item) => item.key)];
+    return {
+        ok: true,
+        dry,
+        stamp,
+        validation,
+        published,
+        skipped,
+        notes,
+        urls: dst ? managed.map((key) => `${dst}/${key}`) : [],
+    };
+}
+
 /* ------------------------------------------------------------------- sync */
 
 async function runSync(env, { force = false } = {}) {
@@ -503,6 +730,16 @@ export default {
                 console.error(`[appstore-sync] scheduled failed: ${err.stack || err.message}`);
             }),
         );
+
+        // The resource channel rides along: it is one extra fetch, and the script objects are
+        // only rewritten when upstream's stamp moved. Disable with SYNC_RESOURCE = "false".
+        if (String(env.SYNC_RESOURCE || 'true') === 'true') {
+            ctx.waitUntil(
+                runResourceSync(env, {}).catch((err) => {
+                    console.error(`[resource-sync] scheduled failed: ${err.stack || err.message}`);
+                }),
+            );
+        }
     },
 
     async fetch(request, env, ctx) {
@@ -518,12 +755,40 @@ export default {
             return new Response(`sync triggered (force=${force}), check logs\n`, { status: 202 });
         }
 
-        if (url.pathname === '/status') {
-            const mode = env.MODE || 'dev';
-            const state = await readJson(env.APPSTORE, `${mode}/.sync-state.json`);
-            return Response.json({ mode, state: state || null });
+        if (url.pathname === '/sync-resource') {
+            // Runs synchronously so the caller gets the report (validation counts, urls,
+            // what was skipped) instead of having to dig through the logs.
+            //   ?dry=true            validate upstream, write nothing
+            //   ?force=true           ignore the stamp / etags and re-upload
+            //   ?lang=true|false      mirror the language pack
+            //   ?geoip=true|false     mirror GeoIP.mmdb (~19.5 MB)
+            const flag = (name) => {
+                const value = url.searchParams.get(name);
+                return value === null ? undefined : value === 'true';
+            };
+            const options = {
+                force: url.searchParams.get('force') === 'true',
+                dry: url.searchParams.get('dry') === 'true',
+                lang: flag('lang'),
+                geoip: flag('geoip'),
+            };
+            try {
+                return Response.json(await runResourceSync(env, options));
+            } catch (err) {
+                console.error(`[resource-sync] manual sync failed: ${err.stack || err.message}`);
+                return Response.json({ ok: false, error: err.message }, { status: 500 });
+            }
         }
 
-        return new Response('POST-free worker: try /sync or /status\n', { status: 404 });
+        if (url.pathname === '/status') {
+            const mode = env.MODE || 'dev';
+            const [state, resource] = await Promise.all([
+                readJson(env.APPSTORE, `${mode}/.sync-state.json`),
+                readJson(env.APPSTORE, 'resource/scripts/.sync-state.json'),
+            ]);
+            return Response.json({ mode, state: state || null, resource: resource || null });
+        }
+
+        return new Response('POST-free worker: try /sync, /sync-resource or /status\n', { status: 404 });
     },
 };

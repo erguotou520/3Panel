@@ -27,22 +27,7 @@
         <div class="mt-3" v-if="showExpiresAt && expiresAlertVisible && productProExpires && productProExpires !== 0">
             <el-alert type="warning" @close="handleExpiresAlertClose">
                 <template #title>
-                    <div>
-                        <div class="flex flex-col gap-2 items-center justify-center w-full sm:flex-row">
-                            <span>
-                                {{ $t(expiresAlertKey, [expiresInfo]) }}
-                            </span>
-                            <el-link
-                                class="cursor-pointer"
-                                style="font-size: 12px"
-                                icon="Position"
-                                type="primary"
-                                @click="goXpack"
-                            >
-                                {{ $t('firewall.quickJump') }}
-                            </el-link>
-                        </div>
-                    </div>
+                    <span>{{ $t(expiresAlertKey, [expiresInfo]) }}</span>
                 </template>
             </el-alert>
         </div>
@@ -72,7 +57,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
-const { currentNode, isEnterprise, isIntl, isXpackOrEE, productProExpires } = useGlobalStore();
+const { currentNode, isEnterprise, isXpackOrEE, productProExpires } = useGlobalStore();
 const buttonArray = computed(() => {
     return props.buttons.filter((button) => {
         if (!hasPermissionMetaAccess(button.permission)) {
@@ -196,15 +181,6 @@ function loadExpiresAlert() {
     const diffSeconds = Math.abs(expires - currentTimestamp);
     expiresInfo.value = Math.floor(diffSeconds / daySeconds) + 1;
     expiresAlertVisible.value = expiresInfo.value <= 15;
-}
-
-function goXpack() {
-    if (isIntl.value && !isEnterprise.value) {
-        window.open('https://3panel.hk/pricing', '_blank', 'noopener,noreferrer');
-        return;
-    }
-    const url = isEnterprise.value ? 'https://3panel.cn/enterprise.html' : 'https://www.lxware.cn/3panel';
-    window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 function handleExpiresAlertClose() {

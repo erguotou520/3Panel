@@ -38,25 +38,25 @@
                     <el-tag class="msg-tag" v-if="taskCount !== 0" size="small" round>{{ taskCount }}</el-tag>
                 </div>
                 <el-divider v-if="showNodes()" class="divider" />
-                <div class="dropdown-item" @click="openNodeDashboard" v-if="isXpackOrEE">
+                <div class="dropdown-item" @click="openNodeDashboard" v-if="isMultiNode">
                     <SvgIcon class="icon" iconName="p-gailan1" />
                     {{ $t('xpack.node.multiOverview') }}
                 </div>
-                <el-divider v-if="isXpackOrEE" class="divider" />
+                <el-divider v-if="isMultiNode" class="divider" />
 
                 <div v-if="showNodes()">
                     <el-scrollbar max-height="288px" :noresize="true">
                         <div
                             class="dropdown-item"
                             @click="changeNode(item.name)"
-                            :disabled="item.status !== 'Healthy'"
+                            :disabled="item.status !== 'Online'"
                             v-for="item in visibleNodeOptions"
                             :key="item.name"
                         >
                             <SvgIcon class="icon" iconName="p-zhuji" />
                             <span class="node-name">{{ displayNodeName(item) }}</span>
                             <el-tooltip
-                                v-if="item.status !== 'Healthy' || !item.isBound"
+                                v-if="item.status !== 'Online' || !item.isBound"
                                 :content="item.isBound ? $t('xpack.node.nodeUnhealthy') : $t('xpack.node.nodeUnbind')"
                                 placement="right"
                             >
@@ -217,7 +217,7 @@ const changeNode = async (command: string) => {
                     MsgError(i18n.global.t('xpack.node.nodeUnbindHelper'));
                     return;
                 }
-                if (item.status !== 'Healthy') {
+                if (item.status !== 'Online') {
                     MsgError(i18n.global.t('xpack.node.nodeUnhealthyHelper'));
                     return;
                 }
@@ -252,7 +252,7 @@ const loadGlobalSetting = async (currentNode?: string) => {
 };
 
 const showNodes = () => {
-    return nodes.value.length > 0 && isXpackOrEE.value;
+    return nodes.value.length > 0 && isMultiNode.value;
 };
 
 const taskCount = ref(0);

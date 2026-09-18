@@ -8,19 +8,29 @@ import (
 
 const defaultFile = "/usr/local/bin/3pctl"
 
+// ConfigFile returns the ctl file to read. The installer writes the system
+// default, but local development and tests run without root, so PANEL_CTL_FILE
+// may point at an alternative location.
+func ConfigFile() string {
+	if f := os.Getenv("PANEL_CTL_FILE"); f != "" {
+		return f
+	}
+	return defaultFile
+}
+
 func Load(key string) string {
-	info, err := LoadFromFile(defaultFile, key)
+	info, err := LoadFromFile(ConfigFile(), key)
 	if err != nil {
 		panic(err)
 	}
 	if len(info) == 0 || info == `""` {
-		panic(fmt.Sprintf("error `%s` find in %s", key, defaultFile))
+		panic(fmt.Sprintf("error `%s` find in %s", key, ConfigFile()))
 	}
 	return info
 }
 
 func LoadWithoutPanic(key string) string {
-	info, err := LoadFromFile(defaultFile, key)
+	info, err := LoadFromFile(ConfigFile(), key)
 	if err != nil {
 		return ""
 	}

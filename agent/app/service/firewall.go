@@ -2934,6 +2934,9 @@ func LoadPanelPort() string {
 	if !global.IsMaster {
 		return global.CONF.Base.Port
 	}
+	if global.CoreDB == nil {
+		return global.CONF.Base.Port
+	}
 	var portSetting model.Setting
 	_ = global.CoreDB.Where("key = ?", "ServerPort").First(&portSetting).Error
 	return portSetting.Value

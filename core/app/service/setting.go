@@ -814,7 +814,7 @@ func checkProxy(req dto.ProxyUpdate) error {
 		if len(req.ProxyUser) != 0 {
 			proxyURL.User = url.UserPassword(req.ProxyUser, req.ProxyPasswd)
 		}
-		transport = http.Transport{Proxy: http.ProxyURL(proxyURL), TLSClientConfig: &tls.Config{InsecureSkipVerify: true}}
+		transport = http.Transport{Proxy: http.ProxyURL(proxyURL)}
 	case "socks5":
 		var auth *proxy.Auth
 		if len(req.ProxyUser) == 0 {
@@ -842,10 +842,14 @@ func checkProxy(req dto.ProxyUpdate) error {
 		}
 	}()
 
-	client := http.Client{Timeout: 3 * time.Second, Transport: &transport}
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	// Probe the proxy by fetching a small page through it. Only connectivity is
+	// verified — the status code is never inspected, so any HTTP response counts
+	// as a working proxy. Point this at a host that is reachable from the
+	// deployment; it intentionally uses our own domain rather than a vendor URL.
+	client := http.Client{Timeout: 10 * time.Second, Transport: &transport}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://3panel.cn/", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://3panel.erguotou.me/", nil)
 	if err != nil {
 		return buserr.WithErr("ErrProxySetting", err)
 	}

@@ -1,7 +1,9 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/3panel-dev/3panel/core/app/dto"
@@ -9,8 +11,10 @@ import (
 	"github.com/3panel-dev/3panel/core/app/repo"
 	"github.com/3panel-dev/3panel/core/buserr"
 	"github.com/3panel-dev/3panel/core/global"
+	"github.com/3panel-dev/3panel/core/init/proxy"
 	"github.com/3panel-dev/3panel/core/utils/common"
 	"github.com/3panel-dev/3panel/core/utils/nodecert"
+	"github.com/3panel-dev/3panel/core/utils/xpack"
 	"github.com/jinzhu/copier"
 )
 
@@ -18,10 +22,11 @@ const (
 	// LocalNodeName is the reserved name of the master itself.
 	LocalNodeName = "local"
 
-	joinTokenTTL     = 30 * time.Minute
-	joinTokenLength  = 32
-	defaultNodePort  = 9999
-	nodeStatusOnline = "Online"
+	joinTokenTTL      = 30 * time.Minute
+	joinTokenLength   = 32
+	defaultNodePort   = 9999
+	remoteProbeTimeout = 5 * time.Second
+	nodeStatusOnline  = "Online"
 	// nodeStatusOffline must match what the frontend renders as unhealthy; the
 	// node drawer treats anything other than 'Healthy' as a problem.
 	nodeStatusOffline = "Offline"
@@ -36,10 +41,108 @@ type INodeService interface {
 	Join(req dto.NodeJoin) (*dto.NodeJoinResult, error)
 	Delete(id uint) error
 	Check() ([]dto.NodeInfo, error)
+	Favorite(req dto.NodeFavorite) error
+	SimpleAll() ([]dto.SimpleNodeItem, error)
 }
 
 func NewINodeService() INodeService {
 	return &NodeService{}
+}
+
+// Favorite pins a node on the dashboard carousel.
+func (u *NodeService) Favorite(req dto.NodeFavorite) error {
+	if _, err := nodeRepo.Get(repo.WithByID(req.ID)); err != nil {
+		return buserr.New("ErrRecordNotFound")
+	}
+	return nodeRepo.Update(req.ID, map[string]interface{}{"is_favorite": req.IsFavorite})
+}
+
+// SimpleAll feeds the dashboard node carousel with one row per node plus the
+// master. Unreachable nodes stay Offline; a missing local agent only blanks
+// the master row instead of failing the whole call.
+func (u *NodeService) SimpleAll() ([]dto.SimpleNodeItem, error) {
+	items := []dto.SimpleNodeItem{u.localSimpleItem()}
+	nodes, err := nodeRepo.GetList(repo.WithOrderDesc("created_at"))
+	if err != nil {
+		return items, nil
+	}
+	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	for _, node := range nodes {
+		item := dto.SimpleNodeItem{
+			ID:          node.ID,
+			Name:        node.Name,
+			Addr:        node.Addr,
+			Description: node.Description,
+			Status:      nodeStatusOffline,
+		}
+		if transport != nil && node.Addr != "" {
+			if err := u.fillRemoteSimpleItem(transport, node, &item); err != nil {
+				global.LOG.Debugf("load simple info for node %s failed: %v", node.Name, err)
+			}
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (u *NodeService) localSimpleItem() dto.SimpleNodeItem {
+	item := dto.SimpleNodeItem{
+		Name:   LocalNodeName,
+		Addr:   "127.0.0.1",
+		Status: nodeStatusOffline,
+	}
+	client := proxy.LocalClient()
+	var info agentNodeInfo
+	if err := u.getJSON(client, "http://3panel.local/api/v2/nodes/current/info", &info); err == nil {
+		item.SystemVersion = info.Version
+		item.SecurityEntrance = info.Scope
+		item.Status = nodeStatusOnline
+	}
+	return item
+}
+
+func (u *NodeService) fillRemoteSimpleItem(transport *http.Transport, node model.Node, item *dto.SimpleNodeItem) error {
+	client := &http.Client{Transport: transport, Timeout: remoteProbeTimeout}
+	var info agentNodeInfo
+	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/nodes/current/info", &info); err != nil {
+		return err
+	}
+	item.Status = nodeStatusOnline
+	item.SystemVersion = info.Version
+	item.SecurityEntrance = info.Scope
+
+	var base struct {
+		CPUUsedPercent    float64 `json:"cpuUsedPercent"`
+		CPUTotal          int     `json:"cpuTotal"`
+		MemoryTotal       uint64  `json:"memoryTotal"`
+		MemoryUsedPercent float64 `json:"memoryUsedPercent"`
+	}
+	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/dashboard/base", &base); err != nil {
+		global.LOG.Debugf("load node %s dashboard base failed: %v", node.Name, err)
+		return nil
+	}
+	item.CPUUsedPercent = base.CPUUsedPercent
+	item.CPUTotal = base.CPUTotal
+	item.MemoryTotal = base.MemoryTotal
+	item.MemoryUsedPercent = base.MemoryUsedPercent
+	return nil
+}
+
+func (u *NodeService) getJSON(client *http.Client, url string, out interface{}) error {
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status %d", resp.StatusCode)
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}
+
+type agentNodeInfo struct {
+	Version string `json:"version"`
+	Scope   string `json:"scope"`
 }
 
 func (u *NodeService) List(req dto.NodeSearch) ([]dto.NodeInfo, error) {

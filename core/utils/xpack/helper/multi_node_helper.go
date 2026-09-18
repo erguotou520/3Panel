@@ -1,7 +1,6 @@
 package helper
 
 import (
-	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -178,11 +177,10 @@ func (m *multiNodeHelper) LoadNodeInfo(currentNode string) (*ssh.ConnInfo, strin
 }
 
 // LoadRequestTransport is used for ordinary outbound requests (app store,
-// upgrades, backup accounts), not for talking to nodes. It must keep trusting
-// the system roots, so it is left exactly as it was.
+// upgrades, backup accounts), not for talking to nodes. It trusts the system
+// roots, so certificate verification stays enabled.
 func (m *multiNodeHelper) LoadRequestTransport() *http.Transport {
 	return &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
 			Timeout:   60 * time.Second,
 			KeepAlive: 60 * time.Second,

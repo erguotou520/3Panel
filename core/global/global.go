@@ -36,27 +36,27 @@ type DBOption func(*gorm.DB) *gorm.DB
 
 func RepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://resource.3panel.pro/package/enterprise"
+		return "https://3panel.erguotou.me/package/enterprise"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://resource.3panel.pro/package/fusionxplay"
+		return "https://3panel.erguotou.me/package/fusionxplay"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://resource.3panel.pro/package/v2"
+		return "https://3panel.erguotou.me/package"
 	}
-	return "https://resource.3panel.pro/v2"
+	return "https://3panel.erguotou.me/package"
 }
 func ResourceURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://resource.3panel.pro/resource/v2"
+		return "https://3panel.erguotou.me/resource"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://resource.3panel.pro/resource/fusionxplay"
+		return "https://3panel.erguotou.me/resource"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://resource.3panel.pro/resource/v2"
+		return "https://3panel.erguotou.me/resource"
 	}
-	return "https://resource.3panel.pro/v2/resource"
+	return "https://3panel.erguotou.me/resource"
 }
 func AppRepoURL() string {
 	if CONF.Base.IsEnterprise {

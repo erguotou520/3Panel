@@ -22,7 +22,7 @@
                             <el-icon><Document /></el-icon>
                             <span>{{ $t('setting.doc2') }}</span>
                         </el-link>
-                        <el-link @click="toGithub" class="system-link">
+                        <el-link @click="toRepo" class="system-link">
                             <svg-icon iconName="p-huaban88"></svg-icon>
                             <span>{{ $t('setting.project') }}</span>
                         </el-link>
@@ -30,7 +30,7 @@
                             <svg-icon iconName="p-bug"></svg-icon>
                             <span>{{ $t('setting.issue') }}</span>
                         </el-link>
-                        <el-link @click="toGithubStar" class="system-link">
+                        <el-link @click="toRepoStar" class="system-link">
                             <svg-icon iconName="p-star"></svg-icon>
                             <span>{{ $t('setting.star') }}</span>
                         </el-link>
@@ -51,17 +51,22 @@ const { docsUrl, themeConfig } = useGlobalStore();
 const loading = ref();
 const logoLoadFailed = ref(false);
 
+// The upstream 3panel-dev/3panel links this page shipped with are dead (404);
+// this deployment lives at cnb.cool. Keep the repo / issue / star entries but
+// point them at the real project so they actually resolve.
+const REPO_URL = 'https://cnb.cool/erguotou520/3panel';
+
 const toDoc = () => {
     window.open(docsUrl.value.endsWith('/') ? docsUrl.value : `${docsUrl.value}/`, '_blank', 'noopener,noreferrer');
 };
-const toGithub = () => {
-    window.open('https://github.com/3panel-dev/3panel', '_blank', 'noopener,noreferrer');
+const toRepo = () => {
+    window.open(REPO_URL, '_blank', 'noopener,noreferrer');
 };
 const toIssue = () => {
-    window.open('https://github.com/3panel-dev/3panel/issues', '_blank', 'noopener,noreferrer');
+    window.open(`${REPO_URL}/-/issues`, '_blank', 'noopener,noreferrer');
 };
-const toGithubStar = () => {
-    window.open('https://github.com/3panel-dev/3panel', '_blank', 'noopener,noreferrer');
+const toRepoStar = () => {
+    window.open(`${REPO_URL}/-/stargazers`, '_blank', 'noopener,noreferrer');
 };
 
 onMounted(() => {

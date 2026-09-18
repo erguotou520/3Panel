@@ -134,7 +134,7 @@ const loadingConnections = ref(false);
 const connecting = ref(false);
 const connectionTree = computed<ConnectionTreeItem[]>(() => {
     const groups: ConnectionTreeItem[] = [];
-    const childNodes = isXpackOrEE.value
+    const childNodes = isMultiNode.value
         ? nodes.value.filter((node) => node.name !== 'local' && node.status !== 'Deleted')
         : [];
     if (childNodes.length > 0) {

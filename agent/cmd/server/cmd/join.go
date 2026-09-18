@@ -125,8 +125,8 @@ func requestCertificates(addr string) (*joinResponse, error) {
 		"token":   joinToken,
 		"addr":    addr,
 		"port":    joinPort,
-		"baseDir": common.LoadParams("BASE_DIR"),
-		"version": common.LoadParams("ORIGINAL_VERSION"),
+		"baseDir": common.LoadParamsWithoutPanic("BASE_DIR"),
+		"version": common.LoadParamsWithoutPanic("ORIGINAL_VERSION"),
 	})
 	if err != nil {
 		return nil, err

@@ -21,6 +21,8 @@ func (a *NodeRouter) InitRouter(Router *gin.RouterGroup) {
 		Use(middleware.PasswordExpired())
 	{
 		nodeRouter.GET("options", baseApi.ListNodeOptions)
+		nodeRouter.GET("simple/all", baseApi.ListSimpleNodes)
+		nodeRouter.POST("favorite", baseApi.UpdateNodeFavorite)
 		nodeRouter.POST("search", baseApi.ListNode)
 		// Alias kept because the frontend's node switcher already calls /list.
 		nodeRouter.POST("list", baseApi.ListNode)

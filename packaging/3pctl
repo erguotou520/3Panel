@@ -1,0 +1,310 @@
+#!/bin/bash
+# 3Panel control script.
+#
+# The KEY=VALUE block immediately below is read and rewritten by the panel
+# itself (core/utils/ctl_conf, core/init/viper, core/init/hook). Every key
+# listed there is REQUIRED — ctl_conf.Load() panics when a key is missing, so
+# do not delete lines from this block. Values are placeholders; the installer
+# or the panel's first start replaces them with real ones.
+
+action=$1
+target=$2
+
+BASE_DIR=directory
+ORIGINAL_PORT=port
+ORIGINAL_VERSION=version
+ORIGINAL_ENTRANCE=entrance
+ORIGINAL_USERNAME=username
+ORIGINAL_PASSWORD=password
+PANEL_EDITION=community
+LANGUAGE=en
+
+CORE_BIN="/usr/local/bin/3panel-core"
+AGENT_BIN="/usr/local/bin/3panel-agent"
+CORE_SERVICE="3panel-core"
+
+if [ -f "/usr/local/bin/lang/$LANGUAGE.sh" ]; then
+    # shellcheck disable=SC1090
+    source "/usr/local/bin/lang/$LANGUAGE.sh"
+else
+    LANGUAGE=en
+fi
+
+# Upstream 1pctl references $TXT_FAILED_MESSAGE while the language files define
+# $TXT_FAIELD_MESSAGE (upstream typo). Fall back so messages are never empty.
+: "${TXT_FAIELD_MESSAGE:=Failed}"
+TXT_FAILED_MESSAGE="${TXT_FAILED_MESSAGE:-$TXT_FAIELD_MESSAGE}"
+
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        echo "$TXT_RUN_AS_ROOT"
+        exit 1
+    fi
+}
+
+function usage() {
+    echo "$PANEL_CONTROL_SCRIPT"
+    echo
+    echo "Usage: "
+    echo "  ./3pctl [COMMAND] [ARGS...]"
+    echo "  ./3pctl --help"
+    echo
+    echo "Commands: "
+    echo "  status              $TXT_PANEL_SERVICE_STATUS"
+    echo "  start               $TXT_PANEL_SERVICE_START"
+    echo "  stop                $TXT_PANEL_SERVICE_STOP"
+    echo "  restart             $TXT_PANEL_SERVICE_RESTART"
+    echo "  uninstall           $TXT_PANEL_SERVICE_UNINSTALL"
+    echo "  user-info           $TXT_PANEL_SERVICE_USER_INFO"
+    echo "  listen-ip           $TXT_PANEL_SERVICE_LISTEN_IP"
+    echo "  version             $TXT_PANEL_SERVICE_VERSION"
+    echo "  update              $TXT_PANEL_SERVICE_UPDATE"
+    echo "  reset               $TXT_PANEL_SERVICE_RESET"
+    echo "  restore             $TXT_PANEL_SERVICE_RESTORE"
+}
+
+# systemd uses "<name>.service"; openrc / sysvinit use the "<name>d" convention.
+_service_manager() {
+    local service_name="$CORE_SERVICE"
+    if command -v systemctl &>/dev/null; then
+        service_manager="systemctl"
+        service_target="${service_name}.service"
+    elif command -v rc-service &>/dev/null; then
+        service_manager="openrc"
+        service_target="${service_name}d"
+    else
+        service_manager="sysvinit"
+        service_target="${service_name}d"
+    fi
+}
+
+_service_cmd() {
+    local cmd=$1 success_msg=$2 error_msg=$3
+    _service_manager
+    case $service_manager in
+    systemctl)
+        if ! systemctl "$cmd" "$service_target" 2>/dev/null; then
+            echo "$error_msg" >&2
+            exit 1
+        fi
+        ;;
+    openrc)
+        if ! rc-service "$service_target" "$cmd" 2>/dev/null; then
+            echo "$error_msg" >&2
+            exit 1
+        fi
+        ;;
+    *)
+        if ! service "$service_target" "$cmd" 2>/dev/null; then
+            echo "$error_msg" >&2
+            exit 1
+        fi
+        ;;
+    esac
+    [[ -n "$success_msg" ]] && echo "$success_msg"
+}
+
+_safe_remove() {
+    local path=$1
+    if [[ -e "$path" || -L "$path" ]]; then
+        rm -rf -- "$path" || {
+            echo "Failed to remove: $path" >&2
+            exit 1
+        }
+    fi
+}
+
+function status() {
+    _service_cmd "status" "" ""
+}
+
+function start() {
+    _service_cmd "start" "$TXT_PANEL_SERVICE_START_SUCCESS" "$TXT_PANEL_SERVICE_START_ERROR"
+}
+
+function stop() {
+    _service_cmd "stop" "$TXT_PANEL_SERVICE_STOP $TXT_SUCCESS_MESSAGE" "$TXT_PANEL_SERVICE_STOP $TXT_FAILED_MESSAGE"
+}
+
+function restart() {
+    _service_cmd "restart" "$TXT_PANEL_SERVICE_RESTART $TXT_SUCCESS_MESSAGE" "$TXT_PANEL_SERVICE_RESTART $TXT_FAILED_MESSAGE"
+}
+
+function uninstall() {
+    check_root
+    local yn
+    read -p "$TXT_PANEL_SERVICE_UNINSTALL_NOTICE : " yn
+    case "${yn,,}" in
+        y)
+            echo "$TXT_PANEL_SERVICE_UNINSTALL_START"
+            _service_manager
+            echo -e "1) $TXT_PANEL_SERVICE_UNINSTALL_STOP"
+            case $service_manager in
+                systemctl)
+                    systemctl stop 3panel-core.service
+                    systemctl stop 3panel-agent.service
+                    systemctl disable 3panel-core.service >/dev/null 2>&1
+                    systemctl disable 3panel-agent.service >/dev/null 2>&1
+                    ;;
+                openrc)
+                    rc-service 3panel-cored stop
+                    rc-update del 3panel-cored >/dev/null 2>&1
+                    ;;
+                *)
+                    service 3panel-cored stop
+                    ;;
+            esac
+            echo -e "2) $TXT_PANEL_SERVICE_UNINSTALL_REMOVE"
+            _safe_remove "${BASE_DIR}/3panel"
+            _safe_remove "/usr/local/bin/3pctl"
+            _safe_remove "/usr/local/bin/3panel-core"
+            _safe_remove "/usr/local/bin/3panel-agent"
+            _safe_remove "/usr/local/bin/lang"
+            echo -e "3) $TXT_PANEL_SERVICE_UNINSTALL_REMOVE_CONFIG"
+            case $service_manager in
+                systemctl)
+                    _safe_remove "/etc/systemd/system/3panel-core.service"
+                    _safe_remove "/etc/systemd/system/3panel-agent.service"
+                    systemctl daemon-reload
+                    systemctl reset-failed
+                    ;;
+                *)
+                    _safe_remove "/etc/init.d/3panel-cored"
+                    ;;
+            esac
+            echo -e "4) $TXT_PANEL_SERVICE_UNINSTALL_REMOVE_SUCCESS"
+            ;;
+        *)
+            exit 0
+            ;;
+    esac
+}
+
+function user-info() {
+    $CORE_BIN -l "$LANGUAGE" user-info
+}
+
+function listen-ip() {
+    case "${target}" in
+        ipv4)
+            $CORE_BIN -l "$LANGUAGE" listen-ip ipv4
+            restart
+            ;;
+        ipv6)
+            $CORE_BIN -l "$LANGUAGE" listen-ip ipv6
+            restart
+            ;;
+        *)
+            $CORE_BIN -l "$LANGUAGE" listen-ip
+            ;;
+    esac
+}
+
+function restore() {
+    read -p "$TXT_PANEL_SERVICE_RESTORE_NOTICE : " yn
+    if [ "$yn" == "Y" ] || [ "$yn" == "y" ]; then
+        echo -e ""
+        $CORE_BIN -l "$LANGUAGE" restore
+        if command -v systemctl &>/dev/null; then
+            systemctl daemon-reload
+        fi
+        restart
+        $CORE_BIN -l "$LANGUAGE" version
+    else
+        exit 0
+    fi
+}
+
+function version() {
+    $CORE_BIN -l "$LANGUAGE" version
+}
+
+function reset() {
+    case "${target}" in
+        domain)
+            $CORE_BIN -l "$LANGUAGE" reset domain
+            ;;
+        entrance)
+            $CORE_BIN -l "$LANGUAGE" reset entrance
+            ;;
+        https)
+            $CORE_BIN -l "$LANGUAGE" reset https
+            restart
+            ;;
+        ips)
+            $CORE_BIN -l "$LANGUAGE" reset ips
+            ;;
+        mfa)
+            $CORE_BIN -l "$LANGUAGE" reset mfa
+            ;;
+        passkey)
+            $CORE_BIN -l "$LANGUAGE" reset passkey
+            ;;
+        *)
+            $CORE_BIN -l "$LANGUAGE" reset
+            ;;
+    esac
+}
+
+function update() {
+    case "${target}" in
+        username)
+            $CORE_BIN -l "$LANGUAGE" update username
+            ;;
+        password)
+            $CORE_BIN -l "$LANGUAGE" update password
+            ;;
+        port)
+            $CORE_BIN -l "$LANGUAGE" update port
+            ;;
+        *)
+            $CORE_BIN -l "$LANGUAGE" update
+            ;;
+    esac
+}
+
+function main() {
+    case "${action}" in
+        status)
+            status
+            ;;
+        start)
+            start
+            ;;
+        stop)
+            stop
+            ;;
+        restart)
+            restart
+            ;;
+        restore)
+            restore
+            ;;
+        uninstall)
+            uninstall
+            ;;
+        user-info)
+            user-info
+            ;;
+        listen-ip)
+            listen-ip
+            ;;
+        version)
+            version
+            ;;
+        reset)
+            reset
+            ;;
+        update)
+            update
+            ;;
+        help | --help | "")
+            usage
+            ;;
+        *)
+            echo "$TXT_PANEL_SERVICE_UNSUPPORTED_PARAMETER"
+            ;;
+    esac
+}
+
+main

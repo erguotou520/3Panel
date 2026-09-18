@@ -337,6 +337,19 @@ export namespace Setting {
         memoryTotal: number;
         memoryUsedPercent: number;
     }
+    export interface NodeCreate {
+        name: string;
+        addr?: string;
+        description?: string;
+        groupID?: number;
+    }
+    export interface NodeJoinCommand {
+        id: number;
+        name: string;
+        token: string;
+        command: string;
+        expiredAt: string;
+    }
     export interface ReleasesNotes {
         Version: string;
         CreatedAt: string;

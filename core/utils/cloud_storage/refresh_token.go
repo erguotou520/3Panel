@@ -1,7 +1,6 @@
 package cloud_storage
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -36,9 +35,6 @@ func RefreshALIToken(varMap map[string]interface{}) (string, error) {
 		return "", errors.New("no such refresh token find in db")
 	}
 	client := resty.New()
-	client.SetTLSClientConfig(&tls.Config{
-		InsecureSkipVerify: true,
-	})
 	data := map[string]interface{}{
 		"grant_type":    "refresh_token",
 		"refresh_token": refresh_token,

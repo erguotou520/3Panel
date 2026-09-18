@@ -42,6 +42,38 @@ func (b *BaseApi) ListNodeOptions(c *gin.Context) {
 }
 
 // @Tags Node
+// @Summary List simple nodes for the dashboard carousel
+// @Success 200 {array} dto.SimpleNodeItem
+// @Security ApiKeyAuth
+// @Router /nodes/simple/all [get]
+func (b *BaseApi) ListSimpleNodes(c *gin.Context) {
+	res, err := nodeService.SimpleAll()
+	if err != nil {
+		helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrNodeList", err)
+		return
+	}
+	helper.SuccessWithData(c, res)
+}
+
+// @Tags Node
+// @Summary Pin/unpin a node on the dashboard
+// @Accept json
+// @Param request body dto.NodeFavorite true "request"
+// @Security ApiKeyAuth
+// @Router /nodes/favorite [post]
+func (b *BaseApi) UpdateNodeFavorite(c *gin.Context) {
+	var req dto.NodeFavorite
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := nodeService.Favorite(req); err != nil {
+		helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrNodeUpdate", err)
+		return
+	}
+	helper.SuccessWithData(c, nil)
+}
+
+// @Tags Node
 // @Summary Create node and return the join command
 // @Accept json
 // @Param request body dto.NodeCreate true "request"

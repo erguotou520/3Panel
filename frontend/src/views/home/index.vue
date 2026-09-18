@@ -414,7 +414,7 @@
                                                 <el-button
                                                     @click="jumpPanel(row)"
                                                     size="small"
-                                                    :disabled="row.status !== 'Healthy'"
+                                                    :disabled="row.status !== 'Online'"
                                                     class="visit"
                                                     round
                                                     plain
@@ -490,7 +490,7 @@ const {
     isOnRestart,
     hasNewVersion,
     isAdminOrNodeAdmin,
-    isXpackOrEE,
+    isMultiNode,
 } = useGlobalStore();
 
 const DASHBOARD_CACHE_TTL = {
@@ -826,7 +826,7 @@ const quickJump = (item: any) => {
 };
 
 const showSimpleNode = () => {
-    return simpleNodeCarouselSetting.value === 'Enable' && isXpackOrEE.value && simpleNodes.value?.length !== 0;
+    return simpleNodeCarouselSetting.value === 'Enable' && isMultiNode.value && simpleNodes.value?.length !== 0;
 };
 
 const toggleSensitiveInfo = () => {
@@ -1062,7 +1062,7 @@ const loadSettingInfo = async () => {
 };
 
 const loadSource = (row: any) => {
-    if (row.status !== 'Healthy') {
+    if (row.status !== 'Online') {
         return `- ${i18n.global.t('commons.units.core')} (-%) / - GB (-%)`;
     }
     return (

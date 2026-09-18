@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -13,18 +15,49 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/publicshare"
 )
 
-const SockPath = "/etc/3panel/agent.sock"
+// SockPath is the unix socket the local agent listens on. The installed
+// default is /etc/3panel/agent.sock, but local development runs the agent
+// without root, so PANEL_AGENT_SOCK (or BASE_DIR) may point at an alternative
+// location.
+func SockPath() string {
+	if p := os.Getenv("PANEL_AGENT_SOCK"); p != "" {
+		return p
+	}
+	if base := os.Getenv("BASE_DIR"); base != "" {
+		return filepath.Join(base, "conf", "agent.sock")
+	}
+	return "/etc/3panel/agent.sock"
+}
 
 var (
 	LocalAgentProxy *httputil.ReverseProxy
 )
+
+// LocalClient dials the agent running on this host over its unix socket. It
+// is the direct-request counterpart of LocalAgentProxy and is used for
+// fan-out probes that need a plain response rather than a proxied stream.
+func LocalClient() *http.Client {
+	dialer := &net.Dialer{Timeout: 5 * time.Second}
+	return &http.Client{
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", SockPath())
+			},
+			ForceAttemptHTTP2:   false,
+			MaxIdleConns:        50,
+			MaxIdleConnsPerHost: 50,
+			IdleConnTimeout:     30 * time.Second,
+		},
+		Timeout: 5 * time.Second,
+	}
+}
 
 func Init() {
 	dialer := &net.Dialer{
 		Timeout: 5 * time.Second,
 	}
 	dialUnix := func(ctx context.Context, network, addr string) (net.Conn, error) {
-		return dialer.DialContext(ctx, "unix", SockPath)
+		return dialer.DialContext(ctx, "unix", SockPath())
 	}
 	transport := &http.Transport{
 		DialContext:         dialUnix,

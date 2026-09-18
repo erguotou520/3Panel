@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"path"
 	"regexp"
@@ -21,12 +20,10 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/repo"
 	"github.com/3panel-dev/3panel/agent/buserr"
 	"github.com/3panel-dev/3panel/agent/constant"
-	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/i18n"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	agentenv "github.com/3panel-dev/3panel/agent/utils/env"
 	"github.com/3panel-dev/3panel/agent/utils/files"
-	"github.com/3panel-dev/3panel/agent/utils/req_helper"
 	"github.com/joho/godotenv"
 	"gorm.io/gorm"
 )
@@ -1757,18 +1754,4 @@ func generateToken() string {
 		return ""
 	}
 	return hex.EncodeToString(bytes)
-}
-
-func asyncReportAIProviderInstall(provider string) {
-	if global.CONF.Base.Mode != "stable" || provider == "" {
-		return
-	}
-	go func(provider string) {
-		query := url.Values{}
-		query.Set("product", "ai-provider")
-		query.Set("type", "install")
-		query.Set("version", provider)
-		reqURL := "https://community.3panel.pro/installation-analytics?" + query.Encode()
-		_, _, _ = req_helper.HandleRequest(reqURL, http.MethodGet, constant.TimeOut5s)
-	}(provider)
 }

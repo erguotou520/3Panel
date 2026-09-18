@@ -2,6 +2,7 @@ package files
 
 import (
 	"crypto/md5"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -290,6 +291,60 @@ func DownloadFileWithProxyStream(url, dst string) error {
 	}
 	success = true
 	return nil
+}
+
+// FileSHA256 returns the lowercase hex sha256 digest of the file at filePath.
+func FileSHA256(filePath string) (string, error) {
+	f, err := os.Open(filePath)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// VerifyFileSHA256 compares the file at filePath against an expected sha256
+// digest (lowercase or uppercase hex, 64 chars).
+func VerifyFileSHA256(filePath, expected string) error {
+	sum, err := FileSHA256(filePath)
+	if err != nil {
+		return err
+	}
+	if !strings.EqualFold(sum, strings.TrimSpace(expected)) {
+		return fmt.Errorf("sha256 mismatch for %s: expected %s, got %s", filePath, expected, sum)
+	}
+	return nil
+}
+
+// ParseSHA256File extracts a sha256 digest from the content of a
+// sha256sum-style checksum file. Both "<hex>" and "<hex>  <filename>" lines are
+// accepted; comment lines and blank lines are skipped. It returns an empty
+// string when no valid digest is present.
+func ParseSHA256File(content string) string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) == 0 {
+			continue
+		}
+		candidate := strings.ToLower(fields[0])
+		if len(candidate) != sha256.Size*2 {
+			continue
+		}
+		if _, err := hex.DecodeString(candidate); err != nil {
+			continue
+		}
+		return candidate
+	}
+	return ""
 }
 
 func Stat(path string) bool {

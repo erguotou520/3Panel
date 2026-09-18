@@ -2,7 +2,6 @@ package version
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,7 +203,6 @@ func HandleRequest(url, method string, timeout int) (int, []byte, error) {
 
 func loadRequestTransport() *http.Transport {
 	return &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
 			Timeout:   60 * time.Second,
 			KeepAlive: 60 * time.Second,

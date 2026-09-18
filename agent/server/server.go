@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"syscall"
 
 	"github.com/gin-gonic/gin"
@@ -34,13 +35,28 @@ import (
 )
 
 const (
-	masterSocketDir          = "/etc/3panel"
-	masterSocketPath         = masterSocketDir + "/agent.sock"
 	masterSocketDirPerm      = 0o700
 	masterSocketFilePerm     = 0o600
 	masterSocketDirPermMask  = 0o077
 	masterSocketFilePermMask = 0o077
 )
+
+// masterSocketDir is where the master-mode agent places its unix socket. The
+// installed default is /etc/3panel, but local development runs without root,
+// so BASE_DIR (or NODE_CONFIG_DIR) relocates it to a writable location.
+func masterSocketDir() string {
+	if dir := os.Getenv("NODE_CONFIG_DIR"); dir != "" {
+		return dir
+	}
+	if base := os.Getenv("BASE_DIR"); base != "" {
+		return filepath.Join(base, "conf")
+	}
+	return "/etc/3panel"
+}
+
+func masterSocketPath() string {
+	return filepath.Join(masterSocketDir(), "agent.sock")
+}
 
 func prepareMasterSocketDir(dir string) error {
 	if err := os.MkdirAll(dir, masterSocketDirPerm); err != nil {
@@ -137,20 +153,20 @@ func Start() {
 	}
 
 	if global.IsMaster {
-		global.LOG.Infof("agent startup: master mode, preparing unix socket %s", masterSocketPath)
-		if err := prepareMasterSocketDir(masterSocketDir); err != nil {
+		global.LOG.Infof("agent startup: master mode, preparing unix socket %s", masterSocketPath())
+		if err := prepareMasterSocketDir(masterSocketDir()); err != nil {
 			panic(err)
 		}
-		_ = os.Remove(masterSocketPath)
-		listener, err := net.Listen("unix", masterSocketPath)
+		_ = os.Remove(masterSocketPath())
+		listener, err := net.Listen("unix", masterSocketPath())
 		if err != nil {
 			panic(err)
 		}
-		if err := secureMasterSocket(masterSocketPath); err != nil {
+		if err := secureMasterSocket(masterSocketPath()); err != nil {
 			_ = listener.Close()
 			panic(err)
 		}
-		global.LOG.Infof("agent startup: listening on unix socket %s", masterSocketPath)
+		global.LOG.Infof("agent startup: listening on unix socket %s", masterSocketPath())
 		business.Init()
 		global.LOG.Info("agent startup: business initialized")
 		_ = server.Serve(listener)

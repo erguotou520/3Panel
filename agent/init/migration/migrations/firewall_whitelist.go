@@ -69,12 +69,17 @@ var MigrateFirewallPortWhitelistSources = &gormigrate.Migration{
 		if err != nil {
 			return fmt.Errorf("migrate firewall port whitelist: %w", err)
 		}
-		rules, err = service.InitializeFirewallWhitelistPorts(rules)
-		if err != nil {
-			return fmt.Errorf("initialize firewall whitelist ports: %w", err)
-		}
-		if _, err := firewall.RequiredPortWhitelist(rules); err != nil {
-			return err
+		// The panel/SSH ports are filled from CoreDB / config, which is only wired
+		// up on a full install. A bare local agent has neither, so leave the typed
+		// entries empty rather than aborting startup over a firewall default.
+		if global.CoreDB != nil || global.CONF.Base.Port != "" {
+			rules, err = service.InitializeFirewallWhitelistPorts(rules)
+			if err != nil {
+				return fmt.Errorf("initialize firewall whitelist ports: %w", err)
+			}
+			if _, err := firewall.RequiredPortWhitelist(rules); err != nil {
+				return err
+			}
 		}
 		value, err := json.Marshal(rules)
 		if err != nil {

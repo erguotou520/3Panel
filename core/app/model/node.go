@@ -14,6 +14,7 @@ type Node struct {
 	Description string     `json:"description"`
 	GroupID     uint       `json:"groupID"`
 	IsBound     bool       `json:"isBound"`
+	IsFavorite  bool       `json:"isFavorite"`
 	LastSeenAt  *time.Time `json:"lastSeenAt"`
 }
 

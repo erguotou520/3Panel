@@ -68,5 +68,6 @@ func coreMigrations() []*gormigrate.Migration {
 		migrations.RemoveUpageHideMenu,
 		migrations.MoveVirtualMachineMenuToXpack,
 		migrations.AddNodeTable,
+		migrations.AddNodeFavoriteColumn,
 	}
 }

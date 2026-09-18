@@ -43,8 +43,20 @@ export const loadLicenseOptions = () => {
 export const listNodeOptions = (type: string) => {
     return http.post<Array<Setting.NodeItem>>(`/core/nodes/list`, { type: type });
 };
+export const searchNodes = (name: string) => {
+    return http.post<Array<Setting.NodeItem>>(`/core/nodes/search`, { name });
+};
+export const createNode = (params: Setting.NodeCreate) => {
+    return http.post<Setting.NodeJoinCommand>(`/core/nodes`, params);
+};
+export const deleteNode = (id: number) => {
+    return http.post(`/core/nodes/del`, { id });
+};
+export const checkNodes = () => {
+    return http.post<Array<Setting.NodeItem>>(`/core/nodes/check`);
+};
 export const updateNodeFavorite = (id: number, isFavorite: boolean) => {
-    return http.post(`/core/xpack/nodes/favorite`, { id, isFavorite });
+    return http.post(`/core/nodes/favorite`, { id, isFavorite });
 };
 export const listAllSimpleNodes = () => {
     return http.get<Array<Setting.SimpleNodeItem>>(`/core/nodes/simple/all`);

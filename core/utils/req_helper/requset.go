@@ -2,7 +2,6 @@ package req_helper
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -17,7 +16,6 @@ import (
 
 func HandleRequest(url, method string, timeout int) (int, []byte, error) {
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
 			Timeout:   60 * time.Second,
 			KeepAlive: 60 * time.Second,
@@ -65,7 +63,6 @@ func handleRequestWithTransport(url, method string, transport *http.Transport, t
 
 func HandleGet(url string) (*http.Response, error) {
 	transport := &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
 			Timeout:   60 * time.Second,
 			KeepAlive: 60 * time.Second,

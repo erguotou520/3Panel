@@ -174,6 +174,12 @@ func (u *UpgradeService) Upgrade(req dto.Upgrade) error {
 	fileName := fmt.Sprintf("3panel-%s-%s-%s.tar.gz", req.Version, "linux", itemArch)
 	_ = settingRepo.Update("SystemStatus", "Upgrading")
 	go func() {
+		// Clean the staging directory on every exit path. The success path
+		// below also removes it explicitly, because RestartPanel may terminate
+		// this process before deferred calls get a chance to run.
+		defer func() {
+			_ = os.RemoveAll(downloadDir)
+		}()
 		oldLang := ctl_conf.Load("LANGUAGE")
 		if err := files.DownloadFileWithProxyStream(downloadPath+"/"+fileName, downloadDir+"/"+fileName); err != nil {
 			global.LOG.Errorf("download service file failed, err: %v", err)
@@ -181,9 +187,11 @@ func (u *UpgradeService) Upgrade(req dto.Upgrade) error {
 			return
 		}
 		global.LOG.Info("download all file successful!")
-		defer func() {
-			_ = os.Remove(downloadDir)
-		}()
+		if err := verifyUpgradePackage(downloadPath, fileName, downloadDir+"/"+fileName); err != nil {
+			global.LOG.Errorf("verify upgrade package failed, err: %v", err)
+			_ = settingRepo.Update("SystemStatus", "Free")
+			return
+		}
 		if err := files.HandleUnTar(downloadDir+"/"+fileName, downloadDir, ""); err != nil {
 			global.LOG.Errorf("decompress file failed, err: %v", err)
 			_ = settingRepo.Update("SystemStatus", "Free")
@@ -261,7 +269,6 @@ func (u *UpgradeService) Upgrade(req dto.Upgrade) error {
 		global.LOG.Info("upgrade successful!")
 		dropBackupCopies()
 		xpack.MultiNodeProvider.AutoUpgradeWithMaster()
-		go writeLogs(req.Version)
 		_ = settingRepo.Update("SystemVersion", req.Version)
 		_ = global.AgentDB.Model(&model.Setting{}).Where("key = ?", "SystemVersion").Updates(map[string]interface{}{"value": req.Version}).Error
 		global.CONF.Base.Version = req.Version
@@ -299,7 +306,7 @@ func (u *UpgradeService) LoadRelease() ([]dto.ReleasesNotes, error) {
 	docSource, _ := settingRepo.GetValueByKey("DocSource")
 	lang, _ := settingRepo.GetValueByKey("Language")
 	var notes []dto.ReleasesNotes
-	url := "https://3panel.cn/docs/v2/search/search_index.json"
+	url := "https://3panel.erguotou.me/docs/v2/search/search_index.json"
 	useIntlDocs := false
 	lang = strings.ToLower(strings.TrimSpace(lang))
 	if docSource == "withByRegion" {
@@ -308,7 +315,7 @@ func (u *UpgradeService) LoadRelease() ([]dto.ReleasesNotes, error) {
 		useIntlDocs = lang != "zh"
 	}
 	if useIntlDocs {
-		url = "https://docs.3panel.pro/v2/search/search_index.json"
+		url = "https://3panel.erguotou.me/docs/v2/search/search_index.json"
 	}
 	resp, err := req_helper.HandleGet(url)
 	if err != nil {
@@ -536,6 +543,34 @@ func (u *UpgradeService) checkVersion(v2, v1 string) string {
 		return v2
 	}
 	return ""
+}
+
+// verifyUpgradePackage checks the downloaded upgrade package against the sha256
+// digest published next to it, at "<package-url>.sha256".
+//
+// The digest is enforced strictly whenever it can be obtained: a mismatch
+// aborts the upgrade before anything is unpacked or overwritten. When the
+// digest is missing — an older release, or a mirror that does not publish one —
+// verification is skipped with a warning so that existing release pipelines
+// keep working. Publish the .sha256 file alongside each package to get real
+// protection against a tampered or truncated download.
+func verifyUpgradePackage(downloadPath, fileName, localFile string) error {
+	digestURL := fmt.Sprintf("%s/%s.sha256", downloadPath, fileName)
+	statusCode, body, err := req_helper.HandleRequestWithProxy(digestURL, http.MethodGet, constant.TimeOut20s)
+	if err != nil || statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		global.LOG.Warnf("checksum %s unavailable (status %d, err %v), integrity verification skipped", digestURL, statusCode, err)
+		return nil
+	}
+	expected := files.ParseSHA256File(string(body))
+	if expected == "" {
+		global.LOG.Warnf("checksum %s contains no valid sha256 digest, integrity verification skipped", digestURL)
+		return nil
+	}
+	if err := files.VerifyFileSHA256(localFile, expected); err != nil {
+		return fmt.Errorf("integrity check failed: %w", err)
+	}
+	global.LOG.Infof("integrity verified: %s sha256=%s", fileName, expected)
+	return nil
 }
 
 func (u *UpgradeService) loadReleaseNotes(path string) (string, error) {

@@ -1,0 +1,546 @@
+# 3Panel 升级通道部署指引
+
+> 面向自托管部署（唯一域名：`3panel.erguotou.me`）
+> 本文档对应代码改动后的实际行为，改动清单见文末。
+
+---
+
+## 一、升级流程是怎么跑的
+
+升级**不是**由 shell 脚本完成的，全部由 `core` 的 Go 代码执行。
+入口：面板「系统 → 升级」，或 `POST /api/v2/core/upgrades/upgrade`。
+
+```
+① 版本探测     GET  {RepoURL}/{mode}/latest            纯文本最新版本号
+                     {RepoURL}/{mode}/latest.current   旧版本兼容用 JSON map
+② 对比当前版本  与 SystemVersion 比较，决定是否有新版本 / 是否需要 beta
+③ 拉更新说明   GET  {RepoURL}/{mode}/{ver}/release/3panel-{ver}-release-notes
+④ 下载升级包   GET  {RepoURL}/{mode}/{ver}/release/3panel-{ver}-linux-{arch}.tar.gz
+⑤ 校验完整性   GET  {…}.tar.gz.sha256  → 强制比对 sha256（不一致即中止）
+⑥ 解包         解到 {install_dir}/3panel/tmp/upgrade/{ver}/downloads/
+⑦ 备份原文件   3panel-core / 3panel-agent / 3pctl / 服务脚本 → original/
+⑧ 覆盖安装     → /usr/local/bin/{3panel-core,3panel-agent,3pctl}
+                     lang/ → /usr/local/bin
+                     GeoIP.mmdb → {install_dir}/3panel/geo/GeoIP.mmdb
+                     initscript/{服务名} → 服务目录
+⑨ 重启面板     重启核心与 agent
+⑩ 收尾         写升级日志、更新 SystemVersion
+失败任一环节 → handleRollback() 用 ⑦ 的备份回滚
+```
+
+关键代码：
+- `core/app/service/upgrade.go` — 主流程（`CheckUpgrade` / `Upgrade` / `handleRollback` / `verifyUpgradePackage`）
+- `core/utils/files/files.go` — `DownloadFileWithProxyStream` 下载、sha256 工具
+- `core/utils/req_helper/requset.go` — 统一出站请求（TLS 校验已恢复）
+
+> **升级后不再执行任何远程 shell 脚本。** 原 `writeLogs` / `runRemoteShellScript`
+> 机制已整体删除（详见 §4.2）。
+
+**`mode` 取值**：默认取 `global.CONF.Base.Mode`（`app.yaml` 里的 `base.mode`，仓库默认 `dev`）。
+版本号含 `beta` 时自动切成 `beta`。发布 stable 包请把生产环境 `base.mode` 设为 `stable`。
+
+**`arch` 取值**：`uname -a` 判定，产出 `amd64` / `arm64` / `armv7` / `ppc64le`。
+
+---
+
+## 二、必须在 3panel.erguotou.me 下托管的路径
+
+以 `mode=stable`、`version=v1.0.0`、`arch=amd64` 为例。
+
+> ⚠️ **频道由 `base.mode` 决定，先看你的 `mode` 是什么。**
+> `admin/utils/version/version.go` 的 `loadVersionByMode()`：
+> `mode: dev` 时**只**读 `/package/dev/latest` 与 `/package/beta/latest`，
+> 完全不碰 `stable`；只有 `mode: stable` 才读 `/package/stable/*`。
+> 本仓库默认 `core/cmd/server/conf/app.yaml` 里是 `mode: dev`（与应用商店的
+> `MODE=dev` 一致），所以 `release-stable.yml` 对非 beta 版本**同时发到
+> `stable` 和 `dev` 两个频道** —— 否则包发出去没人下载，面板永远提示「已是最新」。
+> 卸载/升级时的包路径同理：`mode: dev` 会去取 `/package/dev/<version>/release/…`。
+
+### 2.1 升级通道（`RepoURL()` = `https://3panel.erguotou.me/package`）
+
+下表以 `stable` 为例；若你的 `mode: dev`，把路径里的 `stable` 换成 `dev` 即可
+（两个频道的内容目前完全一致）。
+
+| 用途 | 请求路径 | 期望内容 | 缺失后果 |
+| --- | --- | --- | --- |
+| 版本探测 | `/package/stable/latest` | 纯文本版本号，如 `v1.0.0`。**结尾不能有换行** | 检测不到新版本 |
+| 版本探测（旧版兼容） | `/package/stable/latest.current` | JSON map `{"v1.0":"v1.0.3"}` | 落后小版本检测不到新版 |
+| 更新说明 | `/package/stable/v1.0.0/release/3panel-v1.0.0-release-notes` | Markdown/纯文本 | 弹窗无说明（不阻断） |
+| **升级包** | `/package/stable/v1.0.0/release/3panel-v1.0.0-linux-amd64.tar.gz` | tar.gz | **升级直接失败** |
+| **完整性校验** | 同上 + `.sha256` | 一行摘要 | 跳过校验并记警告 |
+
+> `latest` 由 `loadVersion()` 直接 `string(body)` 使用，**没有 TrimSpace**。
+> 若带尾换行，版本号会变成 `"v1.0.0\n"` 而解析失败 —— 发布时必须用 `printf '%s'`（无换行）写入。
+
+### 2.2 资源通道（`ResourceURL()` = `https://3panel.erguotou.me/resource`）
+
+| 用途 | 请求路径 | 期望内容 |
+| --- | --- | --- |
+| 语言包 | `/resource/language/lang.tar.gz` | tar.gz，内含 `lang/*.sh`（解到 `/usr/local/bin`）。由 `build-release.sh` 产出 `dist/lang.tar.gz`、`release-stable.yml` 随发版上传 |
+| GeoIP 库 | `/resource/geo/GeoIP.mmdb` | 自定义 schema 的 mmdb（≈19.5 MB，**非** MaxMind 官方格式，见 §5.4） |
+| 脚本库数据 | `/resource/scripts/data.yaml` | yaml（脚本库索引） |
+| 脚本库包 | `/resource/scripts/scripts.tar.gz` | tar.gz，内含 `scripts/sh/<key>.sh` |
+| 脚本库版本 | `/resource/scripts/version.txt` | 纯文本（unix 秒），面板用它判断要不要重新同步 |
+
+**这三个对象的上游在哪 —— v1/v2 路径是错开的，不能只换一个 base。**
+
+1Panel 默认分支已切到 `dev-v2`，常量全变了（`ResourceURL()` → `.../1panel/resource/v2`、
+`RepoURL()` → `.../1panel/package/v2`、`AppRepoURL()` → `apps-assets.fit2cloud.com`），
+但**并不是所有资源都跟着搬**（2026-09 实测）：
+
+| 对象 | v1 前缀 `.../1panel/…` | v2 前缀 `.../1panel/resource/v2/…` |
+| --- | --- | --- |
+| 脚本库 `scripts/*` | ❌ 404 | ✅ **200**（9 个脚本，version.txt 仍在更新） |
+| 语言包 `language/lang.tar.gz` | ✅ 200（≈11.9 KB，含 en/fa/pt-BR/ru/zh） | ❌ 404 |
+| GeoIP `geo/GeoIP.mmdb` | ✅ 200 | ❌ 404 |
+
+所以脚本库只能用 v2 前缀取，语言包与 GeoIP 只能用 v1 前缀取。
+
+**镜像方式：由 `scripts/cf-appstore-sync` 这个 Cloudflare Worker 负责，不在本地跑。**
+
+Worker 本来就定时把应用商店镜像进 R2，资源通道作为同一次 cron 的附带动作
+（只多一次 fetch；上游 `version.txt` 没变就一个字节都不写）。手动触发：
+
+```bash
+# 干跑：拉上游 + 校验，一个字节都不写桶（用来确认上游格式没变）
+curl -s 'https://<worker>/sync-resource?dry=true' | jq .
+
+# 正式同步脚本库（3 个对象）
+curl -s 'https://<worker>/sync-resource' | jq .
+
+# 需要时顺带镜像语言包 / GeoIP（默认关闭，见下）
+curl -s 'https://<worker>/sync-resource?lang=true' | jq .
+curl -s 'https://<worker>/sync-resource?geoip=true' | jq .
+
+# 查看状态
+curl -s 'https://<worker>/status' | jq .resource
+```
+
+| 查询参数 | 作用 |
+| --- | --- |
+| `?dry=true` | 只拉取并校验，不写桶 |
+| `?force=true` | 忽略 stamp / ETag，强制重传 |
+| `?lang=true` | 额外镜像 `/resource/language/lang.tar.gz` |
+| `?geoip=true` | 额外镜像 `/resource/geo/GeoIP.mmdb`（≈19.5 MB） |
+
+**发布前校验（不过就不覆盖，桶里现有的好数据原样保留）**：
+
+- `data.yaml` 的每个 `key` 必须在 `scripts/sh/<key>.sh` 里有对应文件 ——
+  缺文件的话面板会往脚本库写一条**空脚本**，界面上看不出坏在哪
+- 脚本文件不得为 0 字节
+- 语言包必须含 `lang/zh.sh`（`initLang()` 的哨兵）与 `lang/en.sh`（`install.sh` 回退）
+- GeoIP 必须含 MaxMind 元数据标记且不小于 1 MB（挡住错误页被当成库镜像）
+
+默认**不**让 cron 覆盖语言包：`/resource/language/lang.tar.gz` 由 `release-stable.yml`
+从仓库内置的 `packaging/lang/` 产出，如果 Worker 也去镜像上游那份（5 种语言、键集合不同），
+两者会互相覆盖、来回漂移。需要上游那份时用 `?lang=true` 单次拉取。
+
+### 2.3 其他
+
+| 用途 | 请求路径 | 说明 |
+| --- | --- | --- |
+| 代理连通性检测 | `/`（根路径） | 只需能建连，**不看状态码**，见 §6 |
+| 文档搜索索引 | `/docs/v2/search/search_index.json` | 可选，用于「更新日志」；缺失只是没内容 |
+| 应用商店 | `/package/{mode}/3panel/...` | 已就绪，见 `scripts/appstore-mirror` |
+
+---
+
+## 三、升级包（tar.gz）内部结构要求
+
+包内**必须**有与文件名同名的顶层目录，因为解包后代码按
+`3panel-{version}-linux-{arch}` 去取：
+
+```
+3panel-v1.0.0-linux-amd64/          ← 顶层目录名必须与包名一致
+├── 3panel-core                     → 覆盖 /usr/local/bin/3panel-core
+├── 3panel-agent                    → 覆盖 /usr/local/bin/3panel-agent
+├── 3pctl                           → 覆盖 /usr/local/bin/3pctl
+├── install.sh                      → 全新安装用（升级路径不读）
+├── GeoIP.mmdb                      → 覆盖 {install_dir}/3panel/geo/GeoIP.mmdb
+├── lang/                           → 覆盖 /usr/local/bin/lang
+│   ├── en.sh
+│   └── zh.sh
+└── initscript/
+    ├── 3panel-core.service|openrc|init|procd
+    └── 3panel-agent.service|openrc|init|procd
+```
+
+`initscript` 下取哪个文件由 `controller.SelectInitScript()` 按 init 系统决定：
+systemd → `.service`、openrc → `.openrc`、sysvinit → `.procd`（OpenWrt）或 `.init`。
+
+> `3pctl` 头部有一段 `KEY=VALUE` 会被面板**就地改写**：
+> `BASE_DIR`、`LANGUAGE`（见 `ctl_conf.UpdateInFile`），
+> 另有 `ORIGINAL_PORT` / `ORIGINAL_VERSION` / `ORIGINAL_USERNAME` /
+> `ORIGINAL_PASSWORD` / `ORIGINAL_ENTRANCE` 会在首次启动时被读取。
+> **这些键一个都不能删** —— `ctl_conf.Load()` 读不到会 panic。
+> 仓库内模板见 `packaging/3pctl`。
+
+---
+
+## 四、安全机制现状
+
+### 4.1 升级包 sha256 完整性校验（已实现 ✅）
+
+在「下载完成」与「解包」之间插入校验（`verifyUpgradePackage`）：
+
+1. 请求 `{升级包完整地址}.sha256`；
+2. **能取到有效摘要** → **强制校验**，不一致则**中止升级**
+   （`SystemStatus` 复位为 `Free`，不覆盖任何文件），日志记 `integrity check failed`；
+3. **取不到（404 / 网络失败 / 无有效摘要）** → 记 `Warnf` 后**继续升级**，
+   避免发布流程因缺少该文件而中断。
+
+日志表现：
+- 通过：`integrity verified: 3panel-v1.0.0-linux-amd64.tar.gz sha256=<摘要>`
+- 跳过：`checksum ... unavailable (status 404, ...), integrity verification skipped`
+
+发布时生成（一行即可，裸摘要或 `sha256sum` 格式都支持）：
+
+```bash
+sha256sum 3panel-v1.0.0-linux-amd64.tar.gz > 3panel-v1.0.0-linux-amd64.tar.gz.sha256
+```
+
+相关代码：`core/utils/files/files.go`（`FileSHA256` / `VerifyFileSHA256` / `ParseSHA256File`）、
+`core/app/service/upgrade.go`（`verifyUpgradePackage`），
+单元测试 `core/utils/files/checksum_test.go`（17 个用例）。
+
+### 4.2 升级后远程脚本执行机制（已删除 ✅）
+
+原来升级成功后会 `go writeLogs(version)` → 下载 `installation-log.sh` →
+`sh -s 1p upgrade <version>` 以 root 执行。该脚本**对面板功能零贡献**（只做统计上报），
+现已连同 `writeLogs`、`runRemoteShellScript`、`logs` 常量一并删除。
+全项目已无 `installation-log` / `writeLogs` / `runRemoteShellScript` 残留。
+
+---
+
+## 五、自动发布（GitHub Actions）
+
+`.github/workflows/release-stable.yml` 已就绪，配合 `packaging/` 一起工作：
+
+```
+packaging/
+├── 3pctl                    # 控制脚本模板（含必需 KEY=VALUE 占位符）
+├── install.sh               # 全新安装脚本
+├── build-release.sh         # 本地/CI 通用打包脚本
+└── initscript/              # core+agent 的 systemd / openrc / sysvinit / procd 定义
+```
+
+### 5.1 触发方式
+
+- **推 tag**：`git tag v1.0.0 && git push origin v1.0.0`
+- **手动**：Actions → Release stable → Run workflow，填版本号
+
+版本号含 `beta` 时自动发布到 `beta` 通道，否则 `stable` —— 与面板逻辑一致。
+
+### 5.2 本地先验证一遍
+
+```bash
+# 复用已有前端产物，只打 amd64，快
+SKIP_FRONTEND=1 ./packaging/build-release.sh v1.0.0 amd64
+
+# 完整构建（前端 + amd64 + arm64）
+./packaging/build-release.sh v1.0.0
+```
+
+产物落在 `dist/`：
+
+```
+dist/3panel-v1.0.0-linux-amd64.tar.gz
+dist/3panel-v1.0.0-linux-amd64.tar.gz.sha256
+dist/3panel-v1.0.0-linux-arm64.tar.gz        (+ .sha256)
+dist/package/stable/latest
+dist/package/stable/latest.current
+dist/package/dev/latest            # 非 beta 版本会同时生成（见 §2.1 的 mode 说明）
+dist/package/dev/latest.current
+```
+
+### 5.3 上传目标（workflow 自动完成，需先配置）
+
+Workflow 用 S3 兼容协议上传，适配 **Cloudflare R2 / AWS S3 / MinIO / 阿里云 OSS**。
+在仓库 Settings → Secrets and variables → Actions 配置：
+
+| 类型 | 名称 | 示例 |
+| --- | --- | --- |
+| Variable **或** Secret | `S3_BUCKET` | `3panel`（留空则跳过上传，只出 artifact） |
+| Variable **或** Secret | `S3_ENDPOINT` | `https://<account>.r2.cloudflarestorage.com` |
+| Secret | `AWS_ACCESS_KEY_ID` | R2/S3 的 Access Key |
+| Secret | `AWS_SECRET_ACCESS_KEY` | 对应 Secret |
+| Secret | `AWS_REGION` | 可选，R2 填 `auto` |
+
+上传后的对象布局（桶根 = 域名根）：
+
+```
+package/stable/latest
+package/stable/latest.current
+package/stable/v1.0.0/release/3panel-v1.0.0-linux-amd64.tar.gz
+package/stable/v1.0.0/release/3panel-v1.0.0-linux-amd64.tar.gz.sha256
+package/stable/v1.0.0/release/3panel-v1.0.0-release-notes
+package/dev/...                        # 非 beta 版本会整套再发一份（见 §2.1）
+resource/language/lang.tar.gz          # 资源通道，非 package 通道
+```
+
+> `resource/language/lang.tar.gz` 由同一次发布顺带上传（`build-release.sh` 产出
+> `dist/lang.tar.gz`）。它是面板在 `/usr/local/bin/lang` 缺失时唯一的获取途径，
+> 因此必须保持在线 —— 详见 §5.4 与 §八。
+
+### 5.4 语言包与 GeoIP
+
+**语言包**：打包脚本优先使用仓库内置的 `packaging/lang/{en,zh}.sh`，
+**不依赖外部主机**，构建可复现。仅当仓库内没有时才回退到
+`RESOURCE_BASE/language/lang.tar.gz`。
+
+同一份语言包还会被额外打成 `dist/lang.tar.gz`，作为**资源通道**对象
+（`/resource/language/lang.tar.gz`）供面板运行时下载 —— 与升级包内的 `lang/` 同源，
+不会出现两份内容漂移。两个文件的用途不同：
+
+| 产物 | 谁来读 | 何时读 |
+| --- | --- | --- |
+| 包内 `lang/` | `initLang()` 从升级包 `tmp/<ver>/downloads/` 复制 | 升级时 |
+| `dist/lang.tar.gz` | `downloadLangFromRemote()` 解到 `/usr/local/bin/` | `/usr/local/bin/lang` 缺失时 |
+
+> ⚠️ `lang/` 内**必须**含 `zh.sh`。`core/init/geo/lang.go` 的 `initLang()` 用
+> `/usr/local/bin/lang/zh.sh` 作为「语言包已安装」的哨兵 —— 缺了它，面板**每次启动都会
+> 尝试重新下载**语言包。打包脚本已加这一步校验并会在缺失时告警；
+> `dist/lang.tar.gz` 也必须保留这个文件（脚本从同一 `lang/` 目录打的包，天然满足）。
+
+脚本还会优先从升级包内的 `lang/` 目录复制（而不是下载），所以把语言包打进包里
+能让面板在无外网 / 资源域名不可用时也能拿到文案。
+
+**只带 en/zh 是安全的**（已核过，不必凑齐上游的 5 种语言）：
+
+- 仓库这份是**定制子集**：`en.sh` / `zh.sh` 各 47 键，键集合完全一致，`bash -n` 通过；
+- 已用脚本提取 `3pctl` 与 `install.sh` 里引用的全部 `$VAR` 逐个比对语言包定义 ——
+  **零缺失**（唯一命中的 `PANEL_PASSWORD` 是 install.sh 自己的局部变量，不是文案键）；
+- 上游那份 112~114 键的通用包（en/fa/pt-BR/ru/zh）多出来的是 Docker 安装、加速源、
+  语言选择提示等我们脚本用不到的键；
+- 万一将来选了没有语言文件的语言也不会出现「文案全空」：`install.sh` 的
+  `select_language()` 会回退到 `en`，`upgrade.go` 也用
+  `ctl_conf.UpdateInFile("/usr/local/bin/3pctl", "LANGUAGE", oldLang)` 保留旧值。
+
+**GeoIP**：仓库无法内置（19.5 MB 二进制 + 上游授权数据）。按以下优先级取：
+
+1. `GEOIP_FILE=/path/to/GeoIP.mmdb` —— 本地文件，构建时原样打进包里
+2. `<RESOURCE_BASE>/geo/GeoIP.mmdb` —— **你自己托管的副本（推荐）**
+3. `GEOIP_FALLBACK` —— 默认指向上游 1Panel 的副本，见下
+
+**先下载一份**（这份是本仓库唯一验证过、schema 能对上的）：
+
+```bash
+curl -fL -o GeoIP.mmdb \
+  https://resource.fit2cloud.com/1panel/resource/geo/GeoIP.mmdb
+ls -lh GeoIP.mmdb        # 约 19.5 MB
+```
+
+把它上传到你的资源域名即可，之后构建会优先用它：
+
+```bash
+# 自己托管（推荐，构建不再依赖上游）
+#   上传到 https://3panel.erguotou.me/resource/geo/GeoIP.mmdb
+SKIP_FRONTEND=1 ./packaging/build-release.sh v1.0.0 amd64
+
+# 或者临时用本地文件 / 关掉 fallback
+GEOIP_FILE=/tmp/GeoIP.mmdb GEOIP_FALLBACK= ./packaging/build-release.sh v1.0.0
+```
+
+> ### ⚠️ 不能用 MaxMind 官方 GeoLite2，schema 不匹配（会静默失效）
+>
+> `core/utils/geo/geo.go` 的 `LocationRes` 解码的是**自定义记录结构**，字段全在顶层：
+>
+> ```
+> iso            : "CN"
+> country        : {en: "China", zh: "中国"}
+> latitude       : 32.0617
+> longitude      : 118.7632
+> province       : {en: "Jiangsu", zh: "江苏"}
+> ```
+>
+> MaxMind 官方 GeoLite2-City 用的是 `country.iso_code` / `country.names.en` /
+> `location.latitude` / `subdivisions[]` —— **嵌套层级完全不同**。
+> 把官方文件直接替换进去**不会报错**，但每次查询都解析成空字符串：
+> 登录日志的 IP 归属地会一片空白，且看不出哪里坏了。
+>
+> 只有 1Panel 发布的这份 mmdb 是重构过 schema 的（`database_type` 仍标称
+> `GeoLite2-City`，但字段已扁平化 + 中英双语），所以**别换源**。
+>
+> 验证一份 mmdb 能不能用：
+>
+> ```bash
+> pip install maxminddb
+> python3 -c "
+> import maxminddb, json
+> r = maxminddb.open_database('GeoIP.mmdb')
+> print(json.dumps(r.get('114.114.114.114'), ensure_ascii=False))
+> # 期望: {'country': {'en': 'China', 'zh': '中国'}, 'iso': 'CN', 'latitude': ..., 'province': {'en': 'Jiangsu', 'zh': '江苏'}}
+> "
+> ```
+
+取不到只警告不失败。缺失后果：登录日志里的 IP 归属地显示为空，其它功能不受影响
+（面板启动时会自己从 `ResourceURL()` 下载一次）。
+
+#### 5.4.1 GeoIP 需要后续维护吗？——基本不需要
+
+**当前状态（2026-09-18 实测）**：
+
+| 项 | 值 |
+| --- | --- |
+| sha256 | `fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b` |
+| md5 / HTTP ETag | `ed1d4dff6046ca32d5c7e6d86663b18b` |
+| 大小 | 19,565,776 B（≈19.5 MB） |
+| `database_type` | `GeoLite2-City`（字段已扁平化，见上方警告） |
+| **数据构建时间** | **2024-12-25 13:52 (CST)**，即已 632 天 / 1.73 年 |
+| 自托管地址 | `https://3panel.erguotou.me/resource/geo/GeoIP.mmdb` → HTTP 200 ✅ |
+
+两点关键结论：
+
+1. **上游自 2024-12-25 起就没有重建过这份库。** 本次从
+   `https://resource.fit2cloud.com/1panel/resource/geo/GeoIP.mmdb` 重新下载的文件，
+   与自托管那份、与你手上那份**逐字节完全一致**（`cmp` 无差异）。
+   也就是说：你手上这份**就是最新版**，没有"更新的版本"可换。
+   另一条独立佐证：1Panel v2 的新前缀 `/1panel/resource/v2/` 下**没有** `geo/` 目录
+   （如 §2.2 的路径对照表），说明上游新版仍在复用这份 v1 文件，短期内不会有替代品。
+2. **面板不会自动刷新它。** `agent/init/lang/lang.go` 的 `initLang()` 第一句判断是
+   `if isLangExist && isGeoExist { return }` —— 文件存在就直接返回，永不下重。运行期
+   唯一会覆盖它的是**升级包**：`core/app/service/upgrade.go` 在升级时把包内
+   `GeoIP.mmdb` 拷到 `<install-dir>/3panel/geo/`。所以"更新 GeoIP" = 换掉资源站上的文件
+   并打一个新版本包，不需要改任何代码或配置。
+
+**影响面很小**：mmdb 在整仓只有两处只读用途 —— 登录日志的 IP 归属地
+（`core/app/service/logs.go`）和 SSH 会话归属地（`agent/app/service/ssh.go`），
+纯展示字段。数据陈旧只表现为新 IP 段归属地显示为空或不准，不影响任何功能。
+
+**可选的例行检查**（不检查也没有风险，上游两年才可能动一次）：
+
+```bash
+# 上游是否重建过？（变了才需要处理）
+curl -fsSL https://resource.fit2cloud.com/1panel/resource/geo/GeoIP.mmdb | shasum -a 256
+# 期望: fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b
+
+# 自托管副本是否与上游一致？（不一致说明该重新镜像）
+curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
+```
+
+> 若某天上游 hash 变了，**先别急着替换**：重新跑一次 §5.4 的 python 验证，
+> 确认 `iso` / `country` / `province` 仍是扁平结构。上游一旦改成官方嵌套 schema，
+> 直接换文件会让归属地**静默变空**（见上方警告）。验证通过再上传镜像 + 打新包。
+
+> 顺带一提：同一资源站上 `RESOURCE_BASE/language/lang.tar.gz` 目前是 **404**。
+> 这是**可修且已修**的：`build-release.sh` 现在会顺带产出 `dist/lang.tar.gz`
+> （内含 `lang/{en,zh}.sh`，与升级包内的语言包同源），发布工作流会把它上传到
+> `s3://<bucket>/resource/language/lang.tar.gz`。手动补也很简单：
+>
+> ```bash
+> # 本地构建产物已就绪：dist/lang.tar.gz
+> tar -tzf dist/lang.tar.gz          # 期望: lang/  lang/en.sh  lang/zh.sh
+> # 上传到 https://3panel.erguotou.me/resource/language/lang.tar.gz
+> curl -sI https://3panel.erguotou.me/resource/language/lang.tar.gz | head -3   # 期望 200
+> ```
+>
+> 注意包内**必须**是 `lang/` 顶层目录（面板用 `tar zxvfC lang.tar.gz /usr/local/bin/`
+> 解包），且**必须**含 `zh.sh` —— 它是 `initLang()` 的「语言包已安装」哨兵。
+
+---
+
+## 六、代理连通性检测是什么
+
+`core/app/service/setting.go` 的 `checkProxy()`，在**保存代理配置时**（设置 → 代理）
+用你填的代理发一个 GET 请求，验证代理是否可用；失败则拒绝保存（`ErrProxySetting`）。
+
+要点：
+
+- 只验证**能否建连并读到响应**，**不检查状态码** —— 返回 404 也算成功；
+- 目标地址硬编码，现为 `https://3panel.erguotou.me/`（上游为 `1panel.cn`）；
+- 超时已从 3s 放宽到 **10s**（跨境经代理建连 3s 偏紧，容易误判失败）。
+
+> **注意**：这是 **HTTP/HTTPS/SOCKS5 正向代理**（用于受限网络下拉取镜像、升级包），
+> 与「前缀式反代」（如 `https://proxy.erguotou.me/https://github.com/...`）**不是一回事**。
+> 后者是 URL 重写服务，面板的代理设置填不进去，也不能直接替代。
+
+---
+
+## 七、本次改动清单
+
+| 文件 | 改动 |
+| --- | --- |
+| `core/global/global.go` / `agent/global/global.go` | `RepoURL()` / `ResourceURL()` → `https://3panel.erguotou.me/package`、`/resource` |
+| `core/app/service/logs.go` | **删除** `writeLogs` / `runRemoteShellScript` / `logs` 常量与相关 import |
+| `core/app/service/upgrade.go` | 移除 `go writeLogs(...)` 调用；新增 `verifyUpgradePackage` 强制 sha256 校验 |
+| `core/utils/files/files.go` | 新增 `FileSHA256` / `VerifyFileSHA256` / `ParseSHA256File` |
+| `core/utils/files/checksum_test.go` | 新增单元测试（17 用例） |
+| `core/app/service/setting.go` | 代理检测目标 → 自有域名；超时 3s → 10s；恢复 TLS 校验 |
+| `core/utils/req_helper/requset.go` | 恢复 TLS 证书校验（移除 `InsecureSkipVerify: true`） |
+| `agent/utils/req_helper/request.go`、`agent/utils/version/version.go` | 同上 |
+| `core/utils/xpack/helper/multi_node_helper.go`、`agent/utils/xpack/helper/multi_node.go` | 同上（注释本就要求信任系统根证书） |
+| `agent/utils/cloud_storage/client/ali.go` | 移除 8 处 `InsecureSkipVerify`（`api.alipan.com` 是公网 CA 证书） |
+| `core/utils/cloud_storage/refresh_token.go` | 同上（`api.aliyundrive.com`） |
+| `packaging/` | **新增**：`3pctl`、`install.sh`、`build-release.sh`、`initscript/`（8 个服务定义）、`lang/`（内置语言包） |
+| `packaging/build-release.sh` | 新增 `dist/lang.tar.gz` 产出（资源通道语言包）；GeoIP 多源取源 + `GEOIP_FILE` |
+| `scripts/cf-appstore-sync/src/index.js` | 新增 `/sync-resource` 端点：把上游脚本库（+可选语言包 / GeoIP）镜像进 R2，带发布前校验与 stamp 幂等 |
+| `.github/workflows/release-stable.yml` | **新增**：tag 触发自动打包并发布到约定路径；含 `resource/language/lang.tar.gz` 上传 |
+| `frontend/src/**` | 移除商业版推广/论坛/定价外链（详见安全报告） |
+
+---
+
+## 八、上线前自检
+
+一条命令体检所有面板会请求的地址：
+
+```bash
+B=https://3panel.erguotou.me
+probe() { printf '%-6s %s\n' "$(curl -s -o /dev/null -w '%{http_code} %{size_download}' -L --max-time 25 "$1")" "$1"; }
+probe $B/resource/geo/GeoIP.mmdb
+probe $B/resource/language/lang.tar.gz
+probe $B/resource/scripts/data.yaml
+probe $B/resource/scripts/scripts.tar.gz
+probe $B/resource/scripts/version.txt
+probe $B/package/stable/latest
+probe $B/package/dev/latest          # mode: dev 的面板只认这个（见 §2.1）
+probe $B/dev/3panel.json.zip         # 应用商店也按 mode 分目录
+probe $B/dev/3panel.json.version.txt
+```
+
+**2026-09-18 实测结果**：
+
+| 路径 | 状态 | 影响 / 处理 |
+| --- | --- | --- |
+| `/resource/geo/GeoIP.mmdb` | ✅ 200（19.5 MB） | 正常，见 §5.4 |
+| `/resource/language/lang.tar.gz` | ✅ 200（2.5 KB） | 已上传，与 `dist/lang.tar.gz` 逐字节一致 |
+| `/resource/scripts/*` | ⚠️ 404 | Worker 的 `/sync-resource` 会自动补（见 §2.2） |
+| `/package/stable/latest`、`/package/dev/latest` | ⚠️ 404 | **发布通道还没上线**：本地无 `v*` tag，工作流未跑过 |
+| `/dev/3panel.json.zip`、`.version.txt` | ✅ 200 | 应用商店正常（`mode: dev` 对应这一份） |
+
+### 发布通道未上线的含义
+
+`upgrade.go` 的版本探测会请求 `{RepoURL}/{mode}/latest`，**404 时面板拿不到新版本**，
+表现为「检查更新」一直提示已是最新。要做一次真实发布：
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0     # 触发 release-stable.yml
+```
+
+前提是仓库已配置好对象存储：
+
+| 名称 | 类型 | 示例 |
+| --- | --- | --- |
+| `S3_ENDPOINT` | Variable **或** Secret | `https://<account>.r2.cloudflarestorage.com` |
+| `S3_BUCKET` | Variable **或** Secret | `3panel` |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Secret | R2/S3 的 key |
+| `AWS_REGION` | Secret（可选） | 默认 `auto` |
+
+> **坑（曾踩过）**：`secrets` 上下文在 `if:` 条件里**不可用**（GitHub 的
+> context-availability 表里没有它），所以两个 `S3_*` 只要有人配成了 Secret、
+> 而 `if:` 读的是 `vars.*`，Publish 步骤就会**静默跳过** —— 日志里只是少一段，
+> 不报错，现象是面板永远提示「已是最新」。
+> 现在工作流把取值放在 job 级 `env`（`vars.S3_BUCKET || secrets.S3_BUCKET`），
+> `if:` 读 `env.S3_BUCKET`，两处都认；另有一个 `Check publish configuration`
+> 步骤会在未配置时打 `::warning::`，不再静默。
+
+### 脚本库 404 的影响与处理
+
+`core/app/service/script_library.go` 会拉 `/resource/scripts/{data.yaml,scripts.tar.gz,version.txt}`。
+全 404 意味着**脚本库同步每次都失败**，而 `ScriptSync` 默认是 `StatusEnable`，
+所以启动时同步一次、之后每天最多 3 次都会报错，面板里也拉不到系统脚本。
+
+处理方式：`scripts/cf-appstore-sync` 这个 Worker 的 `/sync-resource` 端点从上游 v2 前缀
+镜像这三个小文件（约 20 KB），详见 §2.2。
+
+> TLS 校验已恢复：上述地址必须使用**受信任 CA 签发的证书**
+> （Cloudflare 托管默认满足）。自签名证书会导致升级失败 —— 这是预期行为。

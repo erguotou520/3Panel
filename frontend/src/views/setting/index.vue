@@ -51,6 +51,10 @@ const buttons = computed<RouterButton[]>(() => {
                       label: i18n.global.t('setting.snapshot', 2),
                       path: '/settings/snapshot',
                   },
+                  {
+                      label: i18n.global.t('xpack.node.nodeManagement'),
+                      path: '/settings/node',
+                  },
               ]
             : []),
         ...((isOffline.value && !isEnterprise.value) || (isEnterprise.value && !isAdmin.value)

@@ -7,6 +7,7 @@
         "deploy": "wrangler deploy",
         "tail": "wrangler tail",
         "sync": "curl -s 'http://127.0.0.1:8787/sync?force=true'",
+        "sync-resource": "curl -s 'http://127.0.0.1:8787/sync-resource?dry=true'",
         "status": "curl -s 'http://127.0.0.1:8787/status'"
     },
     "devDependencies": {

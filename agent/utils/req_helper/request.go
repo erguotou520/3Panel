@@ -2,7 +2,6 @@ package req_helper
 
 import (
 	"context"
-	"crypto/tls"
 	"errors"
 	"io"
 	"net"
@@ -152,7 +151,6 @@ func RequestFile(url, method string, timeout int) (io.ReadCloser, context.Cancel
 
 func loadRequestTransport() *http.Transport {
 	return &http.Transport{
-		TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		DialContext: (&net.Dialer{
 			Timeout:   60 * time.Second,
 			KeepAlive: 60 * time.Second,

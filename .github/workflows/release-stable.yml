@@ -1,0 +1,260 @@
+name: Release stable
+
+# Builds the 3Panel release package and publishes it to the paths the panel's
+# upgrade logic actually requests (see core/app/service/upgrade.go):
+#
+#   {RepoURL}/{channel}/latest
+#   {RepoURL}/{channel}/latest.current
+#   {RepoURL}/{channel}/{version}/release/3panel-{version}-linux-{arch}.tar.gz
+#   {RepoURL}/{channel}/{version}/release/3panel-{version}-linux-{arch}.tar.gz.sha256
+#   {RepoURL}/{channel}/{version}/release/3panel-{version}-release-notes
+#
+# plus the resource object the panel fetches when /usr/local/bin/lang is absent:
+#
+#   {RESOURCE_BASE}/language/lang.tar.gz
+#
+# with RepoURL = https://3panel.erguotou.me/package.
+# A version containing "beta" is routed to the beta channel, matching the
+# panel's own logic.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to build, e.g. v1.0.0'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+env:
+  RESOURCE_BASE: https://3panel.erguotou.me/resource
+  OUT_DIR: ${{ github.workspace }}/dist
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # The publish gate. `secrets` is NOT available inside an `if:` condition
+    # (see GitHub's context-availability table), but `env` is — so the value is
+    # resolved here and tested in the step. Vars are preferred, secrets accepted
+    # as a fallback: S3_BUCKET/S3_ENDPOINT are not sensitive, but people do put
+    # them in either place, and a mismatch here used to skip the upload silently.
+    env:
+      S3_BUCKET: ${{ vars.S3_BUCKET || secrets.S3_BUCKET }}
+      S3_ENDPOINT: ${{ vars.S3_ENDPOINT || secrets.S3_ENDPOINT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # latest.current is derived from the tag list, so full history is needed.
+          fetch-depth: 0
+
+      - name: Resolve version
+        id: ver
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            VERSION="${{ inputs.version }}"
+          else
+            VERSION="${GITHUB_REF_NAME}"
+          fi
+          if ! printf '%s' "$VERSION" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+'; then
+            echo "version '$VERSION' does not look like vX.Y.Z" >&2
+            exit 1
+          fi
+          if printf '%s' "$VERSION" | grep -q 'beta'; then
+            CHANNEL=beta
+            CHANNELS=beta
+          else
+            CHANNEL=stable
+            # A panel running with `base.mode: dev` (this repo's default in
+            # core/cmd/server/conf/app.yaml) NEVER reads the stable channel:
+            # loadVersionByMode() only looks at {RepoURL}/dev/latest and
+            # {RepoURL}/beta/latest. Publishing to `stable` alone means the
+            # release is downloaded by nobody and "check for updates" keeps
+            # saying the panel is up to date. So a non-beta release goes to
+            # both. Costs a second copy of the packages in the bucket.
+            CHANNELS="stable dev"
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "channels=$CHANNELS" >> "$GITHUB_OUTPUT"
+          echo "building $VERSION (channel: $CHANNEL, publish to: $CHANNELS)"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: core/go.mod
+          cache-dependency-path: |
+            core/go.sum
+            agent/go.sum
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build packages
+        run: |
+          chmod +x packaging/build-release.sh
+          ./packaging/build-release.sh "${{ steps.ver.outputs.version }}" amd64 arm64
+
+      - name: Generate release notes
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          CHANNELS: ${{ steps.ver.outputs.channels }}
+        run: |
+          set -euo pipefail
+          NOTES="$(mktemp)"
+          {
+            echo "## 3Panel $VERSION"
+            echo
+            echo "Released $(date -u +'%Y-%m-%d %H:%M UTC')"
+            echo
+            echo "### Packages"
+            for f in "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz; do
+              [ -e "$f" ] || continue
+              echo "- \`$(basename "$f")\`"
+            done
+            echo
+            echo "### Checksums"
+            echo '```'
+            for f in "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz.sha256; do
+              [ -e "$f" ] || continue
+              echo "$(cat "$f")  $(basename "$f" .sha256)"
+            done
+            echo '```'
+          } > "$NOTES"
+          for CHANNEL in $CHANNELS; do
+            DIR="$OUT_DIR/package/$CHANNEL/$VERSION/release"
+            mkdir -p "$DIR"
+            cp "$NOTES" "$DIR/3panel-$VERSION-release-notes"
+          done
+          echo "wrote release notes to: $CHANNELS"
+          cat "$NOTES"
+
+      - name: Generate channel indexes
+        env:
+          PRIMARY: ${{ steps.ver.outputs.channel }}
+          CHANNELS: ${{ steps.ver.outputs.channels }}
+        run: |
+          set -euo pipefail
+          # Maps each minor line (vX.Y) to its newest patch release inside that
+          # line. This is what the panel looks up as versionMap[currentVersion[0:4]]
+          # (or [0:5] when the minor is >= 10) for installs that are behind.
+          # Same content for every channel of this release: the split below is
+          # beta vs non-beta, and stable/dev share it.
+          for CHANNEL in $CHANNELS; do
+            mkdir -p "$OUT_DIR/package/$CHANNEL"
+            if [ "$CHANNEL" != "$PRIMARY" ]; then
+              # `latest` is written by build-release.sh for the primary channel only.
+              # For a non-beta release its content is the bare version string, which
+              # is identical across channels, so a byte-for-byte copy is exact.
+              cp "$OUT_DIR/package/$PRIMARY/latest" "$OUT_DIR/package/$CHANNEL/latest"
+            fi
+            git tag -l 'v*' | CHANNEL="$CHANNEL" python3 -c '
+          import json, os, re, sys
+
+          want_beta = os.environ["CHANNEL"] == "beta"
+          pat = re.compile(r"^v(\d+)\.(\d+)\.(\d+)")
+          best = {}
+          for tag in sys.stdin.read().split():
+              if ("beta" in tag) != want_beta:
+                  continue
+              m = pat.match(tag)
+              if not m:
+                  continue
+              key = "v%s.%s" % (m.group(1), m.group(2))
+              cur = best.get(key)
+              if cur is None or tuple(map(int, pat.match(cur).groups())) < tuple(map(int, m.groups())):
+                  best[key] = tag
+          json.dump(best, sys.stdout, sort_keys=True)
+          ' > "$OUT_DIR/package/$CHANNEL/latest.current"
+          done
+          echo "latest.current:"; cat "$OUT_DIR/package/${{ steps.ver.outputs.channel }}/latest.current"; echo
+
+      - name: Show artifact tree
+        run: find "$OUT_DIR" -type f | sort
+
+      # ---------------------------------------------------------------------
+      # Publish. Works with any S3-compatible endpoint: Cloudflare R2, AWS S3,
+      # MinIO, Aliyun OSS. Configure these repository variables/secrets:
+      #   vars.S3_ENDPOINT    e.g. https://<account>.r2.cloudflarestorage.com
+      #   vars.S3_BUCKET      e.g. 3panel
+      #   secrets.AWS_ACCESS_KEY_ID / secrets.AWS_SECRET_ACCESS_KEY
+      #   secrets.AWS_REGION (optional, default auto)
+      # S3_BUCKET / S3_ENDPOINT are resolved at job level (see `env:` on the job).
+      # ---------------------------------------------------------------------
+      - name: Check publish configuration
+        run: |
+          if [ -z "${S3_BUCKET:-}" ]; then
+            echo "::warning::S3_BUCKET is not set — the upload is SKIPPED and the panel will keep reporting 'already up to date'. Set repository variable (or secret) S3_BUCKET + S3_ENDPOINT to enable publishing."
+          else
+            echo "publishing to s3://$S3_BUCKET${S3_ENDPOINT:+ via $S3_ENDPOINT}"
+          fi
+
+      - name: Publish to object storage
+        if: ${{ env.S3_BUCKET != '' }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'auto' }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          CHANNELS="${{ steps.ver.outputs.channels }}"
+          ENDPOINT_ARG=""
+          [ -n "${S3_ENDPOINT:-}" ] && ENDPOINT_ARG="--endpoint-url $S3_ENDPOINT"
+
+          for CHANNEL in $CHANNELS; do
+            DEST="s3://$S3_BUCKET/package/$CHANNEL"
+
+            # Packages + checksums + release notes
+            for f in "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz.sha256; do
+              [ -e "$f" ] || continue
+              aws $ENDPOINT_ARG s3 cp "$f" "$DEST/$VERSION/release/$(basename "$f")" \
+                --content-type application/octet-stream
+            done
+            aws $ENDPOINT_ARG s3 cp \
+              "$OUT_DIR/package/$CHANNEL/$VERSION/release/3panel-$VERSION-release-notes" \
+              "$DEST/$VERSION/release/3panel-$VERSION-release-notes" \
+              --content-type text/plain
+
+            # Channel index. The panel reads this greedily (no TrimSpace), so it
+            # must have no trailing newline — write index is already newline-free.
+            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/package/$CHANNEL/latest" "$DEST/latest" \
+              --content-type text/plain --cache-control 'no-cache'
+            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/package/$CHANNEL/latest.current" "$DEST/latest.current" \
+              --content-type application/json --cache-control 'no-cache'
+
+            echo "published $VERSION to $DEST"
+          done
+
+          # Resource object (ResourceURL, not RepoURL). The panel downloads this
+          # when /usr/local/bin/lang is missing; keeping it published means a
+          # fresh install never hits a 404 for its language pack.
+          # Channel-independent, so it is uploaded once, outside the loop.
+          if [ -f "$OUT_DIR/lang.tar.gz" ]; then
+            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/lang.tar.gz" \
+              "s3://$S3_BUCKET/resource/language/lang.tar.gz" \
+              --content-type application/gzip --cache-control 'max-age=300'
+          else
+            echo "::warning::dist/lang.tar.gz missing — /resource/language/lang.tar.gz not updated"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: ${{ steps.ver.outputs.version }}
+          body_path: ${{ env.OUT_DIR }}/package/${{ steps.ver.outputs.channel }}/${{ steps.ver.outputs.version }}/release/3panel-${{ steps.ver.outputs.version }}-release-notes
+          files: |
+            dist/3panel-*.tar.gz
+            dist/3panel-*.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

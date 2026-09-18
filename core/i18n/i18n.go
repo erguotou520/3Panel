@@ -211,12 +211,12 @@ func getLanguageFromDBInternal() string {
 	return lang
 }
 func getLanguageFrom3pctl() string {
-	info, err := ctl_conf.LoadFromFile("/usr/local/bin/3pctl", "LANGUAGE")
+	info, err := ctl_conf.LoadFromFile(ctl_conf.ConfigFile(), "LANGUAGE")
 	if err != nil {
-		panic(err)
+		return defaultLang
 	}
 	if len(info) == 0 || info == `""` {
-		panic("error `LANGUAGE` find in /usr/local/bin/3pctl")
+		return defaultLang
 	}
 	return info
 }

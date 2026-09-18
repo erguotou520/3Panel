@@ -33,6 +33,25 @@ SYNC_APP_PACKAGES = "false"
 # 留空则关闭该能力；若不需要每周复检，把 crons 里的第二个表达式一起删掉
 FORCE_CRON = "0 3 * * SUN"
 
+# ---------------------------------------------------------------------------
+# 资源通道（ResourceURL = https://3panel.erguotou.me/resource）
+#
+# 面板向这里要 5 个对象：脚本库 3 个 + 语言包 + GeoIP。
+# 上游把它们的路径拆开了：脚本库在 /resource/v2/ 前缀下，语言包和 GeoIP 在 /resource/ 下。
+# 不要"统一"成同一个 base —— v1 的脚本路径和 v2 的语言/geo 路径都是 404。
+# ---------------------------------------------------------------------------
+RESOURCE_SRC = "https://resource.fit2cloud.com/1panel"
+# 每次 cron 顺带同步脚本库。上游 version.txt 未变时只花一次 fetch，不写桶。
+# 发布前会校验 data.yaml 的 key 与 scripts.tar.gz 里的文件一一对应，不过校验就不覆盖。
+SYNC_RESOURCE = "true"
+# 是否让 cron 覆盖 /resource/language/lang.tar.gz。
+# 保持 false：该文件由 release-stable.yml 从仓库内置的 packaging/lang/ 产出，
+# 若在这里也镜像上游那份（11.9 KB / 5 种语言），两者会互相覆盖、来回漂移。
+# 需要临时拉上游那份时用 /sync-resource?lang=true。
+SYNC_RESOURCE_LANG = "false"
+# 是否让 cron 镜像 GeoIP.mmdb（19.5 MB）。默认 false；需要时用 /sync-resource?geoip=true。
+SYNC_RESOURCE_GEOIP = "false"
+
 [[r2_buckets]]
 binding = "APPSTORE"
 bucket_name = "appstore"

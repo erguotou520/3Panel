@@ -15,3 +15,13 @@ var AddNodeTable = &gormigrate.Migration{
 		)
 	},
 }
+
+// AddNodeFavoriteColumn back-fills the favorite flag for installations that
+// already ran AddNodeTable before the field existed. AutoMigrate only adds the
+// missing column and leaves existing rows untouched.
+var AddNodeFavoriteColumn = &gormigrate.Migration{
+	ID: "20260919-add-node-favorite-column",
+	Migrate: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.Node{})
+	},
+}

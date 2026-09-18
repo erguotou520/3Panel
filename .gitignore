@@ -60,9 +60,13 @@ core/utils/xpack/enterprise.go
 
 .history/
 dist/
-3pctl
-3panel.service
-install.sh
+# These are release artifacts that the upstream packaging flow drops at the
+# repository ROOT. The leading slash is required: as bare filenames they also
+# matched packaging/3pctl and packaging/install.sh, silently keeping the
+# release tooling out of version control.
+/3pctl
+/3panel.service
+/install.sh
 quick_start.sh
 cmd/server/fileList.txt
 .fileList.txt
@@ -70,6 +74,18 @@ cmd/server/fileList.txt
 
 core/.golangci.yml
 agent/.golangci.yml
+
+# Node
+node_modules/
+
+# Local-only credentials and state for the mirror tooling under scripts/.
+# `.env.example` is a template and stays tracked; wrangler dev writes .wrangler/
+# and the mirror scripts keep their resume state next to their config.
+.env
+.env.local
+.dev.vars
+.wrangler/
+scripts/**/.mirror-state.json
 
 .opencode
 openspec
@@ -79,4 +95,5 @@ opencode.json
 superpowers
 .worktrees/
 .codex/
+.workbuddy/
 .Trash-0
