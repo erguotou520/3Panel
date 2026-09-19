@@ -713,16 +713,25 @@ probe $B/package/stable/$V/release/3panel-agent-$V-linux-arm64.tar.gz
 > `package/{channel}/{version}/release/{archive}`。写成 `package/{channel}/{archive}`
 > 会拿到一片 404，很容易误报成「这个版本的包丢了」。
 
-**2026-09-18 实测结果**：
+**2026-09-19 实测结果（v2.0.3）**：
 
 | 路径 | 状态 | 影响 / 处理 |
 | --- | --- | --- |
-| `/resource/geo/GeoIP.mmdb` | ✅ 200（19.5 MB） | 正常，见 §5.4 |
-| `/resource/language/lang.tar.gz` | ✅ 200（2.5 KB） | 已上传，与 `dist/lang.tar.gz` 逐字节一致 |
-| `/resource/scripts/*` | ✅ 200（`version.txt` 10 B / `data.yaml` 7.3 KB / `scripts.tar.gz` 10.7 KB） | Worker 的 `/sync-resource` 已部署并跑过；`scripts.tar.gz` 与上游逐字节一致 |
-| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.2` | 发布通道已上线（首次发布 `v2.0.1`，见下） |
-| `/dev/3panel.json.zip`、`.version.txt` | ✅ 200 | 应用商店正常（`mode: dev` 对应这一份） |
+| `/resource/geo/GeoIP.mmdb` | ✅ 200（19,565,776 B） | 正常，见 §5.4 |
+| `/resource/language/lang.tar.gz` | ✅ 200（2,267 B） | 与 `dist/lang.tar.gz` 同源 |
+| `/resource/scripts/*` | ✅ 200（`version.txt` 10 B / `data.yaml` 7,345 B / `scripts.tar.gz` 10,672 B） | Worker 的 `/sync-resource` 已部署并跑过；`scripts.tar.gz` 与上游逐字节一致 |
+| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.3`（各 6 B，无尾换行） | 发布通道已上线 |
+| `/package/quick_start.sh` | ✅ 200（19,237 B） | 一键安装，见 §2.4 |
+| `/package/join.sh` | ✅ 200（16,452 B） | 节点一键加入，见 §2.5 |
+| `/package/install-agent.sh` | ✅ 200（12,249 B） | 整包回退时 `join.sh` 单独取它 |
+| `…/release/3panel-v2.0.3-linux-{amd64,arm64}.tar.gz` | ✅ 200（60,696,921 / 56,532,585 B） | 整包 |
+| `…/release/3panel-agent-v2.0.3-linux-{amd64,arm64}.tar.gz` | ✅ 200（27,284,591 / 24,479,731 B） | **agent 独立包**，v2.0.3 起才有 |
+| `/dev/3panel.json.zip`、`.version.txt` | ✅ 200（446,314 B） | 应用商店正常（`mode: dev` 对应这一份） |
 | `/package/beta/latest` | 404 | 正常：还没发过 beta |
+
+真站端到端（root 检查 sed 掉的只读探测）：解析 `v2.0.3` → **直接命中 agent 独立包** →
+sha256 `1e5e5d21…2b0cfc7` 与线上 `.sha256` 一致 → 解压 → 交给 `install-agent.sh`。
+（v2.0.2 时同一测试会走整包回退，因为那次发布早于 agent 独立包。）
 
 ### 首次发布已完成（2026-09-18，v2.0.1）
 
