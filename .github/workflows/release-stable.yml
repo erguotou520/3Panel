@@ -70,13 +70,16 @@ jobs:
             CHANNELS=beta
           else
             CHANNEL=stable
-            # A panel running with `base.mode: dev` (this repo's default in
-            # core/cmd/server/conf/app.yaml) NEVER reads the stable channel:
-            # loadVersionByMode() only looks at {RepoURL}/dev/latest and
-            # {RepoURL}/beta/latest. Publishing to `stable` alone means the
-            # release is downloaded by nobody and "check for updates" keeps
-            # saying the panel is up to date. So a non-beta release goes to
-            # both. Costs a second copy of the packages in the bucket.
+            # Panels read the channel named by `base.mode` in their embedded
+            # core/cmd/server/conf/app.yaml — stable since 2026-09-20. But
+            # instances installed before that switch shipped with `mode: dev`
+            # baked into the binary, and loadVersionByMode() makes a dev panel
+            # read {RepoURL}/dev/latest and {RepoURL}/beta/latest ONLY, never
+            # stable. Publishing to `stable` alone would leave those boxes
+            # permanently "up to date" and unable to upgrade off dev, so a
+            # non-beta release still goes to both. Costs one extra copy of the
+            # packages in the bucket; drop `dev` once every old instance has
+            # upgraded past this release.
             CHANNELS="stable dev"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"

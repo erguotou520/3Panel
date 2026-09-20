@@ -2,12 +2,15 @@
 # ---------------------------------------------------------------------------
 # 3Panel one-line installer — bootstrap only.
 #
-#   bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
+#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 #
 # What this does: resolve the newest release for this machine's architecture,
 # download the package, verify its sha256 against the published value, extract
 # it, then hand over to the `install.sh` that ships *inside* the package. Every
 # real install step lives there — this file only bootstraps.
+#
+# The release host is served straight off object storage with a CDN in front,
+# so no proxy prefix is needed or supported.
 #
 # Use the `bash -c "$(...)"` form, NOT `curl ... | bash`. install.sh prompts on
 # stdin; a pipe would feed it the script text instead of your keyboard.
@@ -16,8 +19,6 @@
 #   PANEL3_MIRROR     use exactly this base URL and skip probing (local mirror)
 #   PANEL3_ORIGIN     release-channel base, INCLUDING the /package segment
 #                     (default https://3panel.erguotou.me/package)
-#   PANEL3_PROXY      proxy prefix put before it     (default https://proxy.erguotou.me)
-#   PANEL3_NO_PROXY   1 = never try the proxy prefix
 #   PANEL3_WORKDIR    where the package is unpacked  (default ./3panel-install)
 #   PANEL3_RETRIES    download attempts per URL      (default 5)
 #   PANEL3_PROBE_RETRIES
@@ -49,7 +50,6 @@ ESC_OFF=$'\033[0m'
 # wrong produces a plain 404 on https://3panel.erguotou.me/stable/latest, which
 # looks like a network problem rather than a wrong URL.
 ORIGIN=${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}
-PROXY=${PANEL3_PROXY:-https://proxy.erguotou.me}
 MODE=${INSTALL_MODE:-stable}
 WORKDIR=${PANEL3_WORKDIR:-$PWD/3panel-install}
 RETRIES=${PANEL3_RETRIES:-5}
@@ -149,7 +149,7 @@ usage() {
     cat <<'EOF'
 3Panel one-line installer (bootstrap)
 
-  bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
+  bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 
 Options:
   --help          show this help and exit
@@ -162,8 +162,6 @@ Environment:
   PANEL3_MIRROR=<base url>         use one exact base, skip probing
   PANEL3_ORIGIN=<base url>         release-channel base, INCLUDING /package
                                    (default https://3panel.erguotou.me/package)
-  PANEL3_PROXY=<base url>          prefix proxy    (default https://proxy.erguotou.me)
-  PANEL3_NO_PROXY=1                never try the proxy prefix
   PANEL3_WORKDIR=<dir>             unpack location   (default ./3panel-install)
   PANEL3_RETRIES=<n>               download attempts per URL (default 5)
   PANEL3_PROBE_RETRIES=<n>         version-probe attempts per base (default 6)
@@ -311,17 +309,13 @@ preflight() {
 }
 
 # --------------------------------------------------------------- base + version
-# Candidate order: an explicit mirror wins; otherwise the proxy prefix (which is
-# what makes this reachable on networks that cannot talk to the origin), then
-# the origin itself. The first base that returns a non-empty version wins.
+# Candidate order: an explicit mirror wins; otherwise the origin itself. The
+# first base that returns a non-empty version wins.
 resolve_base() {
     local -a candidates=()
     if [ -n "${PANEL3_MIRROR:-}" ]; then
         candidates+=("${PANEL3_MIRROR%/}")
     else
-        if [ "${PANEL3_NO_PROXY:-0}" != "1" ] && [ -n "$PROXY" ]; then
-            candidates+=("${PROXY%/}/${ORIGIN%/}")
-        fi
         candidates+=("${ORIGIN%/}")
     fi
 

@@ -3,7 +3,7 @@ name: Publish bootstrap scripts
 # The bootstrap scripts are fetched by end users at FIXED paths with no version
 # in them:
 #
-#   bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
+#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 #   PANEL3_MASTER=... PANEL3_TOKEN=... bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
 #
 # so a change to one of them only reaches users if something uploads it.

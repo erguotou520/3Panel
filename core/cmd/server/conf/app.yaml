@@ -1,6 +1,6 @@
 base:
   install_dir: /opt
-  mode: dev
+  mode: stable
   is_demo: false
   is_offline: false
   is_fxplay: false

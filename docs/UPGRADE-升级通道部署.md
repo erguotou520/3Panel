@@ -48,18 +48,20 @@
 以 `mode=stable`、`version=v1.0.0`、`arch=amd64` 为例。
 
 > ⚠️ **频道由 `base.mode` 决定，先看你的 `mode` 是什么。**
-> `admin/utils/version/version.go` 的 `loadVersionByMode()`：
+> `core/app/service/upgrade.go` 的 `loadVersionByMode()`：
 > `mode: dev` 时**只**读 `/package/dev/latest` 与 `/package/beta/latest`，
 > 完全不碰 `stable`；只有 `mode: stable` 才读 `/package/stable/*`。
-> 本仓库默认 `core/cmd/server/conf/app.yaml` 里是 `mode: dev`（与应用商店的
-> `MODE=dev` 一致），所以 `release-stable.yml` 对非 beta 版本**同时发到
-> `stable` 和 `dev` 两个频道** —— 否则包发出去没人下载，面板永远提示「已是最新」。
-> 卸载/升级时的包路径同理：`mode: dev` 会去取 `/package/dev/<version>/release/…`。
+> 本仓库 `core/cmd/server/conf/app.yaml` 现为 **`mode: stable`**（2026-09-20 由 `dev` 切过来，
+> 与应用商店的 `MODE=stable` 一致），所以面板读 `/package/stable/*`。
+> `release-stable.yml` 对非 beta 版本**同时发到 `stable` 和 `dev` 两个频道**：发 `dev` 是
+> 为了让切换之前装出去的、二进制里仍嵌着 `mode: dev` 的旧实例还能升级（它们读不到
+> stable）；新装实例只认 stable。等旧实例都升一遍后，`dev` 这份副本可以考虑停发。
+> 卸载/升级时的包路径同理：`mode: stable` 会去取 `/package/stable/<version>/release/…`。
 
 ### 2.1 升级通道（`RepoURL()` = `https://3panel.erguotou.me/package`）
 
-下表以 `stable` 为例；若你的 `mode: dev`，把路径里的 `stable` 换成 `dev` 即可
-（两个频道的内容目前完全一致）。
+下表以 `stable` 为例（本仓当前模式）；旧实例若仍是 `mode: dev`，把路径里的 `stable`
+换成 `dev` 即可（两个频道的内容目前完全一致）。
 
 | 用途 | 请求路径 | 期望内容 | 缺失后果 |
 | --- | --- | --- | --- |
@@ -149,15 +151,15 @@ curl -s 'https://<worker>/status' | jq .resource
 
 ### 2.4 一键安装脚本（`/package/quick_start.sh`）
 
-新装机器的一条命令（`proxy.erguotou.me` 是 `3panel.erguotou.me` 的前缀反代，
-国内访问更稳；两种写法都通，带完整 URL 的那种更明确）：
+新装机器的一条命令：
 
 ```bash
-bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
-
-# 直连（同一份文件）
 bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 ```
+
+> 发布域名本身就是对象存储 + CDN 加速，直连即可——不存在也不需要前缀代理。
+> 早期用过 `https://proxy.erguotou.me/<完整URL>` 这种前缀反代，2026-09-20 已连同
+> `PANEL3_PROXY` / `PANEL3_NO_PROXY` 一起移除，脚本里只保留发布源与自建镜像两条路径。
 
 > ⚠️ **必须用 `bash -c "$(...)"`，不要 `curl ... | bash`。**
 > 包内 `install.sh` 会用 stdin 询问端口/账号/密码；管道会把脚本文本喂给 `read`，
@@ -174,8 +176,7 @@ bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 
 ```
 PANEL3_MIRROR（若设，唯一候选）
-  └→ {PANEL3_PROXY}/{PANEL3_ORIGIN}     # 默认 https://proxy.erguotou.me/https://3panel.erguotou.me/package
-      └→ {PANEL3_ORIGIN}                # 默认 https://3panel.erguotou.me/package
+  └→ {PANEL3_ORIGIN}                    # 默认 https://3panel.erguotou.me/package
 ```
 
 > ⚠️ `PANEL3_ORIGIN` 是**发布通道的 base，必须带 `/package` 段**。
@@ -223,8 +224,6 @@ curl 失败而 `tr` 成功会让管道返回 0 但输出为空。
 | `ARCH` | 自动 | `amd64` / `arm64`，其它值直接报错 |
 | `PANEL3_MIRROR` | 空 | 指定唯一地址，跳过探测 |
 | `PANEL3_ORIGIN` | `https://3panel.erguotou.me/package` | 发布源（**含 `/package` 段**，见下） |
-| `PANEL3_PROXY` | `https://proxy.erguotou.me` | 前缀反代 |
-| `PANEL3_NO_PROXY` | `0` | `1` = 只直连 |
 | `PANEL3_WORKDIR` | `./3panel-install` | 下载与解压目录。重复运行会复用已校验的包；只剩**未完成的分片**时会从断点续传（见下） |
 | `PANEL3_RETRIES` | `5` | 每个地址的下载尝试次数 |
 | `PANEL3_PROBE_RETRIES` | `6` | 每个地址的**版本探测**尝试次数（探测请求小但最易失败，故预算更大） |
@@ -262,13 +261,12 @@ sudo PANEL_PORT=10086 PANEL_USERNAME=admin PANEL_PASSWORD='<密码>' \
 
 ```bash
 PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>' \
-  bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/join.sh || \
-             curl -sSL https://3panel.erguotou.me/package/join.sh)"
+  bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
 ```
 
-先走加速前缀、失败再直连，是**故意的双保险**：这一步拿不到脚本，目标主机上没有任何
-其它途径能弄到 agent 二进制，用户会卡在第 0 步；而脚本一旦拿到手，后面的下载源选择在
-`join.sh` 内部已经有重试和回退。
+发布域名自带 CDN，直连即可。早期这里做过「先走加速前缀、失败再直连」的双保险，2026-09-20
+随前缀代理一起移除。脚本一旦拿到手，后面的下载源选择在 `join.sh` 内部已有重试和回退，
+不依赖命令本身再兜一层。
 
 **为什么需要它**：`3panel-agent join` 能加入，但节点机器上**没有** `3panel-agent`
 这个二进制 —— 上游一直假设运维已经手动装好了。现在由 `join.sh` 把「下载 → 校验 →
@@ -296,7 +294,7 @@ PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>'
 | `PANEL3_ADDR` / `PANEL3_PORT` | 面板回连本机的地址 / 监听端口 | 自动探测 / `9999` |
 | `PANEL3_BASE_DIR` | 安装目录 | `/opt` |
 | `PANEL3_VERSION` | 钉住版本；留空取 `latest` | — |
-| `PANEL3_ORIGIN` / `PANEL3_PROXY` / `PANEL3_MIRROR` | 发布源 / 加速前缀 / 自建镜像 | `…/package` / `proxy.erguotou.me` / — |
+| `PANEL3_ORIGIN` / `PANEL3_MIRROR` | 发布源 / 自建镜像 | `…/package` / — |
 | `PANEL3_RETRIES` / `PANEL3_PROBE_RETRIES` | 下载重试 / 版本探测重试 | `5` / `6` |
 | `PANEL3_WORKDIR` / `PANEL3_LANG` / `PANEL3_NO_FIREWALL` | 下载目录 / 提示语言 / 不放行端口 | `/tmp/3panel-agent-join` / `zh` / `0` |
 
@@ -407,8 +405,9 @@ packaging/
 > current，面板不会提示升级。仓库里 `app.yaml` 的 `version` 只是开发默认值 ——
 > 构建时会用 tag 覆盖它（见 §5.2），所以它不构成发布门槛。
 
-版本号含 `beta` 时发布到 `beta` 通道，否则 `stable` **和 `dev`** —— 后者是面板默认
-`mode: dev` 实际会读的频道（见 §2.1）。
+版本号含 `beta` 时发布到 `beta` 通道，否则 `stable` **和 `dev`** —— 面板读 `stable`
+（本仓 2026-09-20 起 `mode: stable`），`dev` 是发给切换之前装出的 `mode: dev` 旧实例的
+兼容副本（见 §2.1）。
 
 ### 5.2 本地先验证一遍
 
@@ -637,7 +636,7 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 - 超时已从 3s 放宽到 **10s**（跨境经代理建连 3s 偏紧，容易误判失败）。
 
 > **注意**：这是 **HTTP/HTTPS/SOCKS5 正向代理**（用于受限网络下拉取镜像、升级包），
-> 与「前缀式反代」（如 `https://proxy.erguotou.me/https://github.com/...`）**不是一回事**。
+> 与「前缀式反代」（形如 `https://<前缀域名>/https://github.com/...`）**不是一回事**。
 > 后者是 URL 重写服务，面板的代理设置填不进去，也不能直接替代。
 
 ---
@@ -695,7 +694,7 @@ probe $B/resource/scripts/data.yaml
 probe $B/resource/scripts/scripts.tar.gz
 probe $B/resource/scripts/version.txt
 probe $B/package/stable/latest
-probe $B/package/dev/latest          # mode: dev 的面板只认这个（见 §2.1）
+probe $B/package/dev/latest          # dev 兼容副本，旧 mode: dev 实例读它（见 §2.1）
 probe $B/package/quick_start.sh      # 一键安装脚本（路径不带版本，见 §2.4）
 probe $B/package/join.sh             # 节点一键加入（路径不带版本，见 §2.5）
 probe $B/package/install-agent.sh    # 整包回退时 join.sh 会单独取它
@@ -726,7 +725,7 @@ probe $B/package/stable/$V/release/3panel-agent-$V-linux-arm64.tar.gz
 | `/package/install-agent.sh` | ✅ 200（12,249 B） | 整包回退时 `join.sh` 单独取它 |
 | `…/release/3panel-v2.0.3-linux-{amd64,arm64}.tar.gz` | ✅ 200（60,696,921 / 56,532,585 B） | 整包 |
 | `…/release/3panel-agent-v2.0.3-linux-{amd64,arm64}.tar.gz` | ✅ 200（27,284,591 / 24,479,731 B） | **agent 独立包**，v2.0.3 起才有 |
-| `/dev/3panel.json.zip`、`.version.txt` | ✅ 200（446,314 B） | 应用商店正常（`mode: dev` 对应这一份） |
+| `/stable/3panel.json.zip`、`.version.txt` | ✅ 200（446,314 B） | 应用商店正常（当前 `mode: stable` 对应这一份；`/dev/` 下同样有一份，给旧实例） |
 | `/package/beta/latest` | 404 | 正常：还没发过 beta |
 
 真站端到端（root 检查 sed 掉的只读探测）：解析 `v2.0.3` → **直接命中 agent 独立包** →

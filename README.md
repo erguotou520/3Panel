@@ -6,13 +6,7 @@
 
 ## 安装
 
-一键安装（推荐，走国内加速前缀）：
-
-```bash
-bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/quick_start.sh)"
-```
-
-直连（加速前缀不可用时）：
+一键安装（发布域名自带 CDN 加速，直连即可）：
 
 ```bash
 bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
@@ -51,8 +45,7 @@ bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 
 ```bash
 PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
-  bash -c "$(curl -sSL https://proxy.erguotou.me/https://3panel.erguotou.me/package/join.sh || \
-             curl -sSL https://3panel.erguotou.me/package/join.sh)"
+  bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
 ```
 
 - 节点机只装 agent（amd64 ~26MB / arm64 ~23MB），不会装 core。
@@ -69,7 +62,7 @@ PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
 在节点机上执行（root）。升级不需要 token，也不会重新 join，现有证书和注册关系原样保留：
 
 ```bash
-CHANNEL=dev   # 与主控 core/cmd/server/conf/app.yaml 的 base.mode 一致
+CHANNEL=stable   # 与主控 core/cmd/server/conf/app.yaml 的 base.mode 一致
 VERSION="$(curl -sSL https://3panel.erguotou.me/package/$CHANNEL/latest)"
 ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
 PKG="3panel-agent-${VERSION}-linux-${ARCH}"

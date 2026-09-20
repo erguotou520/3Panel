@@ -25,7 +25,6 @@
 #   PANEL3_VERSION                      指定版本；留空取频道 latest
 #   PANEL3_ARCH                         覆盖架构探测（amd64|arm64）
 #   PANEL3_ORIGIN                       发布源，默认 https://3panel.erguotou.me/package
-#   PANEL3_PROXY                        加速前缀，默认 https://proxy.erguotou.me
 #   PANEL3_MIRROR                       自建镜像，设了就只走它
 #   PANEL3_RETRIES / PANEL3_PROBE_RETRIES  下载重试次数 / 版本探测重试次数
 #   PANEL3_WORKDIR                      下载与解压目录，默认 /tmp/3panel-agent-join
@@ -34,7 +33,6 @@
 set -uo pipefail
 
 ORIGIN="${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}"
-PROXY="${PANEL3_PROXY:-https://proxy.erguotou.me}"
 MIRROR="${PANEL3_MIRROR:-}"
 RETRIES="${PANEL3_RETRIES:-5}"
 PROBE_RETRIES="${PANEL3_PROBE_RETRIES:-6}"
@@ -207,14 +205,13 @@ download() {
 # ---------------------------------------------------------------------------
 # 定位包
 # ---------------------------------------------------------------------------
-# 下载源顺序：自建镜像 > 代理前缀 > 直连。第一个能取到版本的胜出。
+# 下载源顺序：自建镜像 > 发布源。第一个能取到版本的胜出。
 build_bases() {
     BASES=()
     if [[ -n "$MIRROR" ]]; then
         BASES+=("$(trim_slash "$MIRROR")")
         return
     fi
-    BASES+=("$(trim_slash "$PROXY")/$(trim_slash "$ORIGIN")")
     BASES+=("$(trim_slash "$ORIGIN")")
 }
 

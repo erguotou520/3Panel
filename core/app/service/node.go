@@ -239,12 +239,6 @@ func (u *NodeService) Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJo
 	}, nil
 }
 
-// joinScriptProxy fronts every download with a regional accelerator. The panel's
-// own host is Cloudflare-backed and, from mainland China, frequently stalls on
-// the 25MB+ package — the same reason packaging/quick_start.sh is documented
-// with this prefix.
-const joinScriptProxy = "https://proxy.erguotou.me"
-
 // joinBootstrapCommand builds the line an operator copies onto the target host.
 //
 // It has to be self-sufficient: a fresh host has no 3panel-agent binary and no
@@ -252,18 +246,16 @@ const joinScriptProxy = "https://proxy.erguotou.me"
 // agent-only package and runs the packaged installer. Nothing else is required
 // beyond curl.
 //
+// The release host is served from object storage behind a CDN, so the script is
+// fetched straight from it — there is no proxy prefix to fall back to.
+//
 // The token is single quoted because it is a credential — it must never end up
 // in the URL, where it would be captured by proxy and access logs.
-//
-// The script is fetched through the accelerator first and straight from the
-// origin when that fails: if the accelerator is down the operator is stuck at
-// step zero with no agent binary to fall back on, whereas everything after this
-// first fetch already retries across bases inside join.sh.
 func joinBootstrapCommand(masterAddr, token string) string {
 	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/join.sh"
 	return fmt.Sprintf(
-		"PANEL3_MASTER='%s' PANEL3_TOKEN='%s' bash -c \"$(curl -sSL %s/%s || curl -sSL %s)\"",
-		masterAddr, token, joinScriptProxy, direct, direct)
+		"PANEL3_MASTER='%s' PANEL3_TOKEN='%s' bash -c \"$(curl -sSL %s)\"",
+		masterAddr, token, direct)
 }
 
 // Join redeems a token: the agent proves possession of the secret and receives
