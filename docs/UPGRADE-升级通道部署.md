@@ -719,10 +719,14 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 | `packaging/join.sh` | **新增**：节点一键加入引导脚本（取版本 → 选下载源 → 拉 agent 独立包，缺则回退整包 → 校验 → 解压 → 交接给包内 `install-agent.sh`），见 §2.5 |
 | `packaging/install-agent.sh` | **新增**：节点侧安装器（装二进制 + 改写 `3pctl` + 语言包 + 服务定义 → 执行 `3panel-agent join` → 起服务） |
 | `packaging/build-release.sh` | 新增 `3panel-agent-<ver>-linux-<arch>.tar.gz`（+ `.sha256`）产出；产出 `join.sh` / `install-agent.sh`；给两个包内的 `3pctl` 盖章 `ORIGINAL_VERSION=<version>` |
-| `core/app/service/node.go` / `core/app/dto/node.go` | 新增 `joinBootstrapCommand()`：`Create()` 除原始 `3panel-agent join` 命令外，再返回一条带加速前缀、失败回退直连的一键命令；DTO 增加 `agentCommand` |
+| `core/app/service/node.go` / `core/app/dto/node.go` | 新增 `joinBootstrapCommand()`：`Create()` 除原始 `3panel-agent join` 命令外，再返回一条一键命令（取直连地址；早期那层加速前缀已于 2026-09-20 移除）；DTO 增加 `agentCommand` |
 | `frontend/src/views/setting/node/index.vue`、`api/interface/setting.ts`、`lang/modules/{zh,en}.ts` | 加入命令对话框展示一键命令（可复制、显示过期时间），折叠区保留原始 `3panel-agent join` |
 | `.github/workflows/publish-bootstrap.yml` | 扩展为同时发布 `join.sh` / `install-agent.sh`（路径同样不带版本） |
 | `.github/workflows/publish-bootstrap.yml` | **新增**：改动 `packaging/quick_start.sh` 即上传 `/package/quick_start.sh`（路径不带版本，用户命令固定） |
+| `packaging/upgrade-agent.sh` | **新增**（2026-09-20）：节点 agent 一键升级引导脚本（读现有 `3pctl` 配置 → 单频道解析版本 → 拉 agent 独立包/整包 → 校验 → 交给包内安装器），见 §2.6 |
+| `packaging/install-agent.sh` | 新增 `--no-join`（`PANEL3_NO_JOIN=1`）：升级已加入的节点时只换二进制，跳过开防火墙与 `join`，也不再要求 `--master`/`--token` |
+| `core/app/service/node.go` / `core/app/dto/node.go` / `core/app/api/v2/node.go` / `core/router/ro_node.go` | 新增 `NodeService.UpgradeCommand()` 与 `GET /nodes/upgrade`：返回不含 token 的升级命令 + 面板自身版本 |
+| `frontend/src/views/setting/node/index.vue` | 节点管理页新增「升级节点」按钮与对话框（展示升级命令、可复制、提示目标频道与当前面板版本） |
 | `.gitignore` | 裸文件名 `quick_start.sh` 锚定为 `/quick_start.sh`（原规则会静默忽略 `packaging/quick_start.sh`） |
 | `packaging/` | **新增**：`3pctl`、`install.sh`、`build-release.sh`、`initscript/`（8 个服务定义）、`lang/`（内置语言包） |
 | `packaging/build-release.sh` | 新增 `dist/lang.tar.gz` 产出（资源通道语言包）；GeoIP 多源取源 + `GEOIP_FILE`；新增「把 tag 版本 stamp 进 `go:embed` 的 `conf/app.yaml`，退出时还原」 |
@@ -758,6 +762,7 @@ probe $B/package/dev/latest          # dev 兼容副本，旧 mode: dev 实例�
 probe $B/package/quick_start.sh      # 一键安装脚本（路径不带版本，见 §2.4）
 probe $B/package/join.sh             # 节点一键加入（路径不带版本，见 §2.5）
 probe $B/package/install-agent.sh    # 整包回退时 join.sh 会单独取它
+probe $B/package/upgrade-agent.sh    # 节点一键升级（路径不带版本，见 §2.6）
 probe $B/dev/3panel.json.zip         # 应用商店也按 mode 分目录
 probe $B/dev/3panel.json.version.txt
 
@@ -782,7 +787,8 @@ probe $B/package/stable/$V/release/3panel-agent-$V-linux-arm64.tar.gz
 | `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.4`（各 6 B，无尾换行） | 发布通道已上线 |
 | `/package/quick_start.sh` | ✅ 200（18,732 B） | 一键安装，见 §2.4 |
 | `/package/join.sh` | ✅ 200（16,239 B） | 节点一键加入，见 §2.5 |
-| `/package/install-agent.sh` | ✅ 200（12,249 B） | 整包回退时 `join.sh` 单独取它 |
+| `/package/install-agent.sh` | ✅ 200（14,261 B） | 整包回退时 `join.sh` 单独取它 |
+| `/package/upgrade-agent.sh` | ✅ 200（16,765 B） | 节点一键升级，见 §2.6。**改脚本即发布**，先于面板发版生效 |
 | `…/release/3panel-v2.0.4-linux-{amd64,arm64}.tar.gz` | ✅ 200（60,697,184 / 56,532,376 B） | 整包 |
 | `…/release/3panel-agent-v2.0.4-linux-{amd64,arm64}.tar.gz` | ✅ 200（27,284,642 / 24,479,770 B） | **agent 独立包**，v2.0.3 起才有 |
 | `/stable/3panel.json.zip`、`.version.txt` | ✅ 200（446,314 B） | 应用商店正常（当前 `mode: stable` 对应这一份；`/dev/` 下同样有一份，给旧实例） |
