@@ -22,8 +22,13 @@ const (
 	// LocalNodeName is the reserved name of the master itself.
 	LocalNodeName = "local"
 
-	joinTokenTTL       = 30 * time.Minute
-	joinTokenLength    = 32
+	joinTokenTTL    = 30 * time.Minute
+	joinTokenLength = 32
+	// joinScriptName / upgradeScriptName live at fixed paths on the release
+	// host — publish-bootstrap.yml re-uploads them on every change, so a
+	// version never appears in the URL.
+	joinScriptName     = "join.sh"
+	upgradeScriptName  = "upgrade-agent.sh"
 	defaultNodePort    = 9999
 	remoteProbeTimeout = 5 * time.Second
 	nodeStatusOnline   = "Online"
@@ -39,6 +44,7 @@ type INodeService interface {
 	Options() ([]dto.NodeInfo, error)
 	Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJoinCommand, error)
 	Join(req dto.NodeJoin) (*dto.NodeJoinResult, error)
+	UpgradeCommand() (*dto.NodeUpgradeCommand, error)
 	Delete(id uint) error
 	Check() ([]dto.NodeInfo, error)
 	Favorite(req dto.NodeFavorite) error
@@ -252,10 +258,27 @@ func (u *NodeService) Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJo
 // The token is single quoted because it is a credential — it must never end up
 // in the URL, where it would be captured by proxy and access logs.
 func joinBootstrapCommand(masterAddr, token string) string {
-	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/join.sh"
+	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/" + joinScriptName
 	return fmt.Sprintf(
 		"PANEL3_MASTER='%s' PANEL3_TOKEN='%s' bash -c \"$(curl -sSL %s)\"",
 		masterAddr, token, direct)
+}
+
+// UpgradeCommand returns the line an operator runs on an already-joined node
+// to swap its agent binary for the current release.
+//
+// A master upgrade does not carry its nodes along: core only reports each
+// node's version, it never pushes anything. Re-running the join bootstrap is
+// not an option either — join tokens are single use and a node name can only
+// be created once, so the old host cannot redeem a fresh token. Upgrading is
+// therefore a separate path that keeps the certificate and only replaces the
+// binaries.
+func (u *NodeService) UpgradeCommand() (*dto.NodeUpgradeCommand, error) {
+	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/" + upgradeScriptName
+	return &dto.NodeUpgradeCommand{
+		Command: fmt.Sprintf("bash -c \"$(curl -sSL %s)\"", direct),
+		Version: global.CONF.Base.Version,
+	}, nil
 }
 
 // Join redeems a token: the agent proves possession of the secret and receives

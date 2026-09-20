@@ -27,6 +27,9 @@ func (a *NodeRouter) InitRouter(Router *gin.RouterGroup) {
 		// Alias kept because the frontend's node switcher already calls /list.
 		nodeRouter.POST("list", baseApi.ListNode)
 		nodeRouter.POST("check", baseApi.CheckNode)
+		// Line an operator runs on a node that already joined, to swap its
+		// agent binary. No token involved — see NodeService.UpgradeCommand.
+		nodeRouter.GET("upgrade", baseApi.NodeUpgradeCommand)
 		nodeRouter.POST("", baseApi.CreateNode)
 		nodeRouter.POST("del", baseApi.DeleteNode)
 	}

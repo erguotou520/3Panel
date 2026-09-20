@@ -19,7 +19,9 @@
 #
 #   PANEL3_MASTER / PANEL3_TOKEN / PANEL3_ADDR / PANEL3_PORT
 #   PANEL3_BASE_DIR(默认 /opt) / PANEL3_LANG(zh|en) / PANEL3_NO_FIREWALL=1
-#   PANEL3_VERSION    覆盖包内记录的版本（正常由 join.sh 传入，无需手工设置）
+#   PANEL3_NO_JOIN=1   只换二进制、不重新 join —— 升级已加入的节点走这条，
+#                      节点上已有证书，且 token 是一次性的、重跑也拿不到新的
+#   PANEL3_VERSION     覆盖包内记录的版本（正常由 join.sh 传入，无需手工设置）
 #
 # 安装完成后的运维方式：
 #   systemctl {status,restart} 3panel-agent     或     3pctl {status,restart}
@@ -43,6 +45,9 @@ LANG_CODE="${PANEL3_LANG:-zh}"
 # join.sh 解析完版本后显式传进来；手工执行时为空，退回读包内 3pctl。
 VERSION_OVERRIDE="${PANEL3_VERSION:-}"
 NO_FIREWALL="${PANEL3_NO_FIREWALL:-0}"
+# 升级路径：节点早已加入，证书和注册关系都在 <base-dir>/3panel 下，重跑只需换二进制。
+# token 是一次性的，升级时既没有也不该有可用的 token，所以这条路径跳过 run_join。
+NO_JOIN="${PANEL3_NO_JOIN:-0}"
 LOG_FILE="${PANEL3_INSTALL_LOG:-/var/log/3panel-agent-install.log}"
 
 # ---------------------------------------------------------------------------
@@ -92,9 +97,12 @@ Usage: ./install-agent.sh --master <master-url> --token <token> [options]
   --version  VER  覆盖包内记录的版本，默认读包内 3pctl        (env PANEL3_VERSION)
   --lang   zh|en  脚本提示语言，默认 zh                       (env PANEL3_LANG)
   --no-firewall   不自动放行端口                              (env PANEL3_NO_FIREWALL=1)
+  --no-join       只安装/替换二进制，不向面板换取证书          (env PANEL3_NO_JOIN=1)
+                  升级已加入的节点时用；配合 upgrade-agent.sh
   -h, --help      显示本帮助
 
 例：./install-agent.sh --master https://10.0.0.1:9999 --token 0f3d...
+    ./install-agent.sh --no-join          # 升级：保留现有证书
 EOF
 }
 
@@ -112,12 +120,16 @@ parse_args() {
             --version) VERSION_OVERRIDE="${2:-}"; shift 2 ;;
             --lang) LANG_CODE="${2:-}"; shift 2 ;;
             --no-firewall) NO_FIREWALL=1; shift ;;
+            --no-join) NO_JOIN=1; shift ;;
             -h | --help) usage; exit 0 ;;
             *) err "unknown argument: $1" ;;
         esac
     done
-    [[ -n "$MASTER" ]] || { usage; err "missing --master"; }
-    [[ -n "$TOKEN" ]] || { usage; err "missing --token"; }
+    # 换证书才需要 master/token；--no-join 是升级路径，节点上已有证书。
+    if [[ "$NO_JOIN" != "1" ]]; then
+        [[ -n "$MASTER" ]] || { usage; err "missing --master"; }
+        [[ -n "$TOKEN" ]] || { usage; err "missing --token"; }
+    fi
 }
 
 check_env() {
@@ -234,6 +246,17 @@ start_service() {
 
 print_summary() {
     step "$(say "完成" "Done")"
+    if [[ "$NO_JOIN" == "1" ]]; then
+        cat <<EOF
+  $(say "节点地址" "node address")  ${NODE_ADDR:-<auto>}:$NODE_PORT
+  $(say "数据目录" "data dir")      $BASE_DIR/3panel
+  $(say "日志" "log")               $LOG_FILE
+  $(say "服务管理" "service")       systemctl {status,restart} $SERVICE_NAME   $(say "或" "or")   3pctl {status,restart}
+EOF
+        say "升级完成。回面板的「多机管理」点一次「健康检查」，节点版本号即刷新。" \
+            "Upgrade done. Hit the health check button in the panel to refresh the reported version."
+        return 0
+    fi
     cat <<EOF
   $(say "节点地址" "node address")  ${NODE_ADDR:-<auto>}:$NODE_PORT
   $(say "面板地址" "master")        $MASTER
@@ -259,17 +282,27 @@ main() {
     fi
     version="${version:-unknown}"
 
-    step "$(say "安装 3Panel agent $version" "Installing 3Panel agent $version")"
+    if [[ "$NO_JOIN" == "1" ]]; then
+        step "$(say "升级 3Panel agent 到 $version" "Upgrading 3Panel agent to $version")"
+    else
+        step "$(say "安装 3Panel agent $version" "Installing 3Panel agent $version")"
+    fi
 
-    # 重复加入 / 更换主控时先停掉旧进程，避免它和 join 抢同一个数据库。
+    # 重复加入 / 更换主控 / 升级时都先停掉旧进程：一是避免它和 join 抢同一个数据库，
+    # 二是覆盖正在运行的二进制会 Text file busy。
     service_cmd stop >/dev/null 2>&1 || true
 
     install_binaries
     configure_ctl "$version"
     install_assets
     install_service
-    open_firewall
-    run_join
+    if [[ "$NO_JOIN" == "1" ]]; then
+        # 升级：端口没变、证书还在，既不重开防火墙也不重新 join。
+        log "  $(say "保留现有证书与注册关系，未重新加入" "kept the existing certificate, no re-join")"
+    else
+        open_firewall
+        run_join
+    fi
     start_service
     print_summary
 }

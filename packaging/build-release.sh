@@ -209,7 +209,7 @@ for ARCH in "${ARCHES[@]}"; do
     # Read by end users as `bash -c "$(curl -sSL <url>)"`, so it must stay
     # reachable without a version in the path. publish-bootstrap.yml uploads it on
     # every change to this file; this copy keeps a release self-contained.
-    for asset in quick_start.sh join.sh install-agent.sh; do
+    for asset in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do
         if [[ -f "$PACKAGING_DIR/$asset" ]]; then
             cp -f "$PACKAGING_DIR/$asset" "$OUT_DIR/$asset"
             chmod 0644 "$OUT_DIR/$asset"
@@ -334,4 +334,5 @@ cat <<EOF
   dist/quick_start.sh                                         -> /package/quick_start.sh
   dist/join.sh                                                -> /package/join.sh
   dist/install-agent.sh                                       -> /package/install-agent.sh
+  dist/upgrade-agent.sh                                       -> /package/upgrade-agent.sh
 EOF

@@ -73,6 +73,18 @@ type NodeJoinCommand struct {
 	ExpiredAt    time.Time `json:"expiredAt"`
 }
 
+// NodeUpgradeCommand is the one-liner that upgrades the agent of a node that
+// has already joined.
+//
+// It carries no token on purpose: the node keeps its certificate, and join
+// tokens are single use anyway, so upgrading is just a binary swap. Version is
+// the master's own version, shown so an operator can tell whether a node is
+// behind.
+type NodeUpgradeCommand struct {
+	Command string `json:"command"`
+	Version string `json:"version"`
+}
+
 // NodeInfo mirrors the frontend's Setting.NodeItem.
 type NodeInfo struct {
 	ID          uint   `json:"id"`

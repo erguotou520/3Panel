@@ -59,7 +59,23 @@ PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
 
 **节点 agent**：主控升级**不会带动节点**，节点版本只在节点列表里展示，面板不做一致性校验——所以旧 agent 仍能在线。但跨版本后主控可能调到 agent 上没有的接口而报错，建议跟随主控版本升级。
 
-在节点机上执行（root）。升级不需要 token，也不会重新 join，现有证书和注册关系原样保留：
+面板「多机管理 → 升级节点」会给出下面这条命令，复制到节点机上以 root 执行：
+
+```bash
+bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+```
+
+- **不需要 token，也不会重新 join**：现有证书与 `<base-dir>/3panel` 下的数据原样保留，只替换二进制。
+- 默认升级到 `stable` 频道的最新版本；`PANEL3_CHANNEL` / `PANEL3_VERSION` 可覆盖，`PANEL3_FORCE=1` 同版本也强制重装。
+- 沿用节点上 `/usr/local/bin/3pctl` 里记录的 `BASE_DIR`、端口与语言，不改变节点布局；已是最新版本时直接退出。
+- 前提是节点当初是**用一键命令加入**的（即存在 `/usr/local/bin/3pctl` 与 `3panel-agent`）。全新机器请走上面的「节点加入」。
+
+**为什么不能重跑一键加入命令**：join token 是一次性的，且同名节点不能重复创建（`ErrRecordExist`），已加入的节点拿不到新 token——升级只能走上面这条独立通道。
+
+升级完回面板点一次「健康检查」，节点 Online 且版本号更新即生效。
+
+<details>
+<summary>手工升级（不想跑脚本，或要装指定版本）</summary>
 
 ```bash
 CHANNEL=stable   # 与主控 core/cmd/server/conf/app.yaml 的 base.mode 一致
@@ -87,7 +103,7 @@ systemctl start 3panel-agent
 2. agent 上报的版本号读自 `/usr/local/bin/3pctl` 里的 `ORIGINAL_VERSION`，只换二进制的话面板上看到的还是旧版本号。
 3. **不要**用包里的 `3pctl` 覆盖 `/usr/local/bin/3pctl`：那份是未改写的默认值 `CORE_SERVICE=3panel-core`，覆盖后 `3pctl status/restart` 会指向节点上并不存在的 core 服务。
 
-升级完回面板点一次「健康检查」，节点 Online 且版本号更新即生效。
+</details>
 
 ## 环境要求
 

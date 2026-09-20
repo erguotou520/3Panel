@@ -55,6 +55,9 @@ export const deleteNode = (id: number) => {
 export const checkNodes = () => {
     return http.post<Array<Setting.NodeItem>>(`/core/nodes/check`);
 };
+export const upgradeNodeCommand = () => {
+    return http.get<Setting.NodeUpgradeCommand>(`/core/nodes/upgrade`);
+};
 export const updateNodeFavorite = (id: number, isFavorite: boolean) => {
     return http.post(`/core/nodes/favorite`, { id, isFavorite });
 };

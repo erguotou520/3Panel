@@ -5,6 +5,7 @@ name: Publish bootstrap scripts
 #
 #   bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 #   PANEL3_MASTER=... PANEL3_TOKEN=... bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
+#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
 #
 # so a change to one of them only reaches users if something uploads it.
 # release-stable.yml does that too, but tying it to a version tag would mean a
@@ -15,6 +16,7 @@ name: Publish bootstrap scripts
 #   packaging/join.sh           -> /package/join.sh            (join a node)
 #   packaging/install-agent.sh  -> /package/install-agent.sh   (used by join.sh
 #                                  when it has to fall back to the full package)
+#   packaging/upgrade-agent.sh  -> /package/upgrade-agent.sh   (upgrade a node)
 
 on:
   push:
@@ -23,6 +25,7 @@ on:
       - packaging/quick_start.sh
       - packaging/join.sh
       - packaging/install-agent.sh
+      - packaging/upgrade-agent.sh
       - .github/workflows/publish-bootstrap.yml
   workflow_dispatch:
 
@@ -44,7 +47,7 @@ jobs:
       - name: Sanity-check the scripts
         run: |
           set -euo pipefail
-          for f in quick_start.sh join.sh install-agent.sh; do
+          for f in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do
             bash -n "packaging/$f"
             echo "$f OK, $(wc -c < "packaging/$f") bytes"
           done

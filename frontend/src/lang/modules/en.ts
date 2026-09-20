@@ -6365,6 +6365,10 @@ const message = {
             agentCommandHelper:
                 'If 3panel-agent is already present (for example when re-joining after a master move), run this instead and skip the download:',
             copyCommand: 'Copy Command',
+            upgradeNode: 'Upgrade Node',
+            upgradeCommandHelper:
+                'Run this as root on a node that has already joined: no token is needed, the existing certificate and data directory are kept and only the binaries are replaced.',
+            upgradeVersionHint: 'Upgrades to the latest release on the channel; this panel is {0}.',
             nodeCreated: 'Node created. Copy the command below and run it on the target host.',
             deleteNodeConfirm: 'Delete node {0}? Its certificate will stop working.',
             nodeDeleted: 'Node deleted.',

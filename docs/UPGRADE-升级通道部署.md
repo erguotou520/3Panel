@@ -74,6 +74,7 @@
 | **一键安装脚本** | `/package/quick_start.sh` | bash 脚本，**路径里不带版本** | 一键安装命令 404 |
 | **一键加入脚本** | `/package/join.sh` | bash 脚本，**路径里不带版本** | 面板生成的加入命令 404 |
 | **节点安装器** | `/package/install-agent.sh` | bash 脚本 | 仅整包回退时需要 |
+| **节点升级脚本** | `/package/upgrade-agent.sh` | bash 脚本，**路径里不带版本** | 面板「升级节点」给出的命令 404 |
 
 > `latest` 由 `loadVersion()` 直接 `string(body)` 使用，**没有 TrimSpace**。
 > 若带尾换行，版本号会变成 `"v1.0.0\n"` 而解析失败 —— 发布时必须用 `printf '%s'`（无换行）写入。
@@ -312,6 +313,65 @@ PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>'
 > （`ORIGINAL_VERSION=<version>`）。这一步**不能省**：`install.sh` 是从包内 `3pctl`
 > 反读版本再写进 `/usr/local/bin/3pctl` 的，`core/init/viper` 又从那里取面板版本；
 > 不盖章的话，装好的面板会把自己的版本报成字面量 `version`，节点上报给主控的也是它。
+
+---
+
+### 2.6 节点 agent 一键升级（`/package/upgrade-agent.sh`）
+
+面板「多机管理 → 升级节点」给出这条命令（主控由 `core/app/service/node.go` 的
+`NodeService.UpgradeCommand()` 生成，**不含 token**）：
+
+```bash
+bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+```
+
+**为什么必须单独开一条通道**（2026-09-20 查证）：
+
+- 主控升级**不带动节点**。core 不校验节点版本，只在节点列表里展示，所以不能靠发版解决。
+- **重跑一键加入命令走不通**：join token 是一次性的（`nodeTokenRepo` 的 `Used`），
+  且 `Create` 遇到同名节点直接报 `ErrRecordExist` —— 已加入的节点拿不到新 token。
+- 于是升级退化为**纯换二进制**：证书与注册关系都在 `<base-dir>/3panel` 下，原样保留即可。
+
+**流程**（`packaging/upgrade-agent.sh`，只做引导）：
+
+1. 从 `/usr/local/bin/3pctl` 反读现有 `BASE_DIR` / `ORIGINAL_VERSION` / `ORIGINAL_PORT` /
+   `LANGUAGE`（缺失时分别回退 `/opt`、空、`9999`、`zh`）
+2. 解析目标版本 —— **只读单一频道**（默认 `stable`），不像 `join.sh` 那样遍历
+   stable/dev/beta：节点必须跟主控待在同一条通道上
+3. 找包：agent 独立包 → 整包回退（按 `.sha256` 是否存在判断）
+4. 下载 + 校验 sha256，不一致就删包中止
+5. 解压后调用**包内** `install-agent.sh --no-join`
+
+`install-agent.sh` 的 `--no-join`（`PANEL3_NO_JOIN=1`）复用安装器的全部步骤，只跳过
+`open_firewall` 与 `run_join`；同时因为不换证书，`parse_args` 里对 `--master` / `--token`
+的必填校验也被跳过。`BASE_DIR` / 端口 / 语言沿用调用方传入的现值，**不改变节点布局**。
+
+**环境变量**
+
+| 变量 | 含义 | 默认 |
+| --- | --- | --- |
+| `PANEL3_CHANNEL` | 发布频道 | `stable` |
+| `PANEL3_VERSION` | 钉住版本；留空取该频道 `latest` | — |
+| `PANEL3_ARCH` | 覆盖架构探测 | `uname -m` |
+| `PANEL3_ORIGIN` / `PANEL3_MIRROR` | 发布源 / 自建镜像 | `…/package` / — |
+| `PANEL3_RETRIES` / `PANEL3_PROBE_RETRIES` | 下载重试 / 探测重试 | `5` / `6` |
+| `PANEL3_WORKDIR` / `PANEL3_LANG` | 下载目录 / 提示语言 | `/tmp/3panel-agent-upgrade` / `zh` |
+| `PANEL3_FORCE=1` | 目标版本与当前一致时也重装一遍 | `0` |
+
+目标版本与节点当前 `ORIGINAL_VERSION` 相同时脚本**直接退出**（exit 0），不会白停一次服务；
+要强制重装用 `PANEL3_FORCE=1`。
+
+**发布方式**
+
+| 文件 | 工作流 | 触发 | 上传目标 |
+| --- | --- | --- | --- |
+| `packaging/upgrade-agent.sh` | `publish-bootstrap.yml` | 改文件并推 `main`，或手动触发 | `/package/upgrade-agent.sh` |
+
+`build-release.sh` 也会把它复制进 `dist/`，`release-stable.yml` 发版时顺带上传一次作为兜底。
+路径同样**不带版本号**。
+
+> ⚠️ 该脚本依赖节点上存在 `/usr/local/bin/3pctl` 与 `3panel-agent`（即当初是用一键命令
+> 加入的）。两者缺一时会明确报错而不是装出一份半成品。
 
 ---
 

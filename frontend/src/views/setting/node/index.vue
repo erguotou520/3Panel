@@ -8,6 +8,9 @@
                 <el-button type="primary" plain @click="onCheck()">
                     {{ $t('xpack.node.healthCheck') }}
                 </el-button>
+                <el-button type="primary" plain @click="onUpgrade()">
+                    {{ $t('xpack.node.upgradeNode') }}
+                </el-button>
             </template>
             <template #rightToolBar>
                 <TableSearch @search="search()" v-model:searchName="searchName" />
@@ -78,6 +81,24 @@
         </el-dialog>
 
         <el-dialog
+            v-model="upgradeVisible"
+            :title="$t('xpack.node.upgradeNode')"
+            width="700px"
+            :close-on-click-modal="false"
+        >
+            <div class="join-hint">{{ $t('xpack.node.upgradeCommandHelper') }}</div>
+            <div class="join-cmd">{{ upgradeCommand }}</div>
+            <div class="join-actions">
+                <el-button type="primary" @click="copyText(upgradeCommand)">
+                    {{ $t('xpack.node.copyCommand') }}
+                </el-button>
+                <span v-if="panelVersion" class="join-expire">
+                    {{ $t('xpack.node.upgradeVersionHint', [panelVersion]) }}
+                </span>
+            </div>
+        </el-dialog>
+
+        <el-dialog
             v-model="joinVisible"
             :title="$t('xpack.node.joinCommand')"
             width="700px"
@@ -113,7 +134,7 @@ import i18n from '@/lang';
 import { MsgError, MsgSuccess } from '@/utils/message';
 import { dateFormatSimpleWithSecond } from '@/utils/date';
 import { Setting } from '@/api/interface/setting';
-import { checkNodes, createNode, deleteNode, searchNodes } from '@/api/modules/setting';
+import { checkNodes, createNode, deleteNode, searchNodes, upgradeNodeCommand } from '@/api/modules/setting';
 
 const loading = ref(false);
 const data = ref<Setting.NodeItem[]>([]);
@@ -131,6 +152,23 @@ const joinVisible = ref(false);
 const joinCommand = ref('');
 const agentCommand = ref('');
 const joinExpiredAt = ref('');
+
+// 升级命令是常量（不含 token），取一次缓存住即可。
+const upgradeVisible = ref(false);
+const upgradeCommand = ref('');
+const panelVersion = ref('');
+const onUpgrade = async () => {
+    upgradeVisible.value = true;
+    if (upgradeCommand.value) return;
+    try {
+        const res = await upgradeNodeCommand();
+        upgradeCommand.value = res.data.command;
+        panelVersion.value = res.data.version;
+    } catch {
+        /* message already shown by interceptor */
+        upgradeVisible.value = false;
+    }
+};
 
 const copyText = async (text: string) => {
     if (!text) return;

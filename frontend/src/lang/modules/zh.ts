@@ -4876,6 +4876,10 @@ const message = {
             agentCommandHelper:
                 '如果目标主机上已有 3panel-agent（例如换主控后重新加入），可以直接执行下面这条命令，省去一次下载：',
             copyCommand: '复制命令',
+            upgradeNode: '升级节点',
+            upgradeCommandHelper:
+                '在已经加入过的节点上以 root 执行下面的命令即可升级 agent：不需要 token，会保留原有证书与数据目录，只替换二进制。',
+            upgradeVersionHint: '将升级到发布频道的最新版本；当前面板版本 {0}。',
             nodeCreated: '节点创建成功，复制下面的命令到目标主机执行。',
             deleteNodeConfirm: '确定要删除节点 {0} 吗？删除后该节点的证书将失效。',
             nodeDeleted: '节点删除成功。',

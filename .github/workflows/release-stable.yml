@@ -269,7 +269,7 @@ jobs:
           # design: end users curl them directly, so they live at fixed paths.
           # publish-bootstrap.yml also uploads them on every change to the files
           # themselves, so this is a backstop.
-          for asset in quick_start.sh join.sh install-agent.sh; do
+          for asset in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do
             if [ -f "$OUT_DIR/$asset" ]; then
               aws $ENDPOINT_ARG s3 cp "$OUT_DIR/$asset" \
                 "s3://$S3_BUCKET/package/$asset" \
