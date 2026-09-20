@@ -712,23 +712,27 @@ probe $B/package/stable/$V/release/3panel-agent-$V-linux-arm64.tar.gz
 > `package/{channel}/{version}/release/{archive}`。写成 `package/{channel}/{archive}`
 > 会拿到一片 404，很容易误报成「这个版本的包丢了」。
 
-**2026-09-19 实测结果（v2.0.3）**：
+**2026-09-20 实测结果（v2.0.4）**：
 
 | 路径 | 状态 | 影响 / 处理 |
 | --- | --- | --- |
 | `/resource/geo/GeoIP.mmdb` | ✅ 200（19,565,776 B） | 正常，见 §5.4 |
 | `/resource/language/lang.tar.gz` | ✅ 200（2,267 B） | 与 `dist/lang.tar.gz` 同源 |
 | `/resource/scripts/*` | ✅ 200（`version.txt` 10 B / `data.yaml` 7,345 B / `scripts.tar.gz` 10,672 B） | Worker 的 `/sync-resource` 已部署并跑过；`scripts.tar.gz` 与上游逐字节一致 |
-| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.3`（各 6 B，无尾换行） | 发布通道已上线 |
-| `/package/quick_start.sh` | ✅ 200（19,237 B） | 一键安装，见 §2.4 |
-| `/package/join.sh` | ✅ 200（16,452 B） | 节点一键加入，见 §2.5 |
+| `/package/{stable,dev}/latest` | ✅ 200 → `v2.0.4`（各 6 B，无尾换行） | 发布通道已上线 |
+| `/package/quick_start.sh` | ✅ 200（18,732 B） | 一键安装，见 §2.4 |
+| `/package/join.sh` | ✅ 200（16,239 B） | 节点一键加入，见 §2.5 |
 | `/package/install-agent.sh` | ✅ 200（12,249 B） | 整包回退时 `join.sh` 单独取它 |
-| `…/release/3panel-v2.0.3-linux-{amd64,arm64}.tar.gz` | ✅ 200（60,696,921 / 56,532,585 B） | 整包 |
-| `…/release/3panel-agent-v2.0.3-linux-{amd64,arm64}.tar.gz` | ✅ 200（27,284,591 / 24,479,731 B） | **agent 独立包**，v2.0.3 起才有 |
+| `…/release/3panel-v2.0.4-linux-{amd64,arm64}.tar.gz` | ✅ 200（60,697,184 / 56,532,376 B） | 整包 |
+| `…/release/3panel-agent-v2.0.4-linux-{amd64,arm64}.tar.gz` | ✅ 200（27,284,642 / 24,479,770 B） | **agent 独立包**，v2.0.3 起才有 |
 | `/stable/3panel.json.zip`、`.version.txt` | ✅ 200（446,314 B） | 应用商店正常（当前 `mode: stable` 对应这一份；`/dev/` 下同样有一份，给旧实例） |
 | `/package/beta/latest` | 404 | 正常：还没发过 beta |
 
-真站端到端（root 检查 sed 掉的只读探测）：解析 `v2.0.3` → **直接命中 agent 独立包** →
+v2.0.4 发布后核对：两个频道都是 `v2.0.4`，`latest.current` 为 `{"v2.0": "v2.0.4"}`，
+四个包（整包 / agent × 两架构）均 206，下载 agent-arm64 重算 sha256
+`beea79bf…c7a576` 与线上 `.sha256` 一致。
+
+更早的端到端（2026-09-19，v2.0.3）：解析 `v2.0.3` → **直接命中 agent 独立包** →
 sha256 `1e5e5d21…2b0cfc7` 与线上 `.sha256` 一致 → 解压 → 交给 `install-agent.sh`。
 （v2.0.2 时同一测试会走整包回退，因为那次发布早于 agent 独立包。）
 
@@ -749,11 +753,12 @@ sha256 `1e5e5d21…2b0cfc7` 与线上 `.sha256` 一致 → 解压 → 交给 `in
 后续发版：
 
 ```bash
-git tag v2.0.3 && git push github v2.0.3    # 触发 release-stable.yml（远端是 github，不是 origin）
+git tag v2.0.4 && git push github v2.0.4    # 触发 release-stable.yml（远端是 github，不是 origin）
 ```
 
-`v2.0.2` 已按此流程发过（tag 打在 `f2cac58` 上，两个频道 + 两个架构全齐，
-`latest` 与 `latest.current` 都指向它），所以这条链路是真跑通过的。
+`v2.0.4` 刚按此流程发过（2026-09-20：两个频道 + 两个架构 + agent 独立包全齐，`latest`
+与 `latest.current` 都指向它）。更早的 `v2.0.1` / `v2.0.2` / `v2.0.3` 同样跑通，
+所以这条链路是稳的。
 
 ⚠️ 唯一约束：**新 tag 必须大于当前已安装的版本**，否则 `checkVersion()` 判定 remote
 不大于 current，面板不会提示升级。仓库里 `core/cmd/server/conf/app.yaml` 的 `version`
