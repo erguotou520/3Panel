@@ -62,7 +62,7 @@ jobs:
           set -euo pipefail
           ENDPOINT_ARG=""
           [ -n "${S3_ENDPOINT:-}" ] && ENDPOINT_ARG="--endpoint-url $S3_ENDPOINT"
-          for f in quick_start.sh join.sh install-agent.sh; do
+          for f in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do
             aws $ENDPOINT_ARG s3 cp "packaging/$f" "s3://$S3_BUCKET/package/$f" \
               --content-type 'text/plain; charset=utf-8' \
               --cache-control 'no-cache'
