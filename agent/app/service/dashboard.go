@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	network "net"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -124,7 +126,7 @@ func (u *DashboardService) LoadCurrentInfoForNode() *dto.NodeCurrent {
 	currentInfo.Load1 = loadInfo.Load1
 	currentInfo.Load5 = loadInfo.Load5
 	currentInfo.Load15 = loadInfo.Load15
-	currentInfo.LoadUsagePercent = loadInfo.Load1 / (float64(currentInfo.CPUTotal*2) * 0.75) * 100
+	currentInfo.LoadUsagePercent = loadPercent(loadInfo.Load1, currentInfo.CPUTotal)
 
 	memoryInfo, _ := mem.VirtualMemory()
 	currentInfo.MemoryTotal = memoryInfo.Total
@@ -138,6 +140,7 @@ func (u *DashboardService) LoadCurrentInfoForNode() *dto.NodeCurrent {
 	currentInfo.SwapMemoryUsed = swapInfo.Used
 	currentInfo.SwapMemoryUsedPercent = swapInfo.UsedPercent
 
+	sanitizeNonFinite(&currentInfo)
 	return &currentInfo
 }
 
@@ -225,7 +228,7 @@ func (u *DashboardService) LoadCurrentInfo(ioOption string, netOption string) *d
 	currentInfo.Load1 = loadInfo.Load1
 	currentInfo.Load5 = loadInfo.Load5
 	currentInfo.Load15 = loadInfo.Load15
-	currentInfo.LoadUsagePercent = loadInfo.Load1 / (float64(currentInfo.CPUTotal*2) * 0.75) * 100
+	currentInfo.LoadUsagePercent = loadPercent(loadInfo.Load1, currentInfo.CPUTotal)
 
 	memoryInfo, _ := mem.VirtualMemory()
 	currentInfo.MemoryTotal = memoryInfo.Total
@@ -282,7 +285,50 @@ func (u *DashboardService) LoadCurrentInfo(ioOption string, netOption string) *d
 	}
 
 	currentInfo.ShotTime = shotTime
+	sanitizeNonFinite(&currentInfo)
 	return &currentInfo
+}
+
+// loadPercent maps the 1-minute load average to a percentage of the
+// "2 cores × 0.75" rule-of-thumb capacity. Zero cores (metrics unavailable,
+// e.g. per-core CPU stats missing on some platforms) must yield 0 instead of
+// +Inf, which would make json.Marshal fail and return an empty body.
+func loadPercent(load1 float64, cpuTotal int) float64 {
+	denom := float64(cpuTotal*2) * 0.75
+	if denom <= 0 {
+		return 0
+	}
+	return load1 / denom * 100
+}
+
+// sanitizeNonFinite replaces NaN / ±Inf floats anywhere inside v with 0 so a
+// single unavailable metric can never break the whole JSON response
+// ("json: unsupported value" → 200 with empty body).
+func sanitizeNonFinite(v any) {
+	sanitizeValue(reflect.ValueOf(v))
+}
+
+func sanitizeValue(rv reflect.Value) {
+	switch rv.Kind() {
+	case reflect.Pointer, reflect.Interface:
+		if !rv.IsNil() {
+			sanitizeValue(rv.Elem())
+		}
+	case reflect.Struct:
+		for i := 0; i < rv.NumField(); i++ {
+			if rv.Field(i).CanSet() {
+				sanitizeValue(rv.Field(i))
+			}
+		}
+	case reflect.Slice, reflect.Array:
+		for i := 0; i < rv.Len(); i++ {
+			sanitizeValue(rv.Index(i))
+		}
+	case reflect.Float32, reflect.Float64:
+		if f := rv.Float(); math.IsNaN(f) || math.IsInf(f, 0) {
+			rv.SetFloat(0)
+		}
+	}
 }
 
 func loadRunningTime(uptime uint64) dto.RunningTime {
