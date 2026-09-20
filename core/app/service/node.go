@@ -284,10 +284,22 @@ func (u *NodeService) UpgradeCommand() *dto.NodeUpgradeCommand {
 	if err != nil || version == "" {
 		version = global.CONF.Base.Version
 	}
+	// Pin the channel instead of letting the script default to stable: a node
+	// has to move along the same stream its master upgrades from, and
+	// upgrade.go:450 picks that from base.mode. Without this a dev-mode panel
+	// would quietly push its nodes onto stable.
 	return &dto.NodeUpgradeCommand{
-		Command: fmt.Sprintf("bash -c \"$(curl -sSL %s)\"", direct),
+		Command: fmt.Sprintf("PANEL3_CHANNEL='%s' bash -c \"$(curl -sSL %s)\"", upgradeChannel(), direct),
 		Version: version,
 	}
+}
+
+// upgradeChannel mirrors the channel upgrade.go resolves its own releases from.
+func upgradeChannel() string {
+	if global.CONF.Base.Mode == "dev" {
+		return "dev"
+	}
+	return "stable"
 }
 
 // Join redeems a token: the agent proves possession of the secret and receives

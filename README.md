@@ -62,11 +62,12 @@ PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
 面板「多机管理 → 升级节点」会给出下面这条命令，复制到节点机上以 root 执行：
 
 ```bash
-bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
 ```
 
 - **不需要 token，也不会重新 join**：现有证书与 `<base-dir>/3panel` 下的数据原样保留，只替换二进制。
-- 默认升级到 `stable` 频道的最新版本；`PANEL3_CHANNEL` / `PANEL3_VERSION` 可覆盖，`PANEL3_FORCE=1` 同版本也强制重装。
+- 命令里的 `PANEL3_CHANNEL` 由面板按自己的升级频道生成，保证节点与主控同流（面板 `dev` 模式就发 `dev`）。
+- `PANEL3_VERSION` 可钉住版本、`PANEL3_FORCE=1` 同版本也强制重装。
 - 沿用节点上 `/usr/local/bin/3pctl` 里记录的 `BASE_DIR`、端口与语言，不改变节点布局；已是最新版本时直接退出。
 - 前提是节点当初是**用一键命令加入**的（即存在 `/usr/local/bin/3pctl` 与 `3panel-agent`）。全新机器请走上面的「节点加入」。
 

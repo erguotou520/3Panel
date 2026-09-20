@@ -6367,8 +6367,8 @@ const message = {
             copyCommand: 'Copy Command',
             upgradeNode: 'Upgrade Node',
             upgradeCommandHelper:
-                'Run this as root on a node that has already joined: no token is needed, the existing certificate and data directory are kept and only the binaries are replaced.',
-            upgradeVersionHint: 'Upgrades to the latest release on the channel; this panel is {0}.',
+                'Run this as root on a node that has already joined: no token is needed, the existing certificate and data directory are kept and only the binaries are replaced. The channel matches the one this panel upgrades from.',
+            upgradeVersionHint: 'This panel is {0}; the node moves to the latest release on that channel.',
             nodeCreated: 'Node created. Copy the command below and run it on the target host.',
             deleteNodeConfirm: 'Delete node {0}? Its certificate will stop working.',
             nodeDeleted: 'Node deleted.',

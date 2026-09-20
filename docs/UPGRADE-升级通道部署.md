@@ -322,8 +322,12 @@ PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>'
 `NodeService.UpgradeCommand()` 生成，**不含 token**）：
 
 ```bash
-bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
 ```
+
+`PANEL3_CHANNEL` 由主控按自己的升级频道生成（`base.mode == "dev"` 就发 `dev`，否则
+`stable`，与 `upgrade.go:450` 的取值规则一致）—— **不能让脚本默认走 stable**，否则
+dev 模式面板会把节点静默推到 stable，与主控不同流。
 
 **为什么必须单独开一条通道**（2026-09-20 查证）：
 
@@ -350,7 +354,7 @@ bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
 
 | 变量 | 含义 | 默认 |
 | --- | --- | --- |
-| `PANEL3_CHANNEL` | 发布频道 | `stable` |
+| `PANEL3_CHANNEL` | 发布频道。面板生成的命令会显式带上（见上），手工执行时默认 `stable` | `stable` |
 | `PANEL3_VERSION` | 钉住版本；留空取该频道 `latest` | — |
 | `PANEL3_ARCH` | 覆盖架构探测 | `uname -m` |
 | `PANEL3_ORIGIN` / `PANEL3_MIRROR` | 发布源 / 自建镜像 | `…/package` / — |

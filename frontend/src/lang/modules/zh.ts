@@ -4878,8 +4878,8 @@ const message = {
             copyCommand: '复制命令',
             upgradeNode: '升级节点',
             upgradeCommandHelper:
-                '在已经加入过的节点上以 root 执行下面的命令即可升级 agent：不需要 token，会保留原有证书与数据目录，只替换二进制。',
-            upgradeVersionHint: '将升级到发布频道的最新版本；当前面板版本 {0}。',
+                '在已经加入过的节点上以 root 执行下面的命令即可升级 agent：不需要 token，会保留原有证书与数据目录，只替换二进制。命令里的频道与面板自身的升级频道一致。',
+            upgradeVersionHint: '当前面板版本 {0}，节点会升级到该频道的最新版本。',
             nodeCreated: '节点创建成功，复制下面的命令到目标主机执行。',
             deleteNodeConfirm: '确定要删除节点 {0} 吗？删除后该节点的证书将失效。',
             nodeDeleted: '节点删除成功。',
