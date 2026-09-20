@@ -792,6 +792,19 @@ probe $B/package/stable/$V/release/3panel-agent-$V-linux-arm64.tar.gz
 > `package/{channel}/{version}/release/{archive}`。写成 `package/{channel}/{archive}`
 > 会拿到一片 404，很容易误报成「这个版本的包丢了」。
 
+**2026-09-20 实测结果（v2.0.5，第二次发布）**：
+
+| 校验项 | 结果 |
+| --- | --- |
+| `gh run view 35494287083` | success（release-stable.yml，tag `v2.0.5` 触发） |
+| `/package/{stable,dev}/latest` | ✅ 均 `v2.0.5`；`latest.current` 均 `{"v2.0": "v2.0.5"}` |
+| 四个包（Range 探针） | ✅ 整包 / agent × amd64/arm64 全部 206 |
+| GitHub Release 附件 | ✅ 8 个（4 包 + 4 sha256；agent amd64 27,282,967 B / arm64 24,480,774 B；整包 60,700,312 B / 56,535,637 B） |
+| release notes | ✅ 200（708 B） |
+| 本地干跑 vs CI | 干跑确认 core 内嵌 `version: v2.0.5` + `mode: stable`、agent 3pctl `ORIGINAL_VERSION=v2.0.5`；dist 内四个 bootstrap 脚本与线上逐字节一致 |
+| 包内安装器 | ✅ 线上 agent 包里的 `install-agent.sh` 与仓库修复版（`--no-join` / ERR trap / `is_systemd`）逐字节一致 |
+| 下载重算 sha256 | ✅ agent-amd64 线上 `.sha256` = `c17523dc…d2dc2`，与断点续传下载重算一致 |
+
 **2026-09-20 实测结果（v2.0.4）**：
 
 | 路径 | 状态 | 影响 / 处理 |
