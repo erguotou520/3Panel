@@ -25,6 +25,7 @@
 #   PANEL3_VERSION                      指定版本；留空取频道 latest
 #   PANEL3_ARCH                         覆盖架构探测（amd64|arm64）
 #   PANEL3_ORIGIN                       发布源，默认 https://3panel.erguotou.me/package
+#   PANEL3_PROXY                        Worker 代理，默认 https://proxy.erguotou.me
 #   PANEL3_MIRROR                       自建镜像，设了就只走它
 #   PANEL3_RETRIES / PANEL3_PROBE_RETRIES  下载重试次数 / 版本探测重试次数
 #   PANEL3_WORKDIR                      下载与解压目录，默认 /tmp/3panel-agent-join
@@ -33,6 +34,7 @@
 set -uo pipefail
 
 ORIGIN="${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}"
+PROXY="${PANEL3_PROXY:-https://proxy.erguotou.me}"
 MIRROR="${PANEL3_MIRROR:-}"
 RETRIES="${PANEL3_RETRIES:-5}"
 PROBE_RETRIES="${PANEL3_PROBE_RETRIES:-6}"
@@ -229,35 +231,70 @@ download() {
 # ---------------------------------------------------------------------------
 # 定位包
 # ---------------------------------------------------------------------------
-# 下载源顺序：自建镜像 > 发布源。第一个能取到版本的胜出。
+# 自建镜像优先且独占；否则 Worker 与直连同时探测，先成功的胜出。
 build_bases() {
     BASES=()
     if [[ -n "$MIRROR" ]]; then
         BASES+=("$(trim_slash "$MIRROR")")
         return
     fi
+    BASES+=("$(trim_slash "$PROXY")/$(trim_slash "$ORIGIN")")
     BASES+=("$(trim_slash "$ORIGIN")")
 }
 
-# 取版本：显式指定优先，否则依次问 stable/dev/beta 的 latest。
-resolve_version() {
-    local base ch tmp
-    tmp="$(mktemp)"
-    for base in "${BASES[@]}"; do
-        for ch in $CHANNELS; do
-            if fetch_text "$base/$ch/latest" "$tmp"; then
-                VERSION="$(head -n1 "$tmp" | tr -d '[:space:]')"
-                if [[ -n "$VERSION" ]]; then
-                    info "$(say "取自 $base/$ch/latest" "resolved from $base/$ch/latest")"
-                    rm -f "$tmp"
-                    return 0
-                fi
+# 每个 base 内仍按频道顺序查找；不同 base 并发，避免不可达的一路拖满超时。
+resolve_version_from_base() {
+    local base="$1" result="$2" lock="$3" tmp="$4" ch version
+    for ch in $CHANNELS; do
+        if fetch_text "$base/$ch/latest" "$tmp"; then
+            version="$(head -n1 "$tmp" | tr -d '[:space:]')"
+            if [[ -n "$version" ]] && mkdir "$lock" 2>/dev/null; then
+                printf '%s\t%s\t%s\n' "$version" "$base" "$ch" >"$result"
+                return 0
             fi
-        done
-        warn "$(say "取不到版本号，换下一个下载源：$base" "unreachable, trying the next base: $base")"
+        fi
     done
-    rm -f "$tmp"
     return 1
+}
+
+resolve_version() {
+    local race_dir result lock base pid alive=1
+    local -a pids=() ordered=()
+    race_dir="$(mktemp -d)"
+    result="$race_dir/result"
+    lock="$race_dir/winner"
+
+    for base in "${BASES[@]}"; do
+        resolve_version_from_base "$base" "$result" "$lock" "$race_dir/${#pids[@]}" &
+        pids+=("$!")
+    done
+
+    while [[ ! -s "$result" && $alive -eq 1 ]]; do
+        alive=0
+        for pid in "${pids[@]}"; do
+            if kill -0 "$pid" 2>/dev/null; then alive=1; break; fi
+        done
+        [[ $alive -eq 1 ]] && sleep 0.1
+    done
+
+    if [[ ! -s "$result" ]]; then
+        wait "${pids[@]}" 2>/dev/null || true
+        rm -rf "$race_dir"
+        return 1
+    fi
+
+    IFS=$'\t' read -r VERSION RESOLVED_BASE RESOLVED_CHANNEL <"$result"
+    kill "${pids[@]}" 2>/dev/null || true
+    wait "${pids[@]}" 2>/dev/null || true
+    rm -rf "$race_dir"
+
+    ordered+=("$RESOLVED_BASE")
+    for base in "${BASES[@]}"; do
+        [[ "$base" == "$RESOLVED_BASE" ]] || ordered+=("$base")
+    done
+    BASES=("${ordered[@]}")
+    info "$(say "取自 $RESOLVED_BASE/$RESOLVED_CHANNEL/latest" \
+        "resolved from $RESOLVED_BASE/$RESOLVED_CHANNEL/latest")"
 }
 
 PKG_KIND=""
@@ -315,6 +352,30 @@ fetch_package() {
             "no package for $VERSION on this base, trying the next one: $base")"
     done
     return 1
+}
+
+# 已选源的大包下载失败时，换到另一个已配置的 base；任何时刻只下载一份大包。
+download_package() {
+    local original_base="$PKG_BASE" base rc=1
+    if download "$PKG_URL" "$ARCHIVE"; then
+        return 0
+    else
+        rc=$?
+    fi
+
+    for base in "${BASES[@]}"; do
+        [[ "$base" == "$original_base" ]] && continue
+        warn "$(say "当前下载源失败，切换到：$base" "download failed, switching to: $base")"
+        if locate_package "$base"; then
+            ARCHIVE="$WORKDIR/$(basename "$PKG_URL")"
+            if download "$PKG_URL" "$ARCHIVE"; then
+                return 0
+            else
+                rc=$?
+            fi
+        fi
+    done
+    return "$rc"
 }
 
 fetch_bootstrap_installer() {
@@ -406,7 +467,7 @@ main() {
     if [[ -f "$ARCHIVE" ]] && [[ "$(sha256_of "$ARCHIVE")" == "$PKG_SHA" ]]; then
         info "$(say "复用已下载并校验过的包" "reusing the already verified archive")"
     else
-        download "$PKG_URL" "$ARCHIVE"
+        download_package
         case $? in
             0) ;;
             2) err "$(say "包在下载源上不存在了" "the package disappeared from the download source")" ;;

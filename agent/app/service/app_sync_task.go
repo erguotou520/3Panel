@@ -59,8 +59,13 @@ func (a AppService) createSyncAppStoreTask(sharedCtx **appSyncContext) func(t *t
 		}
 
 		list := &dto.AppList{}
+		appRepoBase, _, err := selectAppRepoBase()
+		if err != nil {
+			t.LogFailedWithErr(i18n.GetMsgByKey("CheckAppStoreUpdate"), err)
+			return err
+		}
 		if updateRes.AppList == nil {
-			list, err = getAppList()
+			list, err = getAppList(appRepoBase)
 			if err != nil {
 				t.LogFailedWithErr(i18n.GetMsgByKey("DownloadAppList"), err)
 				return err
@@ -83,7 +88,7 @@ func (a AppService) createSyncAppStoreTask(sharedCtx **appSyncContext) func(t *t
 		ctx := &appSyncContext{
 			task:           t,
 			httpClient:     http.Client{Timeout: time.Duration(constant.TimeOut20s) * time.Second, Transport: xpack.MultiNodeProvider.LoadRequestTransport()},
-			baseRemoteUrl:  fmt.Sprintf("%s/%s/3panel", global.AppRepoURL(), global.CONF.Base.Mode),
+			baseRemoteUrl:  fmt.Sprintf("%s/%s/3panel", appRepoBase, global.CONF.Base.Mode),
 			systemVersion:  setting.SystemVersion,
 			settingService: settingService,
 			list:           list,
@@ -191,7 +196,7 @@ func (c *appSyncContext) processOneApp(item appWorkItem) appWorkResult {
 
 		if _, ok := InitTypes[app.Type]; ok {
 			dockerComposeUrl := fmt.Sprintf("%s/%s", versionUrl, "docker-compose.yml")
-			_, composeRes, err := req_helper.HandleRequestWithClient(&c.httpClient, dockerComposeUrl, http.MethodGet, constant.TimeOut20s)
+			_, composeRes, err := c.requestWithFallback(dockerComposeUrl)
 			if err == nil {
 				detail.DockerCompose = string(composeRes)
 			} else {
@@ -217,6 +222,32 @@ func (c *appSyncContext) processOneApp(item appWorkItem) appWorkResult {
 
 	result.app = app
 	return result
+}
+
+func (c *appSyncContext) requestWithFallback(url string) (int, []byte, error) {
+	status, body, err := req_helper.HandleRequestWithClient(&c.httpClient, url, http.MethodGet, constant.TimeOut20s)
+	if err == nil {
+		return status, body, nil
+	}
+	alternate, ok := global.AlternateAppRepoURL(url)
+	if !ok {
+		return status, body, err
+	}
+	global.LOG.Warnf("[AppStore] request failed, retrying alternate repository: %v", err)
+	return req_helper.HandleRequestWithClient(&c.httpClient, alternate, http.MethodGet, constant.TimeOut20s)
+}
+
+func (c *appSyncContext) requestWithHeadersFallback(url string, headers map[string]string) (*req_helper.RequestResponse, error) {
+	resp, err := req_helper.HandleRequestWithHeaders(&c.httpClient, url, http.MethodGet, constant.TimeOut20s, headers)
+	if err == nil && resp.StatusCode < http.StatusInternalServerError {
+		return resp, nil
+	}
+	alternate, ok := global.AlternateAppRepoURL(url)
+	if !ok {
+		return resp, err
+	}
+	global.LOG.Warnf("[AppStore] request failed, retrying alternate repository: %v", err)
+	return req_helper.HandleRequestWithHeaders(&c.httpClient, alternate, http.MethodGet, constant.TimeOut20s, headers)
 }
 
 func (c *appSyncContext) syncAppIconsAndDetails() error {
@@ -336,7 +367,7 @@ func (c *appSyncContext) downloadAppIcon(iconUrl, appKey, oldIcon string) (statu
 		reqHeaders["If-None-Match"] = existingEtag
 	}
 
-	resp, err := req_helper.HandleRequestWithHeaders(&c.httpClient, iconUrl, http.MethodGet, constant.TimeOut20s, reqHeaders)
+	resp, err := c.requestWithHeadersFallback(iconUrl, reqHeaders)
 	if err != nil {
 		global.LOG.Warnf("[AppStore] request icon failed url=%s, err=%v", iconUrl, err)
 		return 0, ""

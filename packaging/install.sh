@@ -58,7 +58,7 @@ select_language() {
     if [ -f "$CURRENT_DIR/$LANG_FILE" ]; then
         selected_lang=$(cat "$CURRENT_DIR/$LANG_FILE")
     else
-        selected_lang="en"
+        selected_lang="zh"
         echo "$selected_lang" >"$CURRENT_DIR/$LANG_FILE"
     fi
     if [ ! -f "$LANG_DIR/$selected_lang.sh" ]; then

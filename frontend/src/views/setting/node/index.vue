@@ -131,7 +131,8 @@
 <script lang="ts" setup>
 import { reactive, ref } from 'vue';
 import i18n from '@/lang';
-import { MsgError, MsgSuccess } from '@/utils/message';
+import { MsgSuccess } from '@/utils/message';
+import { copyText } from '@/utils/clipboard';
 import { dateFormatSimpleWithSecond } from '@/utils/date';
 import { Setting } from '@/api/interface/setting';
 import { checkNodes, createNode, deleteNode, searchNodes, upgradeNodeCommand } from '@/api/modules/setting';
@@ -167,16 +168,6 @@ const onUpgrade = async () => {
     } catch {
         /* message already shown by interceptor */
         upgradeVisible.value = false;
-    }
-};
-
-const copyText = async (text: string) => {
-    if (!text) return;
-    try {
-        await navigator.clipboard.writeText(text);
-        MsgSuccess(i18n.global.t('commons.msg.copySuccess'));
-    } catch {
-        MsgError(i18n.global.t('commons.msg.copyFailed'));
     }
 };
 

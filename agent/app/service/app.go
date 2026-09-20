@@ -850,12 +850,11 @@ func (a AppService) GetAppUpdate() (*response.AppUpdateRes, error) {
 		return res, nil
 	}
 
-	versionUrl := fmt.Sprintf("%s/%s/3panel.json.version.txt", global.AppRepoURL(), global.CONF.Base.Mode)
-	_, versionRes, err := req_helper.HandleRequest(versionUrl, http.MethodGet, constant.TimeOut20s)
+	appRepoBase, versionRes, err := selectAppRepoBase()
 	if err != nil {
 		return nil, err
 	}
-	lastModifiedStr := string(versionRes)
+	lastModifiedStr := strings.TrimSpace(string(versionRes))
 	lastModified, err := strconv.Atoi(lastModifiedStr)
 	if err != nil {
 		return nil, err
@@ -890,7 +889,7 @@ func (a AppService) GetAppUpdate() (*response.AppUpdateRes, error) {
 		}
 	}
 
-	list, err := getAppList()
+	list, err := getAppList(appRepoBase)
 	if err != nil {
 		return res, err
 	}
@@ -902,13 +901,83 @@ func (a AppService) GetAppUpdate() (*response.AppUpdateRes, error) {
 	return res, nil
 }
 
-func getAppFromRepo(downloadPath string) error {
-	downloadUrl := downloadPath
-	global.LOG.Infof("[AppStore] download file from %s", downloadUrl)
+type appRepoProbeResult struct {
+	base string
+	body []byte
+	err  error
+}
+
+func orderedAppRepoURLs(preferred string) []string {
+	urls := make([]string, 0, len(global.AppRepoURLs()))
+	preferred = strings.TrimSuffix(preferred, "/")
+	if preferred != "" {
+		urls = append(urls, preferred)
+	}
+	for _, base := range global.AppRepoURLs() {
+		base = strings.TrimSuffix(base, "/")
+		if base != preferred {
+			urls = append(urls, base)
+		}
+	}
+	return urls
+}
+
+// selectAppRepoBase races the tiny version marker only. The winning base is
+// then reused for the list, icons, compose files and application archives.
+func selectAppRepoBase() (string, []byte, error) {
+	bases := global.AppRepoURLs()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(constant.TimeOut20s)*time.Second)
+	defer cancel()
+	client := http.Client{
+		Timeout:   time.Duration(constant.TimeOut20s) * time.Second,
+		Transport: xpack.MultiNodeProvider.LoadRequestTransport(),
+	}
+	defer client.CloseIdleConnections()
+	results := make(chan appRepoProbeResult, len(bases))
+	for _, base := range bases {
+		base = strings.TrimSuffix(base, "/")
+		go func() {
+			url := fmt.Sprintf("%s/%s/3panel.json.version.txt", base, global.CONF.Base.Mode)
+			_, body, err := req_helper.HandleRequestWithContext(ctx, &client, url, http.MethodGet)
+			if err == nil {
+				if _, parseErr := strconv.Atoi(strings.TrimSpace(string(body))); parseErr != nil {
+					err = parseErr
+				}
+			}
+			results <- appRepoProbeResult{base: base, body: body, err: err}
+		}()
+	}
+
+	var lastErr error
+	for range bases {
+		result := <-results
+		if result.err == nil {
+			cancel()
+			global.LOG.Infof("[AppStore] selected repository %s", result.base)
+			return result.base, result.body, nil
+		}
+		lastErr = result.err
+	}
+	return "", nil, lastErr
+}
+
+func getAppFromRepo(preferredBase, relativePath string) error {
 	fileOp := files.NewFileOp()
-	packagePath := filepath.Join(global.Dir.ResourceDir, filepath.Base(downloadUrl))
-	if err := files.DownloadFileWithProxy(downloadUrl, packagePath); err != nil {
-		return err
+	packagePath := filepath.Join(global.Dir.ResourceDir, filepath.Base(relativePath))
+	var lastErr error
+	for _, base := range orderedAppRepoURLs(preferredBase) {
+		downloadURL := base + "/" + strings.TrimPrefix(relativePath, "/")
+		global.LOG.Infof("[AppStore] download file from %s", downloadURL)
+		if err := files.DownloadFileWithProxy(downloadURL, packagePath); err == nil {
+			lastErr = nil
+			break
+		} else {
+			lastErr = err
+			global.LOG.Warnf("[AppStore] download failed from %s: %v", base, err)
+		}
+	}
+	if lastErr != nil {
+		return lastErr
 	}
 
 	if err := fileOp.Decompress(context.Background(), packagePath, global.Dir.ResourceDir, files.SdkZip, ""); err != nil {
@@ -920,9 +989,10 @@ func getAppFromRepo(downloadPath string) error {
 	return nil
 }
 
-func getAppList() (*dto.AppList, error) {
+func getAppList(preferredBase string) (*dto.AppList, error) {
 	list := &dto.AppList{}
-	if err := getAppFromRepo(fmt.Sprintf("%s/%s/3panel.json.zip", global.AppRepoURL(), global.CONF.Base.Mode)); err != nil {
+	relativePath := fmt.Sprintf("%s/3panel.json.zip", global.CONF.Base.Mode)
+	if err := getAppFromRepo(preferredBase, relativePath); err != nil {
 		return nil, err
 	}
 	listFile := filepath.Join(global.Dir.ResourceDir, "3panel.json")

@@ -252,16 +252,17 @@ func (u *NodeService) Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJo
 // agent-only package and runs the packaged installer. Nothing else is required
 // beyond curl.
 //
-// The release host is served from object storage behind a CDN, so the script is
-// fetched straight from it — there is no proxy prefix to fall back to.
+// The Worker path is tried first because it is currently more reliable from
+// mainland China; a short timeout keeps the direct release host as a fallback.
 //
 // The token is single quoted because it is a credential — it must never end up
 // in the URL, where it would be captured by proxy and access logs.
 func joinBootstrapCommand(masterAddr, token string) string {
 	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/" + joinScriptName
+	proxy := "https://proxy.erguotou.me/" + direct
 	return fmt.Sprintf(
-		"PANEL3_MASTER='%s' PANEL3_TOKEN='%s' bash -c \"$(curl -sSL %s)\"",
-		masterAddr, token, direct)
+		"PANEL3_MASTER='%s' PANEL3_TOKEN='%s' bash -c \"$(curl -sSfL --connect-timeout 5 --max-time 15 %s || curl -sSfL --connect-timeout 5 --max-time 15 %s)\"",
+		masterAddr, token, proxy, direct)
 }
 
 // UpgradeCommand returns the line an operator runs on an already-joined node

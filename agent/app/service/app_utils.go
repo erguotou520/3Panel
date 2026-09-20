@@ -913,6 +913,16 @@ func downloadApp(app model.App, appDetail model.AppDetail, appInstall *model.App
 	}()
 
 	if err = files.DownloadFileWithProxy(appDetail.DownloadUrl, filePath); err != nil {
+		if alternate, ok := global.AlternateAppRepoURL(appDetail.DownloadUrl); ok {
+			if logger == nil {
+				global.LOG.Warnf("download app [%s] failed, retrying alternate repository", app.Name)
+			} else {
+				logger.Printf("download app [%s] failed, retrying alternate repository", app.Name)
+			}
+			err = files.DownloadFileWithProxy(alternate, filePath)
+		}
+	}
+	if err != nil {
 		if logger == nil {
 			global.LOG.Errorf("download app [%s] error %v", app.Name, err)
 		} else {

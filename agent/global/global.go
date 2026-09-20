@@ -2,6 +2,7 @@ package global
 
 import (
 	"context"
+	"strings"
 	"sync"
 
 	badger_db "github.com/3panel-dev/3panel/agent/init/cache/db"
@@ -97,4 +98,22 @@ func AppRepoURL() string {
 		return "https://3panel.erguotou.me"
 	}
 	return "https://3panel.erguotou.me"
+}
+
+func AppRepoURLs() []string {
+	direct := AppRepoURL()
+	return []string{direct, "https://proxy.erguotou.me/" + direct}
+}
+
+func AlternateAppRepoURL(rawURL string) (string, bool) {
+	bases := AppRepoURLs()
+	for i, base := range bases {
+		base = strings.TrimSuffix(base, "/")
+		prefix := base + "/"
+		if strings.HasPrefix(rawURL, prefix) {
+			other := strings.TrimSuffix(bases[1-i], "/")
+			return other + "/" + strings.TrimPrefix(rawURL, prefix), true
+		}
+	}
+	return "", false
 }

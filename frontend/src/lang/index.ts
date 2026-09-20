@@ -3,7 +3,7 @@ import { createI18n } from 'vue-i18n';
 type LocaleMessage = Record<string, unknown>;
 type LocaleLoader = () => Promise<{ default: LocaleMessage }>;
 
-const DEFAULT_LOCALE = 'en';
+const DEFAULT_LOCALE = 'zh';
 const STORAGE_KEY = 'lang';
 
 const LOCALE_LOADERS: Record<string, LocaleLoader> = {
@@ -21,12 +21,47 @@ const LOCALE_LOADERS: Record<string, LocaleLoader> = {
     'es-ES': () => import('./modules/es-es'),
 };
 
-const getStoredLocale = () => {
-    if (typeof window === 'undefined') return DEFAULT_LOCALE;
-    return localStorage.getItem(STORAGE_KEY) || DEFAULT_LOCALE;
+const localeByLowerCase = Object.keys(LOCALE_LOADERS).reduce<Record<string, string>>((locales, locale) => {
+    locales[locale.toLowerCase()] = locale;
+    return locales;
+}, {});
+
+export const resolveSupportedLocale = (locale: string) => {
+    const normalized = String(locale || '')
+        .trim()
+        .replaceAll('_', '-')
+        .toLowerCase();
+    if (!normalized) return '';
+
+    const exact = localeByLowerCase[normalized];
+    if (exact) return exact;
+    if (normalized === 'tw' || ['zh-tw', 'zh-hk', 'zh-mo'].includes(normalized)) return 'zh-Hant';
+    if (normalized === 'zh' || normalized.startsWith('zh-')) return 'zh';
+
+    const language = normalized.split('-')[0];
+    return (
+        Object.values(localeByLowerCase).find((supported) => supported.toLowerCase().split('-')[0] === language) || ''
+    );
 };
 
-const initialLocale = getStoredLocale();
+const getInitialLocale = () => {
+    if (typeof window === 'undefined') return DEFAULT_LOCALE;
+    try {
+        const stored = resolveSupportedLocale(localStorage.getItem(STORAGE_KEY) || '');
+        if (stored) return stored;
+    } catch {
+        // Browser storage can be disabled; language detection still works.
+    }
+
+    const browserLocales = [...(navigator.languages || []), navigator.language];
+    for (const locale of browserLocales) {
+        const supported = resolveSupportedLocale(locale);
+        if (supported) return supported;
+    }
+    return DEFAULT_LOCALE;
+};
+
+const initialLocale = getInitialLocale();
 
 const loadedLocales = new Set<string>();
 

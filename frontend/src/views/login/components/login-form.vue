@@ -905,8 +905,10 @@ const getSetting = async () => {
     try {
         const res = await getLoginSetting();
         isDemo.value = res.data.isDemo;
-        const language = res.data.language || loginForm.language;
-        await handleCommand(language);
+        // Language is a browser-local preference: stored selection first,
+        // otherwise navigator.language. Do not overwrite it with the panel's
+        // last globally persisted login language.
+        await handleCommand(i18n.global.locale.value);
         isIntl.value = res.data.isIntl;
         isFxplay.value = res.data.isFxplay;
         isOffline.value = res.data.isOffline;

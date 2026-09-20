@@ -62,6 +62,10 @@ func HandleRequestWithClient(client *http.Client, url, method string, timeout in
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	defer cancel()
+	return HandleRequestWithContext(ctx, client, url, method)
+}
+
+func HandleRequestWithContext(ctx context.Context, client *http.Client, url, method string) (int, []byte, error) {
 	request, err := http.NewRequestWithContext(ctx, method, url, nil)
 	if err != nil {
 		return 0, nil, err

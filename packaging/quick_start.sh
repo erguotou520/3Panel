@@ -23,7 +23,7 @@
 #   PANEL3_RETRIES    download attempts per URL      (default 5)
 #   PANEL3_PROBE_RETRIES
 #                     version-probe attempts per base (default 6)
-#   PANEL3_LANG       zh | en                        (default: auto from $LANG)
+#   PANEL3_LANG       zh | en                        (panel language; default: zh)
 #   INSTALL_MODE      stable | dev | beta            (default stable)
 #   ARCH              force amd64 / arm64
 #   PANEL_PORT / PANEL_USERNAME / PANEL_PASSWORD / PANEL_ENTRANCE / PANEL_BASE_DIR
@@ -64,6 +64,11 @@ PASSTHRU=("$@")
 # 只有确认 UTF-8 才出中文：zh_CN.GBK 这类终端上中文必乱码，直接退英文。
 # LC_ALL / LC_CTYPE / LANG 依次取第一个非空值；全空按 zh 处理（主力用户）。
 LANG_CODE=${PANEL3_LANG:-}
+PANEL_LANG=${PANEL3_LANG:-zh}
+case "$PANEL_LANG" in
+    zh | en) ;;
+    *) PANEL_LANG=zh ;;
+esac
 if [ -z "$LANG_CODE" ]; then
     DETECT_LOC=""
     if [ -n "${LC_ALL:-}" ]; then
@@ -175,7 +180,7 @@ Environment:
   PANEL3_WORKDIR=<dir>             unpack location   (default ./3panel-install)
   PANEL3_RETRIES=<n>               download attempts per URL (default 5)
   PANEL3_PROBE_RETRIES=<n>         version-probe attempts per base (default 6)
-  PANEL3_LANG=zh|en                message language   (default: from $LANG)
+  PANEL3_LANG=zh|en                panel language     (default: zh; messages follow terminal charset)
   PANEL_PORT / PANEL_USERNAME / PANEL_PASSWORD / PANEL_ENTRANCE / PANEL_BASE_DIR
                                    read by install.sh; set them for an unattended install
 
@@ -473,6 +478,11 @@ main() {
         done
     fi
     [ -f "$top/install.sh" ] || die "$M_NO_INSTALLER" "$WORKDIR"
+
+    # install.sh persists this value into 3pctl's LANGUAGE field, which seeds
+    # the panel Language setting on first startup. The marker also preserves an
+    # explicit PANEL3_LANG=en instead of falling back to the installer default.
+    printf '%s\n' "$PANEL_LANG" >"$top/.selected_language"
 
     log '%s' "$M_HANDOVER"
     (cd "$top" && /bin/bash install.sh "${PASSTHRU[@]}")
