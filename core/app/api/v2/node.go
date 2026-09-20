@@ -101,12 +101,7 @@ func (b *BaseApi) CreateNode(c *gin.Context) {
 // @Security ApiKeyAuth
 // @Router /nodes/upgrade [get]
 func (b *BaseApi) NodeUpgradeCommand(c *gin.Context) {
-	res, err := nodeService.UpgradeCommand()
-	if err != nil {
-		helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrNodeUpgrade", err)
-		return
-	}
-	helper.SuccessWithData(c, res)
+	helper.SuccessWithData(c, nodeService.UpgradeCommand())
 }
 
 // @Tags Node

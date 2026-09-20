@@ -44,7 +44,7 @@ type INodeService interface {
 	Options() ([]dto.NodeInfo, error)
 	Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJoinCommand, error)
 	Join(req dto.NodeJoin) (*dto.NodeJoinResult, error)
-	UpgradeCommand() (*dto.NodeUpgradeCommand, error)
+	UpgradeCommand() *dto.NodeUpgradeCommand
 	Delete(id uint) error
 	Check() ([]dto.NodeInfo, error)
 	Favorite(req dto.NodeFavorite) error
@@ -273,12 +273,21 @@ func joinBootstrapCommand(masterAddr, token string) string {
 // be created once, so the old host cannot redeem a fresh token. Upgrading is
 // therefore a separate path that keeps the certificate and only replaces the
 // binaries.
-func (u *NodeService) UpgradeCommand() (*dto.NodeUpgradeCommand, error) {
+func (u *NodeService) UpgradeCommand() *dto.NodeUpgradeCommand {
 	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/" + upgradeScriptName
+	// Read the version the same way the upgrade flow does
+	// (core/app/service/upgrade.go:94) rather than from the embedded app.yaml:
+	// it is what the panel shows as its own version, so the number in the node
+	// dialog agrees with the one on the upgrade page. It is only a hint, so a
+	// settings hiccup must not take the command itself down.
+	version, err := settingRepo.GetValueByKey("SystemVersion")
+	if err != nil || version == "" {
+		version = global.CONF.Base.Version
+	}
 	return &dto.NodeUpgradeCommand{
 		Command: fmt.Sprintf("bash -c \"$(curl -sSL %s)\"", direct),
-		Version: global.CONF.Base.Version,
-	}, nil
+		Version: version,
+	}
 }
 
 // Join redeems a token: the agent proves possession of the secret and receives
