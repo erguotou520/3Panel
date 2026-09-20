@@ -61,11 +61,21 @@ CTL_BIN_NAME="3pctl"
 PASSTHRU=("$@")
 
 # --------------------------------------------------------------------------- i18n
+# 只有确认 UTF-8 才出中文：zh_CN.GBK 这类终端上中文必乱码，直接退英文。
+# LC_ALL / LC_CTYPE / LANG 依次取第一个非空值；全空按 zh 处理（主力用户）。
 LANG_CODE=${PANEL3_LANG:-}
 if [ -z "$LANG_CODE" ]; then
-    case "${LC_ALL:-${LANG:-}}" in
-        zh* | *zh_*) LANG_CODE=zh ;;
-        "") LANG_CODE=zh ;; # unset locale: this project's primary audience
+    DETECT_LOC=""
+    if [ -n "${LC_ALL:-}" ]; then
+        DETECT_LOC=$LC_ALL
+    elif [ -n "${LC_CTYPE:-}" ]; then
+        DETECT_LOC=$LC_CTYPE
+    else
+        DETECT_LOC=${LANG:-}
+    fi
+    case "$DETECT_LOC" in
+        "") LANG_CODE=zh ;;
+        *[Uu][Tt][Ff]*8*) LANG_CODE=zh ;;
         *) LANG_CODE=en ;;
     esac
 fi

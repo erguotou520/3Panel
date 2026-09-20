@@ -27,7 +27,7 @@
 #   systemctl {status,restart} 3panel-agent     或     3pctl {status,restart}
 # （节点上的 3pctl 已被改写成管理 agent 服务，不会去碰不存在的面板 core。）
 #
-set -euo pipefail
+set -Eeuo pipefail
 
 CURRENT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -41,7 +41,8 @@ TOKEN="${PANEL3_TOKEN:-}"
 NODE_ADDR="${PANEL3_ADDR:-}"
 NODE_PORT="${PANEL3_PORT:-9999}"
 BASE_DIR="${PANEL3_BASE_DIR:-/opt}"
-LANG_CODE="${PANEL3_LANG:-zh}"
+# 留空表示「自动」：detect_lang 按终端字符集决定，GBK 终端直接退英文（见下）。
+LANG_CODE="${PANEL3_LANG:-}"
 # join.sh 解析完版本后显式传进来；手工执行时为空，退回读包内 3pctl。
 VERSION_OVERRIDE="${PANEL3_VERSION:-}"
 NO_FIREWALL="${PANEL3_NO_FIREWALL:-0}"
@@ -72,6 +73,37 @@ err() {
     [[ -n "$LOG_FILE" ]] && printf '[%s] [error] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >>"$LOG_FILE" 2>/dev/null || true
     exit 1
 }
+
+info() { printf '    %s\n' "$1"; }
+
+# 终端字符集不是 UTF-8（GBK 等）时中文必乱码，直接退英文；PANEL3_LANG / --lang 永远优先。
+# 判定只用环境变量、不用 `locale charmap`：后者会被「导出但为空的 LC_ALL」骗成 C locale。
+# 没有任何 locale 信息时按 zh 处理（主力用户；面板界面也是中文）。
+detect_lang() {
+    [[ -n "$LANG_CODE" ]] && return 0
+    local loc=""
+    if [[ -n "${LC_ALL:-}" ]]; then
+        loc="$LC_ALL"
+    elif [[ -n "${LC_CTYPE:-}" ]]; then
+        loc="$LC_CTYPE"
+    else
+        loc="${LANG:-}"
+    fi
+    case "$loc" in
+        "") LANG_CODE="zh" ;;
+        *[Uu][Tt][Ff]*8*) LANG_CODE="zh" ;;
+        *) LANG_CODE="en" ;;
+    esac
+}
+
+# set -e 的失败是安静的：加 ERR trap 把「哪一行挂了」打到眼前，顺带提示日志位置。
+trap 'rc=$?; printf "\033[0;31m[error] %s\033[0m\n" "$(say "第 ${LINENO} 行的命令失败（exit ${rc}）。完整日志：${LOG_FILE}" "command on line ${LINENO} failed (exit ${rc}). full log: ${LOG_FILE}")" >&2' ERR
+
+# 日志路径不可写（比如还没提权的冒烟环境）就退到 /tmp，别让每次写日志都喷一行 Permission denied。
+if [[ -n "$LOG_FILE" ]] && ! : >>"$LOG_FILE" 2>/dev/null; then
+    LOG_FILE="${TMPDIR:-/tmp}/3panel-agent-install.log"
+    : >>"$LOG_FILE" 2>/dev/null || LOG_FILE=""
+fi
 
 # GNU sed 与 BSD sed 的 -i 参数不同；本脚本的目标平台是 Linux，但保留这个
 # 兼容层是为了能在开发机上跑通流程（同 quick_start.sh 的做法）。
@@ -175,10 +207,21 @@ install_assets() {
     fi
 }
 
+# 有 systemctl 不等于有 systemd：docker / wsl / chroot 里它只是个会报错的壳。
+# /run/systemd/system 是标准判据；再兜一层 is-system-running（自动化测试环境里
+# systemctl shim 恒返回 0，也能走到 systemd 分支）。
+is_systemd() {
+    [[ -d /run/systemd/system ]] && return 0
+    command -v systemctl >/dev/null 2>&1 || return 1
+    if systemctl is-system-running >/dev/null 2>&1; then return 0; fi
+    [[ "$(systemctl is-system-running 2>/dev/null || true)" == "degraded" ]] && return 0
+    return 1
+}
+
 install_service() {
     local init_dir="$CURRENT_DIR/initscript"
-    step "$(say "注册 agent 服务" "Registering the agent service")"
-    if [[ -d /run/systemd/system ]] || command -v systemctl >/dev/null 2>&1; then
+    step "$(say "注册 agent 服务（已设开机自启）" "Registering the agent service (enabled at boot)")"
+    if is_systemd; then
         install -m 0644 "$init_dir/$SERVICE_NAME.service" "/etc/systemd/system/$SERVICE_NAME.service"
         systemctl daemon-reload >>"$LOG_FILE" 2>&1 || true
         systemctl enable "$SERVICE_NAME.service" >>"$LOG_FILE" 2>&1 || true
@@ -193,15 +236,21 @@ install_service() {
     fi
 }
 
+# 输出同时给控制台和安装日志 —— 之前只进日志文件，服务起不来时终端上什么都看不到。
 service_cmd() {
-    local cmd="$1"
-    if [[ -d /run/systemd/system ]] || command -v systemctl >/dev/null 2>&1; then
-        systemctl "$cmd" "$SERVICE_NAME.service" >>"$LOG_FILE" 2>&1 || return 1
+    local cmd="$1" out rc
+    if is_systemd; then
+        out="$(systemctl "$cmd" "$SERVICE_NAME.service" 2>&1)" && rc=0 || rc=$?
     elif command -v rc-service >/dev/null 2>&1; then
-        rc-service "$SERVICE_UNIT" "$cmd" >>"$LOG_FILE" 2>&1 || return 1
+        out="$(rc-service "$SERVICE_UNIT" "$cmd" 2>&1)" && rc=0 || rc=$?
     else
-        service "$SERVICE_UNIT" "$cmd" >>"$LOG_FILE" 2>&1 || return 1
+        out="$(service "$SERVICE_UNIT" "$cmd" 2>&1)" && rc=0 || rc=$?
     fi
+    if [[ -n "$out" ]]; then
+        printf '%s\n' "$out"
+        printf '[%s] %s: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$cmd" "$out" >>"$LOG_FILE" 2>/dev/null || true
+    fi
+    return "$rc"
 }
 
 open_firewall() {
@@ -222,26 +271,52 @@ open_firewall() {
 run_join() {
     step "$(say "向面板换取证书并切换到节点模式" "Exchanging the token for certificates")"
     local args=("join" "--master" "$MASTER" "--token" "$TOKEN" "--port" "$NODE_PORT")
+    local attempt
     [[ -n "$NODE_ADDR" ]] && args+=("--addr" "$NODE_ADDR")
+    # 主控只在成功时消耗 token，重试是安全的；TLS 握手偶发被重置不值得整个失败。
+    for attempt in 1 2 3; do
+        if [[ "$attempt" -gt 1 ]]; then
+            warn "$(say "第 ${attempt} 次尝试…" "attempt ${attempt}…")"
+            sleep 2
+        fi
+        if "/usr/local/bin/$AGENT_BIN_NAME" "${args[@]}"; then
+            return 0
+        fi
+    done
+    err "$(say "加入失败（已尝试 3 次）：确认面板地址可达、token 未过期且未被使用" \
+        "join failed after 3 attempts: the master must be reachable and the token unused and unexpired")"
+}
 
-    if ! "/usr/local/bin/$AGENT_BIN_NAME" "${args[@]}"; then
-        err "$(say "加入失败，请确认面板地址可达、token 未过期且未被使用" \
-            "join failed — check that the master is reachable and the token is still valid")"
-    fi
+# 启动失败时把 unit 最近日志直接打到控制台 —— 别让用户再去翻日志文件。
+dump_unit_logs() {
+    is_systemd || return 0
+    command -v journalctl >/dev/null 2>&1 || return 0
+    info "$(say "最近 15 行 agent 日志：" "last 15 agent log lines:")"
+    journalctl -u "$SERVICE_NAME.service" --no-pager -n 15 2>/dev/null || true
 }
 
 start_service() {
     step "$(say "启动 agent 服务" "Starting the agent service")"
-    service_cmd start || err "$(say "agent 启动失败，查看 journalctl -u $SERVICE_NAME" \
-        "the agent failed to start, see: journalctl -u $SERVICE_NAME")"
-    sleep 2
-    # systemd 用 is-active，openrc/sysvinit 用 status；都不是的话就不做这层校验。
-    if [[ -d /run/systemd/system ]] || command -v systemctl >/dev/null 2>&1; then
-        service_cmd is-active || err "$(say "agent 未处于运行状态，查看 journalctl -u $SERVICE_NAME" \
-            "the agent is not active, see: journalctl -u $SERVICE_NAME")"
-    elif command -v rc-service >/dev/null 2>&1; then
-        service_cmd status || err "$(say "agent 未处于运行状态" "the agent is not running")"
+    if ! service_cmd start; then
+        dump_unit_logs
+        err "$(say "agent 启动失败" "the agent failed to start")" \
+            "$(say "查看日志：journalctl -u $SERVICE_NAME -e" "see: journalctl -u $SERVICE_NAME -e")"
     fi
+    # Type=simple 也要一两秒才真正 active；轮询而不是只看一次。
+    local i
+    for ((i = 1; i <= 15; i++)); do
+        if is_systemd; then
+            if systemctl is-active --quiet "$SERVICE_NAME.service" >/dev/null 2>&1; then return 0; fi
+        elif command -v rc-service >/dev/null 2>&1; then
+            if rc-service "$SERVICE_UNIT" status >/dev/null 2>&1; then return 0; fi
+        else
+            if service "$SERVICE_UNIT" status >/dev/null 2>&1; then return 0; fi
+        fi
+        sleep 1
+    done
+    dump_unit_logs
+    err "$(say "agent 未进入运行状态" "the agent did not become active")" \
+        "$(say "查看日志：journalctl -u $SERVICE_NAME -e" "see: journalctl -u $SERVICE_NAME -e")"
 }
 
 print_summary() {
@@ -264,6 +339,8 @@ EOF
   $(say "日志" "log")               $LOG_FILE
   $(say "服务管理" "service")       systemctl {status,restart} $SERVICE_NAME   $(say "或" "or")   3pctl {status,restart}
 EOF
+    say "agent 已注册为系统服务并设为开机自启，无需手动挂到后台。" \
+        "the agent is installed as a system service and enabled at boot; no manual daemonizing needed."
     say "回到面板的「多机管理」点一次「健康检查」，节点状态变成 Online 即接入成功。" \
         "Back in the panel, hit the health check button once — the node turns Online when it is reachable."
     warn "$(say "面板要主动连回本机的 $NODE_PORT 端口，云厂商安全组也要放行。" \
@@ -271,6 +348,7 @@ EOF
 }
 
 main() {
+    detect_lang
     parse_args "$@"
     check_env
 
@@ -278,7 +356,7 @@ main() {
     if [[ -z "$version" ]]; then
         # 包内 3pctl 由 build-release.sh 盖章；手工解压一份没盖章的包时这里会读到
         # 占位值 "version"，那也比空强 —— 主控只拿它做展示。
-        version="$(grep -m1 '^ORIGINAL_VERSION=' "$CURRENT_DIR/$CTL_BIN_NAME" 2>/dev/null | cut -d= -f2)"
+        version="$(grep -m1 '^ORIGINAL_VERSION=' "$CURRENT_DIR/$CTL_BIN_NAME" 2>/dev/null | cut -d= -f2 || true)"
     fi
     version="${version:-unknown}"
 
@@ -290,7 +368,10 @@ main() {
 
     # 重复加入 / 更换主控 / 升级时都先停掉旧进程：一是避免它和 join 抢同一个数据库，
     # 二是覆盖正在运行的二进制会 Text file busy。
-    service_cmd stop >/dev/null 2>&1 || true
+    service_cmd stop || true
+    # 老进程也可能是手工裸起的（不归服务管理管）：兜底再清一次，
+    # 否则新 agent 绑不上端口，服务起了又退，面板上节点永远是 Offline。
+    pkill -x "$AGENT_BIN_NAME" >/dev/null 2>&1 || true
 
     install_binaries
     configure_ctl "$version"

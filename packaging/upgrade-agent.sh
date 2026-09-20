@@ -48,14 +48,28 @@ CTL_PATH="/usr/local/bin/3pctl"
 SERVICE_NAME="3panel-agent"
 
 # 脚本自身的提示语言：显式 PANEL3_LANG > 系统 locale。
+# 只有确认 UTF-8 才出中文：zh_CN.GBK 这类终端上中文必乱码，直接退英文。
+# LC_ALL / LC_CTYPE / LANG 依次取第一个非空值；全空按 zh 处理（主力用户）。
 LANG_CODE="${PANEL3_LANG:-}"
 if [[ -z "$LANG_CODE" ]]; then
-    case "${LC_ALL:-${LANG:-}}" in
-        zh* | *zh_*) LANG_CODE=zh ;;
+    local_loc=""
+    if [[ -n "${LC_ALL:-}" ]]; then
+        local_loc="${LC_ALL}"
+    elif [[ -n "${LC_CTYPE:-}" ]]; then
+        local_loc="${LC_CTYPE}"
+    else
+        local_loc="${LANG:-}"
+    fi
+    case "$local_loc" in
         "") LANG_CODE=zh ;;
+        *[Uu][Tt][Ff]*8*) LANG_CODE=zh ;;
         *) LANG_CODE=en ;;
     esac
 fi
+case "$LANG_CODE" in
+    zh | en) ;;
+    *) LANG_CODE=en ;;
+esac
 
 # ---------------------------------------------------------------------------
 # 输出与工具

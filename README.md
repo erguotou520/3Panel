@@ -49,8 +49,11 @@ PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
 ```
 
 - 节点机只装 agent（amd64 ~26MB / arm64 ~23MB），不会装 core。
+- agent 装完即由 systemd / openrc / sysvinit 托管**并设为开机自启**，不需要手动挂后台；重启机器会自动拉起。
 - token **一次性**且有有效期；用掉或过期后要回面板重新添加节点取新命令。
-- 面板会主动连回节点的 `9999` 端口（`PANEL3_PORT` 可改），云厂商安全组也要放行。
+- 面板会主动连回节点的 `9999` 端口（`PANEL3_PORT` 可改），云厂商安全组也要放行——安全组没放行是「join 成功但节点 Offline」的最常见原因。
+- 下载走断点续传 + 重试，终端上会显示进度条；服务启动失败时会把 agent 最近日志直接打到控制台。完整安装日志在 `/var/log/3panel-agent-install.log`。
+- 终端字符集不是 UTF-8（如 GBK）时脚本自动改用英文提示，避免乱码；可用 `PANEL3_LANG=zh` / `PANEL3_LANG=en` 强制。
 - 机器上已经有 agent 二进制时，可用页面折叠区里的原始命令 `3panel-agent join --master <面板地址> --token <token>`。
 
 ## 升级

@@ -297,7 +297,18 @@ PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>'
 | `PANEL3_VERSION` | 钉住版本；留空取 `latest` | — |
 | `PANEL3_ORIGIN` / `PANEL3_MIRROR` | 发布源 / 自建镜像 | `…/package` / — |
 | `PANEL3_RETRIES` / `PANEL3_PROBE_RETRIES` | 下载重试 / 版本探测重试 | `5` / `6` |
-| `PANEL3_WORKDIR` / `PANEL3_LANG` / `PANEL3_NO_FIREWALL` | 下载目录 / 提示语言 / 不放行端口 | `/tmp/3panel-agent-join` / `zh` / `0` |
+| `PANEL3_WORKDIR` / `PANEL3_LANG` / `PANEL3_NO_FIREWALL` | 下载目录 / 提示语言（留空自动：非 UTF-8 终端用 `en`）/ 不放行端口 | `/tmp/3panel-agent-join` / 自动 / `0` |
+
+**2026-09-20 加固**（「join 卡住没动静 / 报错看不到 / 中文乱码」三连）：
+
+- 大包下载在终端上显示进度条（管道里保持安静），不再出现「看起来卡死」的静默慢速下载；
+- `service_cmd` 的输出与报错同时进控制台和安装日志（原来全被吞进 `/var/log/3panel-agent-install.log`）；
+- `set -E` + ERR trap：任何一行命令失败都会在终端打出「第几行失败 + 日志位置」，不再静默退出；
+- `start_service` 轮询 `is-active` 最多 15s，失败时直接把 `journalctl -u 3panel-agent` 最近 15 行打到终端；
+- systemd 判定改为 `/run/systemd/system` + `is-system-running` 双保险，Docker/WSL 里「有 systemctl 没 systemd」不再误入 systemd 分支；
+- 停服务后补一次 `pkill -x 3panel-agent`，清掉手工裸起的旧进程（否则新 agent 绑不上端口、面板节点永远 Offline）；
+- `3panel-agent join` 对主控的请求最多重试 3 次（token 只在成功时消耗，重试安全）；
+- 四个 bootstrap 脚本统一：只在确认 UTF-8 终端时输出中文，GBK 等环境自动退英文（`PANEL3_LANG` 可强制）。
 
 **发布方式**
 

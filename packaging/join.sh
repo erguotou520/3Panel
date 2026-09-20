@@ -47,7 +47,8 @@ TOKEN="${PANEL3_TOKEN:-}"
 NODE_ADDR="${PANEL3_ADDR:-}"
 NODE_PORT="${PANEL3_PORT:-9999}"
 BASE_DIR="${PANEL3_BASE_DIR:-/opt}"
-LANG_CODE="${PANEL3_LANG:-zh}"
+# 留空表示「自动」：detect_lang 会按终端字符集决定，避免 GBK 终端满屏乱码。
+LANG_CODE="${PANEL3_LANG:-}"
 NO_FIREWALL="${PANEL3_NO_FIREWALL:-0}"
 
 # ---------------------------------------------------------------------------
@@ -63,6 +64,26 @@ err() {
     printf '\n\033[0;31m[error] %s\033[0m\n' "$1" >&2
     [[ $# -gt 1 ]] && printf '\033[0;31m        %s\033[0m\n' "$2" >&2
     exit 1
+}
+
+# 终端字符集不是 UTF-8（GBK 等）时中文必乱码，直接退英文；PANEL3_LANG / --lang 永远优先。
+# 判定只用环境变量、不用 `locale charmap`：后者会被「导出但为空的 LC_ALL」骗成 C locale。
+# 没有任何 locale 信息时按 zh 处理（主力用户；面板界面也是中文）。
+detect_lang() {
+    [[ -n "$LANG_CODE" ]] && return 0
+    local loc=""
+    if [[ -n "${LC_ALL:-}" ]]; then
+        loc="$LC_ALL"
+    elif [[ -n "${LC_CTYPE:-}" ]]; then
+        loc="$LC_CTYPE"
+    else
+        loc="${LANG:-}"
+    fi
+    case "$loc" in
+        "") LANG_CODE="zh" ;;
+        *[Uu][Tt][Ff]*8*) LANG_CODE="zh" ;;
+        *) LANG_CODE="en" ;;
+    esac
 }
 
 # sha256sum 是 Linux 的，shasum 是 macOS 的；目标平台是 Linux，这里兼容开发机。
@@ -136,7 +157,8 @@ detect_arch() {
 # 这台机器到 CDN 边缘的 TLS 握手偶发被重置（curl 35/28），单次请求不能当结论，
 # 所以探测一律重试，而且每次都用新的 curl 进程（新连接），否则会一直复用坏连接。
 CURL_TXT=(--connect-timeout 15 --max-time 30 -sS -L -f)
-CURL_PKG=(--connect-timeout 20 --max-time 1800 -sS -L -f --speed-limit 1024 --speed-time 90)
+# 包体大（26~54MB），-sS 会让慢速下载看起来像卡死：终端上给进度条，管道里保持安静。
+CURL_PKG=(--connect-timeout 20 --max-time 1800 -L -f --speed-limit 1024 --speed-time 90)
 
 # fetch_text <url> <outfile>
 #   0 成功（输出非空）；2 目标不存在（HTTP 4xx）；1 探测失败（网络问题）
@@ -178,17 +200,19 @@ fetch_sha256() {
 #   0 成功；2 目标不存在；1 重试耗尽
 download() {
     local url="$1" out="$2" i rc
+    local -a meter=(-sS)
+    [[ -t 2 ]] && meter=(--progress-bar)
     for ((i = 1; i <= RETRIES; i++)); do
         rc=0
-        info "$(say "第 $i/$RETRIES 次传输" "transfer attempt $i/$RETRIES")"
-        curl "${CURL_PKG[@]}" -C - -o "$out" "$url" || rc=$?
+        info "$(say "第 ${i}/${RETRIES} 次传输" "transfer attempt ${i}/${RETRIES}")"
+        curl "${CURL_PKG[@]}" "${meter[@]}" -C - -o "$out" "$url" || rc=$?
 
         if [[ $rc -eq 33 ]]; then
             # 服务端忽略 Range：带着 -C - 必然失败，去掉续传标志重来一次。
             warn "$(say "下载源不支持断点续传，改为整包重下" "the mirror ignores Range — restarting the whole download")"
             rm -f "$out"
             rc=0
-            curl "${CURL_PKG[@]}" -o "$out" "$url" || rc=$?
+            curl "${CURL_PKG[@]}" "${meter[@]}" -o "$out" "$url" || rc=$?
         fi
 
         [[ $rc -eq 22 ]] && return 2
@@ -353,6 +377,7 @@ verify_archive() {
 
 # ---------------------------------------------------------------------------
 main() {
+    detect_lang
     parse_args "$@"
     check_env
     detect_arch
