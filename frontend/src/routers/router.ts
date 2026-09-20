@@ -28,6 +28,7 @@ const homeRouter: RouteRecordRaw = {
             path: '/node-dashboard',
             name: 'NodeDashboard',
             component: () => import('@/views/home/node-dashboard/index.vue'),
+            hidden: true,
             meta: {
                 title: 'xpack.node.multiOverview',
                 activeMenu: '/',
@@ -56,21 +57,24 @@ rolesRoutes.forEach((item) => {
 });
 
 export const menuList: RouteRecordRaw[] = [];
+// hidden 只表示「不进侧栏菜单」，路由本身仍然可达。
+// 之前这段过滤只对 modules/*.ts 的第一个子级生效（homeRouter 是 unshift 进去的，完全没过滤），
+// 于是 /node-dashboard 进了概览的子菜单、还让 Home-Menu 从「单子项」变成「子菜单」，
+// 递归到没有 meta 的 / 时 $t(undefined, 2) 直接抛 SyntaxError 打断整个侧栏渲染。
+const visibleMenuChildren = (children: any[]): RouteRecordRaw[] =>
+    (children || []).filter((child: any) => child.hidden == undefined || child.hidden == false);
+
 rolesRoutes.forEach((item) => {
     let menuItem = JSON.parse(JSON.stringify(item));
-    let menuChildren: RouteRecordRaw[] = [];
     if (menuItem.children == undefined) {
         return;
     }
-    menuItem.children.forEach((child: any) => {
-        if (child.hidden == undefined || child.hidden == false) {
-            menuChildren.push(child);
-        }
-    });
-    menuItem.children = menuChildren as RouteRecordRaw[];
+    menuItem.children = visibleMenuChildren(menuItem.children) as RouteRecordRaw[];
     menuList.push(menuItem);
 });
-menuList.unshift(homeRouter);
+const homeMenu = JSON.parse(JSON.stringify(homeRouter));
+homeMenu.children = visibleMenuChildren(homeMenu.children) as RouteRecordRaw[];
+menuList.unshift(homeMenu);
 
 export const routes: RouteRecordRaw[] = [
     homeRouter,

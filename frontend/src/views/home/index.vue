@@ -597,8 +597,11 @@ const memoContent = ref('');
 const memoEditContent = ref('');
 const memoEditing = ref(false);
 const memoSaving = ref(false);
-const memoCarouselSetting = ref();
-const simpleNodeCarouselSetting = ref();
+// el-switch 的 active-value/inactive-value 是 'Enable'/'Disable'，初值必须是其中之一，
+// 否则首帧（接口返回前）会触发 [ElSwitch] model-value must be active-value or inactive-value。
+// 'Enable' 与后端默认值一致（init.go 里 DashboardMemoVisible / DashboardSimpleNodeVisible）。
+const memoCarouselSetting = ref('Enable');
+const simpleNodeCarouselSetting = ref('Enable');
 const carouselSettingReady = ref(false);
 
 const showMemoCarousel = computed(() => memoCarouselSetting.value === 'Enable');

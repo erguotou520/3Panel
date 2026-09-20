@@ -297,6 +297,8 @@ const message = {
         },
         status: {
             running: '已启动',
+            online: '在线',
+            offline: '离线',
             done: '已完成',
             scanFailed: '未完成',
             success: '成功',

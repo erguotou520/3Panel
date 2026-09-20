@@ -5,7 +5,7 @@
                 <el-icon v-if="subItem.meta?.icon">
                     <SvgIcon :iconName="subItem.meta?.icon as string" />
                 </el-icon>
-                <span>{{ $t(subItem.meta?.title as string, 2) }}</span>
+                <span v-if="subItem.meta?.title">{{ $t(subItem.meta?.title as string, 2) }}</span>
             </template>
             <SubItem :menuList="subItem.children" :level="level + 1" />
         </el-sub-menu>
@@ -15,7 +15,7 @@
                 <SvgIcon :iconName="subItem.meta?.icon as string" />
             </el-icon>
             <template #title>
-                <span>{{ $t(subItem.meta?.title as string, 2) }}</span>
+                <span v-if="subItem.meta?.title">{{ $t(subItem.meta?.title as string, 2) }}</span>
             </template>
         </el-menu-item>
 
@@ -24,8 +24,12 @@
                 <SvgIcon :iconName="subItem.meta?.icon as string" />
             </el-icon>
             <template #title>
-                <span v-if="subItem.meta?.icon && level === 0">{{ $t(subItem.meta?.title as string, 2) }}</span>
-                <span v-else style="margin-left: 10px">{{ $t(subItem.meta?.title as string, 2) }}</span>
+                <span v-if="subItem.meta?.title && subItem.meta?.icon && level === 0">
+                    {{ $t(subItem.meta?.title as string, 2) }}
+                </span>
+                <span v-else-if="subItem.meta?.title" style="margin-left: 10px">
+                    {{ $t(subItem.meta?.title as string, 2) }}
+                </span>
             </template>
         </el-menu-item>
     </template>

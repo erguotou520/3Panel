@@ -311,6 +311,8 @@ const message = {
         },
         status: {
             running: 'Running',
+            online: 'Online',
+            offline: 'Offline',
             done: 'Done',
             scanFailed: 'Incomplete',
             success: 'Success',
