@@ -1,5 +1,5 @@
 /**
- * Cloudflare Worker: mirror the upstream 1Panel app store into your own R2 bucket.
+ * Cloudflare Worker: mirror the upstream 1Panel app store into Cloudsmith Generic.
  *
  * Why this shape:
  *   - The panel requests `{AppRepoURL}/{mode}/3panel.json.zip`,
@@ -182,6 +182,49 @@ async function readJson(bucket, key) {
     } catch {
         return null;
     }
+}
+
+/** Cloudsmith Generic preserves the path-based layout the panel requires. */
+function cloudsmithBucket(env) {
+    const owner = env.CLOUDSMITH_OWNER || '3panel';
+    const repo = env.CLOUDSMITH_REPOSITORY || '3panel';
+    const base = `https://generic.cloudsmith.io/${owner}/${repo}`;
+    const api = 'https://api.cloudsmith.io/v1';
+    const key = env.CLOUDSMITH_API_KEY;
+    if (!key) throw new Error('missing Cloudsmith secret CLOUDSMITH_API_KEY');
+    const headers = { 'X-Api-Key': key, Accept: 'application/json' };
+    const filename = (path) => path.split('/').pop() || 'asset';
+    return {
+        async get(path) {
+            const res = await fetch(`${base}/${path}`);
+            return res.ok ? { json: () => res.json() } : null;
+        },
+        async head(path) {
+            return (await fetch(`${base}/${path}`, { method: 'HEAD' })).ok;
+        },
+        async put(path, body) {
+            const bytes = body instanceof ReadableStream ? await new Response(body).arrayBuffer() : body;
+            const blob = new Blob([bytes]);
+            const digest = await crypto.subtle.digest('MD5', await blob.arrayBuffer());
+            const md5 = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
+            const create = await fetch(`${api}/files/${owner}/${repo}/`, {
+                method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: filename(path), md5_checksum: md5, method: 'post' }),
+            });
+            if (!create.ok) throw new Error(`Cloudsmith file upload: HTTP ${create.status}`);
+            const upload = await create.json();
+            const form = new FormData();
+            for (const [name, value] of Object.entries(upload.upload_fields || {})) form.append(name, value);
+            form.append('file', blob, filename(path));
+            const uploaded = await fetch(upload.upload_url, { method: 'POST', body: form });
+            if (!uploaded.ok) throw new Error(`Cloudsmith file transfer: HTTP ${uploaded.status}`);
+            const publish = await fetch(`${api}/packages/${owner}/${repo}/upload/generic/`, {
+                method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ package_file: upload.identifier, filepath: path, republish: true }),
+            });
+            if (!publish.ok) throw new Error(`Cloudsmith generic publish: HTTP ${publish.status}`);
+        },
+    };
 }
 
 function contentTypeFor(key) {
@@ -392,8 +435,7 @@ const RESOURCE_SCRIPTS = [
  * `packaging/lang/`, and letting a cron overwrite it would make the two fight.
  */
 async function runResourceSync(env, { force = false, dry = false, lang, geoip } = {}) {
-    const bucket = env.APPSTORE;
-    if (!bucket) throw new Error('missing R2 binding APPSTORE');
+    const bucket = cloudsmithBucket(env);
 
     const wantLang = lang === undefined ? String(env.SYNC_RESOURCE_LANG || 'false') === 'true' : lang;
     const wantGeoip = geoip === undefined ? String(env.SYNC_RESOURCE_GEOIP || 'false') === 'true' : geoip;
@@ -508,12 +550,10 @@ async function runResourceSync(env, { force = false, dry = false, lang, geoip } 
 /* ------------------------------------------------------------------- sync */
 
 async function runSync(env, { force = false } = {}) {
-    const mode = env.MODE || 'dev';
+    const mode = env.MODE || 'stable';
     const src = env.SRC_ORIGIN || SRC_ORIGIN_DEFAULT;
     const dst = env.DST_ORIGIN;
-    const bucket = env.APPSTORE;
-
-    if (!bucket) throw new Error('missing R2 binding APPSTORE');
+    const bucket = cloudsmithBucket(env);
     if (!dst) throw new Error('missing DST_ORIGIN (public url of your R2 bucket)');
 
     const batch = Number(env.ASSETS_PER_RUN || 60);
@@ -781,10 +821,10 @@ export default {
         }
 
         if (url.pathname === '/status') {
-            const mode = env.MODE || 'dev';
+            const mode = env.MODE || 'stable';
             const [state, resource] = await Promise.all([
-                readJson(env.APPSTORE, `${mode}/.sync-state.json`),
-                readJson(env.APPSTORE, 'resource/scripts/.sync-state.json'),
+                readJson(cloudsmithBucket(env), `${mode}/.sync-state.json`),
+                readJson(cloudsmithBucket(env), 'resource/scripts/.sync-state.json'),
             ]);
             return Response.json({ mode, state: state || null, resource: resource || null });
         }

@@ -3,9 +3,9 @@ name: Publish bootstrap scripts
 # The bootstrap scripts are fetched by end users at FIXED paths with no version
 # in them:
 #
-#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
-#   PANEL3_MASTER=... PANEL3_TOKEN=... bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
-#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+#   bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/quick_start.sh)"
+#   PANEL3_MASTER=... PANEL3_TOKEN=... bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/join.sh)"
+#   bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/upgrade-agent.sh)"
 #
 # so a change to one of them only reaches users if something uploads it.
 # release-stable.yml does that too, but tying it to a version tag would mean a
@@ -36,10 +36,7 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     env:
-      # `secrets` cannot be referenced from a step `if:` — see the note in
-      # release-stable.yml. Resolve it here and test it in the step instead.
-      S3_BUCKET: ${{ vars.S3_BUCKET || secrets.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT || secrets.S3_ENDPOINT }}
+      CLOUDSMITH_API_KEY: ${{ secrets.CS_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -52,26 +49,18 @@ jobs:
             echo "$f OK, $(wc -c < "packaging/$f") bytes"
           done
 
-      - name: Publish to object storage
-        if: ${{ env.S3_BUCKET != '' }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'auto' }}
+      - name: Install Cloudsmith CLI
+        run: |
+          install_output="$(curl -fsSL https://install.cloudsmith.com/raw/versions/latest/cli.sh | sh)"
+          bin_dir="$(printf '%s\n' "$install_output" | sed -n 's/^bin_dir=//p')"
+          [ -n "$bin_dir" ] || { echo "Cloudsmith CLI installation did not return bin_dir" >&2; exit 1; }
+          echo "$bin_dir" >> "$GITHUB_PATH"
+
+      - name: Publish bootstrap scripts to Cloudsmith
         run: |
           set -euo pipefail
-          ENDPOINT_ARG=""
-          [ -n "${S3_ENDPOINT:-}" ] && ENDPOINT_ARG="--endpoint-url $S3_ENDPOINT"
+          [ -n "${CLOUDSMITH_API_KEY:-}" ] || { echo "CS_TOKEN is not configured" >&2; exit 1; }
           for f in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do
-            aws $ENDPOINT_ARG s3 cp "packaging/$f" "s3://$S3_BUCKET/package/$f" \
-              --content-type 'text/plain; charset=utf-8' \
-              --cache-control 'no-cache'
-            echo "published -> s3://$S3_BUCKET/package/$f"
+            cloudsmith push generic 3panel/3panel "packaging/$f" --filepath "package/$f" --republish
+            echo "published -> package/$f"
           done
-
-      - name: Warn when publishing is not configured
-        if: ${{ env.S3_BUCKET == '' }}
-        run: |
-          echo "::warning::S3_BUCKET is empty — the bootstrap scripts were NOT uploaded."
-          echo "Set repository variable/secret S3_BUCKET (and S3_ENDPOINT," \
-               "AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY) to enable publishing."

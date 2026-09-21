@@ -13,9 +13,9 @@ name: Release stable
 #
 #   {RESOURCE_BASE}/language/lang.tar.gz
 #
-# with RepoURL = https://3panel.erguotou.me/package.
-# A version containing "beta" is routed to the beta channel, matching the
-# panel's own logic.
+# with RepoURL = https://generic.cloudsmith.io/3panel/3panel/package.
+# Only the stable channel is published. The project no longer maintains a
+# compatibility copy in dev.
 
 on:
   push:
@@ -32,20 +32,14 @@ permissions:
   contents: write
 
 env:
-  RESOURCE_BASE: https://3panel.erguotou.me/resource
+  RESOURCE_BASE: https://generic.cloudsmith.io/3panel/3panel/resource
   OUT_DIR: ${{ github.workspace }}/dist
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    # The publish gate. `secrets` is NOT available inside an `if:` condition
-    # (see GitHub's context-availability table), but `env` is — so the value is
-    # resolved here and tested in the step. Vars are preferred, secrets accepted
-    # as a fallback: S3_BUCKET/S3_ENDPOINT are not sensitive, but people do put
-    # them in either place, and a mismatch here used to skip the upload silently.
     env:
-      S3_BUCKET: ${{ vars.S3_BUCKET || secrets.S3_BUCKET }}
-      S3_ENDPOINT: ${{ vars.S3_ENDPOINT || secrets.S3_ENDPOINT }}
+      CLOUDSMITH_API_KEY: ${{ secrets.CS_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -66,22 +60,11 @@ jobs:
             exit 1
           fi
           if printf '%s' "$VERSION" | grep -q 'beta'; then
-            CHANNEL=beta
-            CHANNELS=beta
-          else
-            CHANNEL=stable
-            # Panels read the channel named by `base.mode` in their embedded
-            # core/cmd/server/conf/app.yaml — stable since 2026-09-20. But
-            # instances installed before that switch shipped with `mode: dev`
-            # baked into the binary, and loadVersionByMode() makes a dev panel
-            # read {RepoURL}/dev/latest and {RepoURL}/beta/latest ONLY, never
-            # stable. Publishing to `stable` alone would leave those boxes
-            # permanently "up to date" and unable to upgrade off dev, so a
-            # non-beta release still goes to both. Costs one extra copy of the
-            # packages in the bucket; drop `dev` once every old instance has
-            # upgraded past this release.
-            CHANNELS="stable dev"
+            echo "beta tags are not published; stable is the only supported channel" >&2
+            exit 1
           fi
+          CHANNEL=stable
+          CHANNELS=stable
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
           echo "channels=$CHANNELS" >> "$GITHUB_OUTPUT"
@@ -157,8 +140,6 @@ jobs:
           # Maps each minor line (vX.Y) to its newest patch release inside that
           # line. This is what the panel looks up as versionMap[currentVersion[0:4]]
           # (or [0:5] when the minor is >= 10) for installs that are behind.
-          # Same content for every channel of this release: the split below is
-          # beta vs non-beta, and stable/dev share it.
           for CHANNEL in $CHANNELS; do
             mkdir -p "$OUT_DIR/package/$CHANNEL"
             if [ "$CHANNEL" != "$PRIMARY" ]; then
@@ -191,93 +172,27 @@ jobs:
       - name: Show artifact tree
         run: find "$OUT_DIR" -type f | sort
 
-      # ---------------------------------------------------------------------
-      # Publish. Works with any S3-compatible endpoint: Cloudflare R2, AWS S3,
-      # MinIO, Aliyun OSS. Configure these repository variables/secrets:
-      #   vars.S3_ENDPOINT    e.g. https://<account>.r2.cloudflarestorage.com
-      #   vars.S3_BUCKET      e.g. 3panel
-      #   secrets.AWS_ACCESS_KEY_ID / secrets.AWS_SECRET_ACCESS_KEY
-      #   secrets.AWS_REGION (optional, default auto)
-      # S3_BUCKET / S3_ENDPOINT are resolved at job level (see `env:` on the job).
-      # ---------------------------------------------------------------------
-      - name: Check publish configuration
+      - name: Install Cloudsmith CLI
         run: |
-          if [ -z "${S3_BUCKET:-}" ]; then
-            echo "::warning::S3_BUCKET is not set — the upload is SKIPPED and the panel will keep reporting 'already up to date'. Set repository variable (or secret) S3_BUCKET + S3_ENDPOINT to enable publishing."
-          else
-            echo "publishing to s3://$S3_BUCKET${S3_ENDPOINT:+ via $S3_ENDPOINT}"
-          fi
+          install_output="$(curl -fsSL https://install.cloudsmith.com/raw/versions/latest/cli.sh | sh)"
+          bin_dir="$(printf '%s\n' "$install_output" | sed -n 's/^bin_dir=//p')"
+          [ -n "$bin_dir" ] || { echo "Cloudsmith CLI installation did not return bin_dir" >&2; exit 1; }
+          echo "$bin_dir" >> "$GITHUB_PATH"
 
-      - name: Publish to object storage
-        if: ${{ env.S3_BUCKET != '' }}
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION || 'auto' }}
+      - name: Publish stable artifacts to Cloudsmith
         run: |
           set -euo pipefail
+          [ -n "${CLOUDSMITH_API_KEY:-}" ] || { echo "CS_TOKEN is not configured" >&2; exit 1; }
           VERSION="${{ steps.ver.outputs.version }}"
-          CHANNELS="${{ steps.ver.outputs.channels }}"
-          ENDPOINT_ARG=""
-          [ -n "${S3_ENDPOINT:-}" ] && ENDPOINT_ARG="--endpoint-url $S3_ENDPOINT"
-
-          for CHANNEL in $CHANNELS; do
-            DEST="s3://$S3_BUCKET/package/$CHANNEL"
-
-            # Packages + checksums + release notes
-            for f in "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz "$OUT_DIR"/3panel-"$VERSION"-linux-*.tar.gz.sha256; do
-              [ -e "$f" ] || continue
-              aws $ENDPOINT_ARG s3 cp "$f" "$DEST/$VERSION/release/$(basename "$f")" \
-                --content-type application/octet-stream
-            done
-
-            # Agent-only package: what a host joining as a node downloads
-            # (packaging/join.sh looks for exactly this name first).
-            for f in "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*.tar.gz "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*.tar.gz.sha256; do
-              [ -e "$f" ] || continue
-              aws $ENDPOINT_ARG s3 cp "$f" "$DEST/$VERSION/release/$(basename "$f")" \
-                --content-type application/octet-stream
-            done
-            aws $ENDPOINT_ARG s3 cp \
-              "$OUT_DIR/package/$CHANNEL/$VERSION/release/3panel-$VERSION-release-notes" \
-              "$DEST/$VERSION/release/3panel-$VERSION-release-notes" \
-              --content-type text/plain
-
-            # Channel index. The panel reads this greedily (no TrimSpace), so it
-            # must have no trailing newline — write index is already newline-free.
-            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/package/$CHANNEL/latest" "$DEST/latest" \
-              --content-type text/plain --cache-control 'no-cache'
-            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/package/$CHANNEL/latest.current" "$DEST/latest.current" \
-              --content-type application/json --cache-control 'no-cache'
-
-            echo "published $VERSION to $DEST"
+          publish() { cloudsmith push generic 3panel/3panel "$1" --filepath "$2" --republish; }
+          for f in "$OUT_DIR"/3panel-"$VERSION"-linux-* "$OUT_DIR"/3panel-agent-"$VERSION"-linux-*; do
+            [ -f "$f" ] && publish "$f" "package/stable/$VERSION/release/$(basename "$f")"
           done
-
-          # Resource object (ResourceURL, not RepoURL). The panel downloads this
-          # when /usr/local/bin/lang is missing; keeping it published means a
-          # fresh install never hits a 404 for its language pack.
-          # Channel-independent, so it is uploaded once, outside the loop.
-          if [ -f "$OUT_DIR/lang.tar.gz" ]; then
-            aws $ENDPOINT_ARG s3 cp "$OUT_DIR/lang.tar.gz" \
-              "s3://$S3_BUCKET/resource/language/lang.tar.gz" \
-              --content-type application/gzip --cache-control 'max-age=300'
-          else
-            echo "::warning::dist/lang.tar.gz missing — /resource/language/lang.tar.gz not updated"
-          fi
-
-          # One-line installer / node bootstrap scripts. Version-independent by
-          # design: end users curl them directly, so they live at fixed paths.
-          # publish-bootstrap.yml also uploads them on every change to the files
-          # themselves, so this is a backstop.
-          for asset in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do
-            if [ -f "$OUT_DIR/$asset" ]; then
-              aws $ENDPOINT_ARG s3 cp "$OUT_DIR/$asset" \
-                "s3://$S3_BUCKET/package/$asset" \
-                --content-type text/plain --cache-control 'no-cache'
-            else
-              echo "::warning::dist/$asset missing — /package/$asset not updated"
-            fi
-          done
+          publish "$OUT_DIR/package/stable/$VERSION/release/3panel-$VERSION-release-notes" "package/stable/$VERSION/release/3panel-$VERSION-release-notes"
+          publish "$OUT_DIR/package/stable/latest" "package/stable/latest"
+          publish "$OUT_DIR/package/stable/latest.current" "package/stable/latest.current"
+          publish "$OUT_DIR/lang.tar.gz" "resource/language/lang.tar.gz"
+          for asset in quick_start.sh join.sh install-agent.sh upgrade-agent.sh; do publish "$OUT_DIR/$asset" "package/$asset"; done
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

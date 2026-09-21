@@ -306,7 +306,7 @@ func (u *UpgradeService) LoadRelease() ([]dto.ReleasesNotes, error) {
 	docSource, _ := settingRepo.GetValueByKey("DocSource")
 	lang, _ := settingRepo.GetValueByKey("Language")
 	var notes []dto.ReleasesNotes
-	url := "https://3panel.erguotou.me/docs/v2/search/search_index.json"
+	url := "https://generic.cloudsmith.io/3panel/3panel/docs/v2/search/search_index.json"
 	useIntlDocs := false
 	lang = strings.ToLower(strings.TrimSpace(lang))
 	if docSource == "withByRegion" {
@@ -315,7 +315,7 @@ func (u *UpgradeService) LoadRelease() ([]dto.ReleasesNotes, error) {
 		useIntlDocs = lang != "zh"
 	}
 	if useIntlDocs {
-		url = "https://3panel.erguotou.me/docs/v2/search/search_index.json"
+		url = "https://generic.cloudsmith.io/3panel/3panel/docs/v2/search/search_index.json"
 	}
 	resp, err := req_helper.HandleGet(url)
 	if err != nil {

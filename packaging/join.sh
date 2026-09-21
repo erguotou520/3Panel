@@ -5,7 +5,7 @@
 # 面板「多机管理」里创建节点后给出的是这条命令：
 #
 #   PANEL3_MASTER='https://<面板地址>' PANEL3_TOKEN='<一次性 token>' \
-#     bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
+#     bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/join.sh)"
 #
 # 这里只做引导，不写业务逻辑：
 #
@@ -24,8 +24,7 @@
 #   PANEL3_BASE_DIR                     安装目录，默认 /opt
 #   PANEL3_VERSION                      指定版本；留空取频道 latest
 #   PANEL3_ARCH                         覆盖架构探测（amd64|arm64）
-#   PANEL3_ORIGIN                       发布源，默认 https://3panel.erguotou.me/package
-#   PANEL3_PROXY                        Worker 代理，默认 https://proxy.erguotou.me
+#   PANEL3_ORIGIN                       发布源，默认 https://generic.cloudsmith.io/3panel/3panel/package
 #   PANEL3_MIRROR                       自建镜像，设了就只走它
 #   PANEL3_RETRIES / PANEL3_PROBE_RETRIES  下载重试次数 / 版本探测重试次数
 #   PANEL3_WORKDIR                      下载与解压目录，默认 /tmp/3panel-agent-join
@@ -33,16 +32,14 @@
 #
 set -uo pipefail
 
-ORIGIN="${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}"
-PROXY="${PANEL3_PROXY:-https://proxy.erguotou.me}"
+ORIGIN="${PANEL3_ORIGIN:-https://generic.cloudsmith.io/3panel/3panel/package}"
 MIRROR="${PANEL3_MIRROR:-}"
 RETRIES="${PANEL3_RETRIES:-5}"
 PROBE_RETRIES="${PANEL3_PROBE_RETRIES:-6}"
 WORKDIR="${PANEL3_WORKDIR:-/tmp/3panel-agent-join}"
 VERSION="${PANEL3_VERSION:-}"
-# 版本没指定时按这个顺序找 latest；发布的版本一定在 stable（非 beta）或 beta 里，
-# dev 是同一个版本的副本，放在第二位只是为了让只发 dev 的镜像也能用。
-CHANNELS="${PANEL3_CHANNELS:-stable dev beta}"
+# 只发布 stable；如需自建镜像的其他频道，可显式设置 PANEL3_CHANNELS。
+CHANNELS="${PANEL3_CHANNELS:-stable}"
 
 MASTER="${PANEL3_MASTER:-}"
 TOKEN="${PANEL3_TOKEN:-}"
@@ -231,25 +228,26 @@ download() {
 # ---------------------------------------------------------------------------
 # 定位包
 # ---------------------------------------------------------------------------
-# 自建镜像优先且独占；否则 Worker 与直连同时探测，先成功的胜出。
+# 自建镜像优先且独占；否则直接使用 Cloudsmith 发布源。
 build_bases() {
     BASES=()
     if [[ -n "$MIRROR" ]]; then
         BASES+=("$(trim_slash "$MIRROR")")
         return
     fi
-    BASES+=("$(trim_slash "$PROXY")/$(trim_slash "$ORIGIN")")
     BASES+=("$(trim_slash "$ORIGIN")")
 }
 
-# 每个 base 内仍按频道顺序查找；不同 base 并发，避免不可达的一路拖满超时。
+# 每个 base 内按频道顺序查找。
 resolve_version_from_base() {
-    local base="$1" result="$2" lock="$3" tmp="$4" ch version
+    local base="$1" tmp="$2" ch version
     for ch in $CHANNELS; do
         if fetch_text "$base/$ch/latest" "$tmp"; then
             version="$(head -n1 "$tmp" | tr -d '[:space:]')"
-            if [[ -n "$version" ]] && mkdir "$lock" 2>/dev/null; then
-                printf '%s\t%s\t%s\n' "$version" "$base" "$ch" >"$result"
+            if [[ -n "$version" ]]; then
+                VERSION="$version"
+                RESOLVED_BASE="$base"
+                RESOLVED_CHANNEL="$ch"
                 return 0
             fi
         fi
@@ -258,43 +256,18 @@ resolve_version_from_base() {
 }
 
 resolve_version() {
-    local race_dir result lock base pid alive=1
-    local -a pids=() ordered=()
-    race_dir="$(mktemp -d)"
-    result="$race_dir/result"
-    lock="$race_dir/winner"
-
+    local base tmp
+    tmp="$(mktemp)"
     for base in "${BASES[@]}"; do
-        resolve_version_from_base "$base" "$result" "$lock" "$race_dir/${#pids[@]}" &
-        pids+=("$!")
+        if resolve_version_from_base "$base" "$tmp"; then
+            rm -f "$tmp"
+            info "$(say "取自 $RESOLVED_BASE/$RESOLVED_CHANNEL/latest" \
+                "resolved from $RESOLVED_BASE/$RESOLVED_CHANNEL/latest")"
+            return 0
+        fi
     done
-
-    while [[ ! -s "$result" && $alive -eq 1 ]]; do
-        alive=0
-        for pid in "${pids[@]}"; do
-            if kill -0 "$pid" 2>/dev/null; then alive=1; break; fi
-        done
-        [[ $alive -eq 1 ]] && sleep 0.1
-    done
-
-    if [[ ! -s "$result" ]]; then
-        wait "${pids[@]}" 2>/dev/null || true
-        rm -rf "$race_dir"
-        return 1
-    fi
-
-    IFS=$'\t' read -r VERSION RESOLVED_BASE RESOLVED_CHANNEL <"$result"
-    kill "${pids[@]}" 2>/dev/null || true
-    wait "${pids[@]}" 2>/dev/null || true
-    rm -rf "$race_dir"
-
-    ordered+=("$RESOLVED_BASE")
-    for base in "${BASES[@]}"; do
-        [[ "$base" == "$RESOLVED_BASE" ]] || ordered+=("$base")
-    done
-    BASES=("${ordered[@]}")
-    info "$(say "取自 $RESOLVED_BASE/$RESOLVED_CHANNEL/latest" \
-        "resolved from $RESOLVED_BASE/$RESOLVED_CHANNEL/latest")"
+    rm -f "$tmp"
+    return 1
 }
 
 PKG_KIND=""

@@ -29,7 +29,7 @@
 #
 # Environment:
 #   RESOURCE_BASE   base URL that serves lang.tar.gz / GeoIP.mmdb
-#                   (default: https://3panel.erguotou.me/resource)
+#                   (default: https://generic.cloudsmith.io/3panel/3panel/resource)
 #   GEOIP_FILE      local mmdb to embed verbatim instead of downloading one
 #   GEOIP_FALLBACK  extra URL tried when <RESOURCE_BASE>/geo/GeoIP.mmdb is not
 #                   available (default: the upstream 1Panel copy; "" disables)
@@ -65,7 +65,7 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PACKAGING_DIR="$ROOT_DIR/packaging"
-RESOURCE_BASE="${RESOURCE_BASE:-https://3panel.erguotou.me/resource}"
+RESOURCE_BASE="${RESOURCE_BASE:-https://generic.cloudsmith.io/3panel/3panel/resource}"
 OUT_DIR="${OUT_DIR:-$ROOT_DIR/dist}"
 SKIP_FRONTEND="${SKIP_FRONTEND:-0}"
 GEOIP_FILE="${GEOIP_FILE:-}"

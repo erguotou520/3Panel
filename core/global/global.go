@@ -36,37 +36,37 @@ type DBOption func(*gorm.DB) *gorm.DB
 
 func RepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://3panel.erguotou.me/package/enterprise"
+		return "https://generic.cloudsmith.io/3panel/3panel/package/enterprise"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://3panel.erguotou.me/package/fusionxplay"
+		return "https://generic.cloudsmith.io/3panel/3panel/package/fusionxplay"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://3panel.erguotou.me/package"
+		return "https://generic.cloudsmith.io/3panel/3panel/package"
 	}
-	return "https://3panel.erguotou.me/package"
+	return "https://generic.cloudsmith.io/3panel/3panel/package"
 }
 func ResourceURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://3panel.erguotou.me/resource"
+		return "https://generic.cloudsmith.io/3panel/3panel/resource"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://3panel.erguotou.me/resource"
+		return "https://generic.cloudsmith.io/3panel/3panel/resource"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://3panel.erguotou.me/resource"
+		return "https://generic.cloudsmith.io/3panel/3panel/resource"
 	}
-	return "https://3panel.erguotou.me/resource"
+	return "https://generic.cloudsmith.io/3panel/3panel/resource"
 }
 func AppRepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://3panel.erguotou.me"
+		return "https://generic.cloudsmith.io/3panel/3panel"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://3panel.erguotou.me"
+		return "https://generic.cloudsmith.io/3panel/3panel"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://3panel.erguotou.me"
+		return "https://generic.cloudsmith.io/3panel/3panel"
 	}
-	return "https://3panel.erguotou.me"
+	return "https://generic.cloudsmith.io/3panel/3panel"
 }

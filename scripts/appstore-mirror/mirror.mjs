@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * Mirror the upstream 1Panel app store into your own R2 bucket.
+ * Mirror the upstream 1Panel app store into a Cloudsmith Generic repository.
  *
  * Run it locally (no subrequest limits, unlike a Cloudflare Worker):
  *
  *   cd scripts/appstore-mirror
- *   cp .env.example .env      # fill in your R2 credentials
+ *   cp .env.example .env      # fill in your Cloudsmith credentials
  *   node --env-file=.env mirror.mjs
  *
  * What the panel actually requests from your domain — all of it has to exist:
@@ -27,12 +27,15 @@
  */
 
 import { deflateRawSync, inflateRawSync } from 'node:zlib';
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, promises as fs } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const STATE_FILE = join(HERE, '.mirror-state.json');
+const execFileAsync = promisify(execFile);
 
 /* ------------------------------------------------------------------ config */
 
@@ -46,14 +49,11 @@ const num = (value, fallback) => {
 };
 
 const cfg = {
-    accountId: process.env.R2_ACCOUNT_ID || '',
-    accessKeyId: process.env.R2_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY || '',
-    bucket: process.env.R2_BUCKET || 'appstore',
-
-    mode: process.env.MODE || 'dev',
+    repository: process.env.CLOUDSMITH_REPOSITORY || '3panel/3panel',
+    apiKey: process.env.CLOUDSMITH_API_KEY || process.env.CS_TOKEN || '',
+    mode: process.env.MODE || 'stable',
     src: trimSlash(process.env.SRC_ORIGIN || 'https://apps.1panel.pro'),
-    dst: trimSlash(process.env.DST_ORIGIN || 'https://3panel.erguotou.me'),
+    dst: trimSlash(process.env.DST_ORIGIN || 'https://generic.cloudsmith.io/3panel/3panel'),
 
     concurrency: num(process.env.CONCURRENCY, 6),
     packages: process.env.SYNC_APP_PACKAGES !== 'false',
@@ -246,61 +246,38 @@ function buildZipEntry(name, content) {
     return Buffer.concat([local, central, eocd]);
 }
 
-/* ------------------------------------------------------------------ bucket */
+/* ---------------------------------------------------------- Cloudsmith I/O */
 
 async function connectBucket() {
-    if (!cfg.accountId || !cfg.accessKeyId || !cfg.secretAccessKey) {
-        throw new Error('R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY are required');
-    }
-    const { S3Client, PutObjectCommand, HeadObjectCommand, ListObjectsV2Command } = await import('@aws-sdk/client-s3');
-    const client = new S3Client({
-        region: 'auto',
-        endpoint: `https://${cfg.accountId}.r2.cloudflarestorage.com`,
-        credentials: { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey },
-        // R2 rejects the aws-chunked payloads the SDK produces when it must read the body to
-        // compute a flexible checksum ("non-retryable streaming request"). Keep checksums to the
-        // mandatory cases and always hand over a real, length-known body.
-        requestChecksumCalculation: 'WHEN_REQUIRED',
-        responseChecksumValidation: 'WHEN_REQUIRED',
-    });
-
     return {
         async put(key, body, contentType) {
             const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body);
-            await client.send(
-                new PutObjectCommand({
-                    Bucket: cfg.bucket,
-                    Key: key,
-                    Body: bytes,
-                    ContentLength: bytes.length,
-                    ContentType: contentType || contentTypeFor(key),
-                }),
-            );
-        },
-        async has(key) {
+            const temp = await fs.mkdtemp('/tmp/3panel-cloudsmith-');
+            const file = join(temp, key.split('/').pop());
             try {
-                await client.send(new HeadObjectCommand({ Bucket: cfg.bucket, Key: key }));
-                return true;
-            } catch {
-                return false;
+                await fs.writeFile(file, bytes);
+                const env = cfg.apiKey ? { ...process.env, CLOUDSMITH_API_KEY: cfg.apiKey } : process.env;
+                try {
+                    await execFileAsync('cloudsmith', ['push', 'generic', cfg.repository, file, '--filepath', key, '--republish'], { env });
+                } catch (err) {
+                    const detail = [err.stdout, err.stderr].filter(Boolean).join('\n').trim();
+                    throw new Error(`Cloudsmith upload ${key} failed${detail ? `:\n${detail}` : ''}`);
+                }
+            } finally {
+                await fs.rm(temp, { recursive: true, force: true });
             }
         },
-        /** Every key under a prefix — lets a re-run fill only the gaps instead of re-fetching all. */
+        async has(key) {
+            return (await fetch(`${cfg.dst}/${key}`, { method: 'HEAD' })).ok;
+        },
+        async text(key) {
+            const res = await fetch(`${cfg.dst}/${key}`);
+            return res.ok ? res.text() : null;
+        },
+        // Cloudsmith Generic has no unauthenticated prefix-list endpoint. Callers test the
+        // exact file paths they need, which also works on a fresh GitHub Actions runner.
         async list(prefix) {
-            const keys = new Set();
-            let token;
-            do {
-                const res = await client.send(
-                    new ListObjectsV2Command({
-                        Bucket: cfg.bucket,
-                        Prefix: prefix,
-                        ContinuationToken: token,
-                    }),
-                );
-                for (const obj of res.Contents || []) if (obj.Key) keys.add(obj.Key);
-                token = res.IsTruncated ? res.NextContinuationToken : undefined;
-            } while (token);
-            return keys;
+            return new Set();
         },
     };
 }
@@ -356,22 +333,8 @@ function buildManifest(store, mode, src) {
     return [...items.values()];
 }
 
-/**
- * Bucket keys of the app packages the store references, regardless of SYNC_APP_PACKAGES. The
- * published index always points at our own domain, so every one of these has to exist here.
- */
-function packageKeys(store, mode) {
-    const keys = [];
-    for (const app of store.apps || []) {
-        for (const version of app.versions || []) {
-            if (version.downloadUrl) keys.push(assetKey(version.downloadUrl, mode));
-        }
-    }
-    return keys;
-}
-
 async function main() {
-    if (!cfg.dst) throw new Error('DST_ORIGIN is required (public url of your bucket, e.g. https://3panel.erguotou.me)');
+    if (!cfg.dst) throw new Error('DST_ORIGIN is required (public url of your bucket, e.g. https://generic.cloudsmith.io/3panel/3panel)');
 
     log(`[mirror] source : ${cfg.src}/${cfg.mode}`);
     log(`[mirror] target : ${cfg.dst}/${cfg.mode}`);
@@ -410,31 +373,13 @@ async function main() {
 
     const bucket = cfg.dryRun ? null : await connectBucket();
     const state = loadState();
-    // Knowing what the bucket already holds lets a re-run fill only the gaps. Without it every
-    // run would re-download the whole store (0.7 GB+ of app packages).
-    const present = bucket ? await bucket.list(`${cfg.mode}/`) : new Set();
-    if (bucket) log(`[mirror] bucket already holds ${present.size} objects under ${cfg.mode}/`);
-
-    // Package urls are never redirected back to the upstream host, so when packages are skipped the
-    // bucket has to already hold them. Say so loudly instead of publishing a store that 404s.
-    if (!cfg.packages && bucket) {
-        const keys = packageKeys(store, cfg.mode);
-        const absent = keys.filter((key) => !present.has(key));
-        if (absent.length) {
-            warn(
-                `[mirror] SYNC_APP_PACKAGES=false, but ${absent.length}/${keys.length} app packages are not in the bucket. ` +
-                    'Installing those apps will 404 until they are mirrored — re-run without that flag.',
-            );
-            for (const key of absent.slice(0, 5)) warn(`  - ${key}`);
-        } else {
-            log(`[mirror] all ${keys.length} app packages are already present, skipping them is safe`);
-        }
-    }
-
-    if (!cfg.dryRun) {
+    const publishedVersion = bucket && !cfg.force ? await bucket.text(versionKey) : null;
+    if (!cfg.dryRun && publishedVersion?.trim() !== version) {
         await bucket.put(indexKey, buildZipEntry('3panel.json', Buffer.from(rewritten, 'utf8')), 'application/zip');
         await bucket.put(versionKey, version, 'text/plain; charset=utf-8');
         log(`[mirror] published ${indexKey} (entry: 3panel.json) + ${versionKey}`);
+    } else if (!cfg.dryRun) {
+        log(`[mirror] index already matches upstream version ${version}`);
     }
 
     // 3. mirror assets
@@ -454,7 +399,9 @@ async function main() {
     await runPool(items, cfg.concurrency, async (item) => {
         const stateKey = `${cfg.mode}|${item.key}`;
         const knownEtag = state[stateKey];
-        const exists = present.has(item.key);
+        // Each cron run starts on a new runner, so the Cloudsmith object itself
+        // is the source of truth for incrementality rather than a local cache.
+        const exists = !cfg.force && (await bucket.has(item.key));
 
         if (exists && !cfg.force && !knownEtag) {
             // Already mirrored and we have no validator for it: trust the copy.

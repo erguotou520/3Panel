@@ -1,0 +1,48 @@
+name: Sync stable app store
+
+on:
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Re-download and republish all stable assets'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CLOUDSMITH_API_KEY: ${{ secrets.CS_TOKEN }}
+      CLOUDSMITH_REPOSITORY: 3panel/3panel
+      DST_ORIGIN: https://generic.cloudsmith.io/3panel/3panel
+      MODE: stable
+      SYNC_APP_PACKAGES: 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Cloudsmith CLI
+        run: |
+          install_output="$(curl -fsSL https://install.cloudsmith.com/raw/versions/latest/cli.sh | sh)"
+          bin_dir="$(printf '%s\n' "$install_output" | sed -n 's/^bin_dir=//p')"
+          [ -n "$bin_dir" ] || { echo "Cloudsmith CLI installation did not return bin_dir" >&2; exit 1; }
+          echo "$bin_dir" >> "$GITHUB_PATH"
+
+      - name: Sync stable app-store incrementally
+        working-directory: scripts/appstore-mirror
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDSMITH_API_KEY:-}" ] || { echo "CS_TOKEN is not configured" >&2; exit 1; }
+          args=()
+          [ "${{ inputs.force }}" = "true" ] && args+=(--force)
+          node mirror.mjs "${args[@]}"

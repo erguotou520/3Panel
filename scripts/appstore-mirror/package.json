@@ -2,7 +2,7 @@
     "name": "appstore-mirror",
     "private": true,
     "type": "module",
-    "description": "Mirror the upstream 1Panel app store into your own R2 bucket",
+    "description": "Mirror the upstream 1Panel app store into Cloudsmith Generic",
     "scripts": {
         "sync": "node mirror.mjs",
         "sync:force": "node mirror.mjs --force",

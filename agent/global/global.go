@@ -2,7 +2,6 @@ package global
 
 import (
 	"context"
-	"strings"
 	"sync"
 
 	badger_db "github.com/3panel-dev/3panel/agent/init/cache/db"
@@ -65,55 +64,45 @@ func RemoveTaskCancel(taskID string) {
 
 func RepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://3panel.erguotou.me/package/enterprise"
+		return "https://generic.cloudsmith.io/3panel/3panel/package/enterprise"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://3panel.erguotou.me/package/fusionxplay"
+		return "https://generic.cloudsmith.io/3panel/3panel/package/fusionxplay"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://3panel.erguotou.me/package"
+		return "https://generic.cloudsmith.io/3panel/3panel/package"
 	}
-	return "https://3panel.erguotou.me/package"
+	return "https://generic.cloudsmith.io/3panel/3panel/package"
 }
 func ResourceURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://3panel.erguotou.me/resource"
+		return "https://generic.cloudsmith.io/3panel/3panel/resource"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://3panel.erguotou.me/resource"
+		return "https://generic.cloudsmith.io/3panel/3panel/resource"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://3panel.erguotou.me/resource"
+		return "https://generic.cloudsmith.io/3panel/3panel/resource"
 	}
-	return "https://3panel.erguotou.me/resource"
+	return "https://generic.cloudsmith.io/3panel/3panel/resource"
 }
 func AppRepoURL() string {
 	if CONF.Base.IsEnterprise {
-		return "https://3panel.erguotou.me"
+		return "https://generic.cloudsmith.io/3panel/3panel"
 	}
 	if CONF.Base.IsFxplay {
-		return "https://3panel.erguotou.me"
+		return "https://generic.cloudsmith.io/3panel/3panel"
 	}
 	if CONF.Base.Edition != "intl" {
-		return "https://3panel.erguotou.me"
+		return "https://generic.cloudsmith.io/3panel/3panel"
 	}
-	return "https://3panel.erguotou.me"
+	return "https://generic.cloudsmith.io/3panel/3panel"
 }
 
 func AppRepoURLs() []string {
-	direct := AppRepoURL()
-	return []string{direct, "https://proxy.erguotou.me/" + direct}
+	return []string{AppRepoURL()}
 }
 
 func AlternateAppRepoURL(rawURL string) (string, bool) {
-	bases := AppRepoURLs()
-	for i, base := range bases {
-		base = strings.TrimSuffix(base, "/")
-		prefix := base + "/"
-		if strings.HasPrefix(rawURL, prefix) {
-			other := strings.TrimSuffix(bases[1-i], "/")
-			return other + "/" + strings.TrimPrefix(rawURL, prefix), true
-		}
-	}
 	return "", false
 }

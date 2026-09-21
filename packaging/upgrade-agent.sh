@@ -4,7 +4,7 @@
 #
 # 在节点机上执行：
 #
-#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+#   bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/upgrade-agent.sh)"
 #
 # 与 join.sh 的分工：
 #   join.sh           给**没装过** agent 的机器用，要一次性 token、要换证书
@@ -24,7 +24,7 @@
 #   PANEL3_CHANNEL                      发布频道，默认 stable
 #   PANEL3_VERSION                      钉住版本；留空取该频道的 latest
 #   PANEL3_ARCH                         覆盖架构探测（amd64|arm64）
-#   PANEL3_ORIGIN                       发布源，默认 https://3panel.erguotou.me/package
+#   PANEL3_ORIGIN                       发布源，默认 https://generic.cloudsmith.io/3panel/3panel/package
 #   PANEL3_MIRROR                       自建镜像，设了就只走它
 #   PANEL3_RETRIES / PANEL3_PROBE_RETRIES  下载重试次数 / 版本探测重试次数
 #   PANEL3_WORKDIR                      下载与解压目录，默认 /tmp/3panel-agent-upgrade
@@ -33,7 +33,7 @@
 #
 set -uo pipefail
 
-ORIGIN="${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}"
+ORIGIN="${PANEL3_ORIGIN:-https://generic.cloudsmith.io/3panel/3panel/package}"
 MIRROR="${PANEL3_MIRROR:-}"
 CHANNEL="${PANEL3_CHANNEL:-stable}"
 RETRIES="${PANEL3_RETRIES:-5}"

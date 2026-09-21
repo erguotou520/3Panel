@@ -1,16 +1,16 @@
 # appstore-mirror
 
-把上游 1Panel 应用商店**完整**镜像到你自己的 R2 桶，在本地跑（Node，无 Cloudflare Worker 的子请求数限制）。
+把上游 1Panel 应用商店**完整**镜像到 Cloudsmith Generic 仓库，在本地跑（Node，无 Cloudflare Worker 的子请求数限制）。
 
 ```
 ┌─ 上游 ──────────────────────────┐        ┌─ 你的 R2 ─────────────────────────────┐
-│ apps.1panel.pro/dev/1panel/...  │  ───▶  │ 3panel.erguotou.me/dev/3panel/...     │
+│ apps.1panel.pro/stable/1panel/… │  ───▶  │ generic.cloudsmith.io/3panel/3panel/stable/3panel/… │
 └─────────────────────────────────┘        └───────────────────────────────────────┘
 ```
 
 ## 为什么需要它
 
-面板会向 `AppRepoURL()`（= `https://3panel.erguotou.me`）请求这些文件，**少一个就会出问题**：
+面板会向 `AppRepoURL()`（= `https://generic.cloudsmith.io/3panel/3panel`）请求这些文件，**少一个就会出问题**：
 
 | 请求路径 | 缺失时的症状 |
 | --- | --- |
@@ -28,11 +28,8 @@
 
 ## 前置准备
 
-1. **R2 桶**（已有 `appstore` 桶则跳过）
-2. **API Token**：Cloudflare 控制台 → R2 → API → Manage API Tokens → Create API Token
-   - 权限选 `Object Read & Write`，范围限定到该桶
-3. **公开访问域名**：给桶绑定自定义域名（这里就是 `3panel.erguotou.me`），或启用 `r2.dev` 域名
-   - 面板通过这个域名取文件，必须是 https
+1. **Cloudsmith Generic 仓库**：`3panel/3panel`，公开可读。
+2. **Cloudsmith API Token**：须有该仓库的上传权限。
 
 ## 使用
 
@@ -41,7 +38,7 @@ cd scripts/appstore-mirror
 npm install
 
 cp .env.example .env
-# 编辑 .env，填 R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+# 编辑 .env，填 CLOUDSMITH_API_KEY
 
 node --env-file=.env mirror.mjs
 ```
@@ -54,7 +51,7 @@ node --env-file=.env mirror.mjs
 | --- | --- |
 | `node --env-file=.env mirror.mjs` | 增量同步（默认）：先列出桶里已有的对象，**只下载缺失的文件**；已有的发一次条件请求确认没变（304 则不重传） |
 | `... mirror.mjs --force` | 忽略桶内已有对象与 ETag，全部重新拉取覆盖 |
-| `... mirror.mjs --dry-run` | 只跑到「要传哪些文件」，不写 R2（不需要凭证） |
+| `... mirror.mjs --dry-run` | 只跑到「要传哪些文件」，不写 Cloudsmith（不需要凭证） |
 | `... mirror.mjs --verify-only` | 不传输，只抽样检查线上 URL 是否可访问 |
 | `... mirror.mjs --limit 20` | 只处理前 20 个资源，用于试跑 |
 
@@ -83,17 +80,17 @@ SYNC_APP_PACKAGES=false node --env-file=.env mirror.mjs
 
 ## 跑完之后
 
-回到面板点一次「应用商店 → 同步」，或重启 agent（`agent` 启动时会自动同步）。因为源码里 `AppRepoURL()` 指向你自己的域名，同步就会从你的 R2 取数据。
+回到面板点一次「应用商店 → 同步」，或重启 agent（`agent` 启动时会自动同步）。源码 `AppRepoURL()` 指向 Cloudsmith Generic，稳定库会从该仓库读取。
 
 ## 配置对照（必须一致）
 
 | 脚本变量 | 必须等于 |
 | --- | --- |
-| `MODE` | `/opt/3panel/conf/app.yaml` 里的 `base.mode`（当前是 `dev`） |
-| `DST_ORIGIN` | 源码 `AppRepoURL()` 的返回值（当前是 `https://3panel.erguotou.me`） |
+| `MODE` | `/opt/3panel/conf/app.yaml` 里的 `base.mode`（当前是 `stable`） |
+| `DST_ORIGIN` | 源码 `AppRepoURL()` 的返回值（当前是 `https://generic.cloudsmith.io/3panel/3panel`） |
 | `SRC_ORIGIN` | 上游源站，保持默认 |
 
-想同时镜像多个环境，分别跑：`MODE=dev node --env-file=.env mirror.mjs`、`MODE=stable node --env-file=.env mirror.mjs`（上游 `stable` 也存在）。状态文件按 `mode` 隔离，互不影响。
+只同步稳定库：保持 `MODE=stable`，不要运行 dev 同步。
 
 ## 排查
 
@@ -101,7 +98,7 @@ SYNC_APP_PACKAGES=false node --env-file=.env mirror.mjs
 - **403 / 429 变多**：上游对突发并发限流，把 `CONCURRENCY` 调小（例如 3）。
 - **面板仍报「已从远程服务下架」**：说明该版本的 `docker-compose.yml` 没上到桶里。手动验证：
   ```bash
-  curl -I https://3panel.erguotou.me/dev/3panel/act_runner/0.4.1/docker-compose.yml
+  curl -I https://generic.cloudsmith.io/3panel/3panel/stable/3panel/act_runner/0.4.1/docker-compose.yml
   ```
   应为 `200`。
 - **图标空白**：确认 `SYNC_APP_PACKAGES` 没被误设，以及 `<mode>/3panel/<app>/logo.png` 可访问。

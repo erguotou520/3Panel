@@ -9,7 +9,7 @@
 一键安装（发布域名自带 CDN 加速，直连即可）：
 
 ```bash
-bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
+bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/quick_start.sh)"
 ```
 
 安装包约 58MB，脚本支持断点续传——中断后重跑同一条命令会从上次的分片继续。已安装时会拒绝覆盖，并提示先卸载或走面板升级。
@@ -45,7 +45,7 @@ bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 
 ```bash
 PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
-  bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
+  bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/join.sh)"
 ```
 
 - 节点机只装 agent（amd64 ~26MB / arm64 ~23MB），不会装 core。
@@ -65,7 +65,7 @@ PANEL3_MASTER='<面板地址>' PANEL3_TOKEN='<token>' \
 面板「多机管理 → 升级节点」会给出下面这条命令，复制到节点机上以 root 执行：
 
 ```bash
-PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/upgrade-agent.sh)"
 ```
 
 - **不需要 token，也不会重新 join**：现有证书与 `<base-dir>/3panel` 下的数据原样保留，只替换二进制。
@@ -83,13 +83,13 @@ PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://3panel.erguotou.me/package/
 
 ```bash
 CHANNEL=stable   # 与主控 core/cmd/server/conf/app.yaml 的 base.mode 一致
-VERSION="$(curl -sSL https://3panel.erguotou.me/package/$CHANNEL/latest)"
+VERSION="$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/$CHANNEL/latest)"
 ARCH="$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')"
 PKG="3panel-agent-${VERSION}-linux-${ARCH}"
 
 cd /tmp
-curl -sSL -O "https://3panel.erguotou.me/package/${CHANNEL}/${VERSION}/release/${PKG}.tar.gz"
-curl -sSL -O "https://3panel.erguotou.me/package/${CHANNEL}/${VERSION}/release/${PKG}.tar.gz.sha256"
+curl -sSL -O "https://generic.cloudsmith.io/3panel/3panel/package/${CHANNEL}/${VERSION}/release/${PKG}.tar.gz"
+curl -sSL -O "https://generic.cloudsmith.io/3panel/3panel/package/${CHANNEL}/${VERSION}/release/${PKG}.tar.gz.sha256"
 # .sha256 里只有裸哈希、没有文件名，所以用字符串比较，不能用 sha256sum -c
 [ "$(sha256sum "${PKG}.tar.gz" | awk '{print $1}')" = "$(cat "${PKG}.tar.gz.sha256")" ] || \
     { echo "checksum mismatch, abort"; exit 1; }

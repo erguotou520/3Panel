@@ -1,6 +1,6 @@
 # 3Panel 升级通道部署指引
 
-> 面向自托管部署（唯一域名：`3panel.erguotou.me`）
+> 面向自托管部署（唯一域名：`generic.cloudsmith.io/3panel/3panel`）
 > 本文档对应代码改动后的实际行为，改动清单见文末。
 
 ---
@@ -43,7 +43,7 @@
 
 ---
 
-## 二、必须在 3panel.erguotou.me 下托管的路径
+## 二、必须在 generic.cloudsmith.io/3panel/3panel 下托管的路径
 
 以 `mode=stable`、`version=v1.0.0`、`arch=amd64` 为例。
 
@@ -58,7 +58,7 @@
 > stable）；新装实例只认 stable。等旧实例都升一遍后，`dev` 这份副本可以考虑停发。
 > 卸载/升级时的包路径同理：`mode: stable` 会去取 `/package/stable/<version>/release/…`。
 
-### 2.1 升级通道（`RepoURL()` = `https://3panel.erguotou.me/package`）
+### 2.1 升级通道（`RepoURL()` = `https://generic.cloudsmith.io/3panel/3panel/package`）
 
 下表以 `stable` 为例（本仓当前模式）；旧实例若仍是 `mode: dev`，把路径里的 `stable`
 换成 `dev` 即可（两个频道的内容目前完全一致）。
@@ -79,7 +79,7 @@
 > `latest` 由 `loadVersion()` 直接 `string(body)` 使用，**没有 TrimSpace**。
 > 若带尾换行，版本号会变成 `"v1.0.0\n"` 而解析失败 —— 发布时必须用 `printf '%s'`（无换行）写入。
 
-### 2.2 资源通道（`ResourceURL()` = `https://3panel.erguotou.me/resource`）
+### 2.2 资源通道（`ResourceURL()` = `https://generic.cloudsmith.io/3panel/3panel/resource`）
 
 | 用途 | 请求路径 | 期望内容 |
 | --- | --- | --- |
@@ -155,12 +155,11 @@ curl -s 'https://<worker>/status' | jq .resource
 新装机器的一条命令：
 
 ```bash
-bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
+bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/quick_start.sh)"
 ```
 
 > 发布域名本身就是对象存储 + CDN 加速，直连即可——不存在也不需要前缀代理。
-> 早期用过 `https://proxy.erguotou.me/<完整URL>` 这种前缀反代，2026-09-20 已连同
-> `PANEL3_PROXY` / `PANEL3_NO_PROXY` 一起移除，脚本里只保留发布源与自建镜像两条路径。
+> 发布脚本只使用 Cloudsmith 发布源；如需自建镜像，可通过 `PANEL3_MIRROR` 显式指定。
 
 > ⚠️ **必须用 `bash -c "$(...)"`，不要 `curl ... | bash`。**
 > 包内 `install.sh` 会用 stdin 询问端口/账号/密码；管道会把脚本文本喂给 `read`，
@@ -177,12 +176,12 @@ bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
 
 ```
 PANEL3_MIRROR（若设，唯一候选）
-  └→ {PANEL3_ORIGIN}                    # 默认 https://3panel.erguotou.me/package
+  └→ {PANEL3_ORIGIN}                    # 默认 https://generic.cloudsmith.io/3panel/3panel/package
 ```
 
 > ⚠️ `PANEL3_ORIGIN` 是**发布通道的 base，必须带 `/package` 段**。
 > 脚本会在它后面拼 `/$MODE/latest`；写成站点根会得到
-> `https://3panel.erguotou.me/stable/latest` 的 **404**，现象很像网络故障。
+> `https://generic.cloudsmith.io/3panel/3panel/stable/latest` 的 **404**，现象很像网络故障。
 > （这个坑真实踩过：本地测试全都显式传了带 `/package` 的地址，所以直到对真站
 > 探测才暴露。现在有一条静态断言把默认值钉住了。）
 
@@ -194,7 +193,7 @@ PANEL3_MIRROR（若设，唯一候选）
 注意探测判据是**输出是否非空**而非管道退出码 —— `sh` 没有 `pipefail` 时，
 curl 失败而 `tr` 成功会让管道返回 0 但输出为空。
 
-**下载为什么要重试与续传**：实测直连 `3panel.erguotou.me` 拉 60 MB 包会周期性卡住，
+**下载为什么要重试与续传**：实测直连 `generic.cloudsmith.io/3panel/3panel` 拉 60 MB 包会周期性卡住，
 4 次里有 3 次在 300 s 内只跑到 13–26 MB 就断；走代理拿到过 121 s 跑完全量（≈500 KB/s）。
 所以脚本用 `curl -C -` 续传 + 默认 5 次重试。镜像站若忽略 Range（curl 退出码 33），
 会自动去掉续传标志整包重下 —— 这条路径有专门的故障注入测试覆盖。
@@ -224,7 +223,7 @@ curl 失败而 `tr` 成功会让管道返回 0 但输出为空。
 | `INSTALL_MODE` | `stable` | `stable` / `dev` / `beta` |
 | `ARCH` | 自动 | `amd64` / `arm64`，其它值直接报错 |
 | `PANEL3_MIRROR` | 空 | 指定唯一地址，跳过探测 |
-| `PANEL3_ORIGIN` | `https://3panel.erguotou.me/package` | 发布源（**含 `/package` 段**，见下） |
+| `PANEL3_ORIGIN` | `https://generic.cloudsmith.io/3panel/3panel/package` | 发布源（**含 `/package` 段**，见下） |
 | `PANEL3_WORKDIR` | `./3panel-install` | 下载与解压目录。重复运行会复用已校验的包；只剩**未完成的分片**时会从断点续传（见下） |
 | `PANEL3_RETRIES` | `5` | 每个地址的下载尝试次数 |
 | `PANEL3_PROBE_RETRIES` | `6` | 每个地址的**版本探测**尝试次数（探测请求小但最易失败，故预算更大） |
@@ -262,7 +261,7 @@ sudo PANEL_PORT=10086 PANEL_USERNAME=admin PANEL_PASSWORD='<密码>' \
 
 ```bash
 PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>' \
-  bash -c "$(curl -sSL https://3panel.erguotou.me/package/join.sh)"
+  bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/join.sh)"
 ```
 
 发布域名自带 CDN，直连即可。早期这里做过「先走加速前缀、失败再直连」的双保险，2026-09-20
@@ -333,7 +332,7 @@ PANEL3_MASTER='https://<面板地址>:<端口>' PANEL3_TOKEN='<一次性 token>'
 `NodeService.UpgradeCommand()` 生成，**不含 token**）：
 
 ```bash
-PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://3panel.erguotou.me/package/upgrade-agent.sh)"
+PANEL3_CHANNEL='stable' bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/upgrade-agent.sh)"
 ```
 
 `PANEL3_CHANNEL` 由主控按自己的升级频道生成（`base.mode == "dev"` 就发 `dev`，否则
@@ -594,7 +593,7 @@ ls -lh GeoIP.mmdb        # 约 19.5 MB
 
 ```bash
 # 自己托管（推荐，构建不再依赖上游）
-#   上传到 https://3panel.erguotou.me/resource/geo/GeoIP.mmdb
+#   上传到 https://generic.cloudsmith.io/3panel/3panel/resource/geo/GeoIP.mmdb
 SKIP_FRONTEND=1 ./packaging/build-release.sh v1.0.0 amd64
 
 # 或者临时用本地文件 / 关掉 fallback
@@ -647,7 +646,7 @@ GEOIP_FILE=/tmp/GeoIP.mmdb GEOIP_FALLBACK= ./packaging/build-release.sh v1.0.0
 | 大小 | 19,565,776 B（≈19.5 MB） |
 | `database_type` | `GeoLite2-City`（字段已扁平化，见上方警告） |
 | **数据构建时间** | **2024-12-25 13:52 (CST)**，即已 632 天 / 1.73 年 |
-| 自托管地址 | `https://3panel.erguotou.me/resource/geo/GeoIP.mmdb` → HTTP 200 ✅ |
+| 自托管地址 | `https://generic.cloudsmith.io/3panel/3panel/resource/geo/GeoIP.mmdb` → HTTP 200 ✅ |
 
 两点关键结论：
 
@@ -675,7 +674,7 @@ curl -fsSL https://resource.fit2cloud.com/1panel/resource/geo/GeoIP.mmdb | shasu
 # 期望: fcad15e747a1fc3091ff69c36609fa1bf0721f453ea3f019d03bf7002976c80b
 
 # 自托管副本是否与上游一致？（不一致说明该重新镜像）
-curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
+curl -fsSL https://generic.cloudsmith.io/3panel/3panel/resource/geo/GeoIP.mmdb | shasum -a 256
 ```
 
 > 若某天上游 hash 变了，**先别急着替换**：重新跑一次 §5.4 的 python 验证，
@@ -690,8 +689,8 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 > ```bash
 > # 本地构建产物已就绪：dist/lang.tar.gz
 > tar -tzf dist/lang.tar.gz          # 期望: lang/  lang/en.sh  lang/zh.sh
-> # 上传到 https://3panel.erguotou.me/resource/language/lang.tar.gz
-> curl -sI https://3panel.erguotou.me/resource/language/lang.tar.gz | head -3   # 期望 200
+> # 上传到 https://generic.cloudsmith.io/3panel/3panel/resource/language/lang.tar.gz
+> curl -sI https://generic.cloudsmith.io/3panel/3panel/resource/language/lang.tar.gz | head -3   # 期望 200
 > ```
 >
 > 注意包内**必须**是 `lang/` 顶层目录（面板用 `tar zxvfC lang.tar.gz /usr/local/bin/`
@@ -707,7 +706,7 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 要点：
 
 - 只验证**能否建连并读到响应**，**不检查状态码** —— 返回 404 也算成功；
-- 目标地址硬编码，现为 `https://3panel.erguotou.me/`（上游为 `1panel.cn`）；
+- 目标地址硬编码，现为 `https://generic.cloudsmith.io/3panel/3panel/`（上游为 `1panel.cn`）；
 - 超时已从 3s 放宽到 **10s**（跨境经代理建连 3s 偏紧，容易误判失败）。
 
 > **注意**：这是 **HTTP/HTTPS/SOCKS5 正向代理**（用于受限网络下拉取镜像、升级包），
@@ -720,7 +719,7 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 
 | 文件 | 改动 |
 | --- | --- |
-| `core/global/global.go` / `agent/global/global.go` | `RepoURL()` / `ResourceURL()` → `https://3panel.erguotou.me/package`、`/resource` |
+| `core/global/global.go` / `agent/global/global.go` | `RepoURL()` / `ResourceURL()` → `https://generic.cloudsmith.io/3panel/3panel/package`、`/resource` |
 | `core/app/service/logs.go` | **删除** `writeLogs` / `runRemoteShellScript` / `logs` 常量与相关 import |
 | `core/app/service/upgrade.go` | 移除 `go writeLogs(...)` 调用；新增 `verifyUpgradePackage` 强制 sha256 校验 |
 | `core/utils/files/files.go` | 新增 `FileSHA256` / `VerifyFileSHA256` / `ParseSHA256File` |
@@ -756,7 +755,7 @@ curl -fsSL https://3panel.erguotou.me/resource/geo/GeoIP.mmdb | shasum -a 256
 一条命令体检所有面板会请求的地址：
 
 ```bash
-B=https://3panel.erguotou.me
+B=https://generic.cloudsmith.io/3panel/3panel
 # 用 HEAD 的 content-length 报「对象真实大小」。不要用 GET 的 %{size_download}：
 # 链路慢时 curl 会在 --max-time 内被掐断，那个数字是「已下载多少」，看着像文件变小了
 # （实测 GeoIP 19.5 MB 被报成 3.5 MB / 6.8 MB，极易误判成文件损坏）。

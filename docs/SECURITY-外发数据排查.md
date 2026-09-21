@@ -3,7 +3,7 @@
 - 排查对象：`/Users/erguotou/workspace/erguotou/3panel`（1Panel 二次开发分支）
 - 排查时间：2026-09-18
 - 排查范围：`core/`、`agent/`、`frontend/`、`scripts/`、`.github/`
-- 排查目标：除自有域名 `3panel.erguotou.me` 外，是否存在信息收集 / 不受控的数据外发
+- 排查目标：除自有域名 `generic.cloudsmith.io/3panel/3panel` 外，是否存在信息收集 / 不受控的数据外发
 
 ---
 
@@ -180,7 +180,7 @@ func RepoURL() string {
 }
 ```
 
-> 注意不一致：应用商店域名 `AppRepoURL()` **已**改到你的 `https://3panel.erguotou.me`，
+> 注意不一致：应用商店域名 `AppRepoURL()` **已**改到你的 `https://generic.cloudsmith.io/3panel/3panel`，
 > 但升级通道 `RepoURL()` / `ResourceURL()` **没有改**。
 
 ### M3. 代理连通性探测打到 `3panel.cn`
@@ -210,7 +210,7 @@ func RepoURL() string {
 | ~~L1~~ | ~~`frontend/src/utils/agent-provider-logo.ts:18-137`~~ | — | — | ⚠️ **此项为误报，已撤回**，详见 §7.5。AI 厂商 logo **本来就是本地打包资源**（`frontend/src/assets/images/ai-providers/` 下 13 个文件），`source:` 字段只是署名元数据，从不参与渲染，**无浏览器 IP 外泄**。 |
 | L2 | `agent/app/service/agents_hermes_channels.go:24` | `novac2c.cdn.weixin.qq.com` | 写死企业微信 CDN 常量 | 启用微信频道后由运行时拉取，第三方依赖 |
 | L3 | 原 `router-button`、`system-upgrade`、`license-import`、`footer-navigation` | `3panel.cn`、`3panel.pro`、`3panel.hk`、`www.lxware.cn`、`bbs.3panel.pro`、`github.com/3panel-dev` | `window.open` 跳转 | 仅按钮跳转，不自动加载、不携带数据。**推广/论坛入口已全部删除**（§7.1 第 5 项）；死链入口改指真实仓库（§7.1 第 11 项，`views/setting/about`） |
-| L4 | `scripts/appstore-mirror/mirror.mjs`、`scripts/cf-appstore-sync/src/index.js` | `apps.1panel.pro`（读）→ 你的 R2 / `3panel.erguotou.me`（写） | 同步应用商店 | **运维脚本**，非面板运行时执行；只从上游读取，不外发你的数据 |
+| L4 | `scripts/appstore-mirror/mirror.mjs`、`scripts/cf-appstore-sync/src/index.js` | `apps.1panel.pro`（读）→ 你的 R2 / `generic.cloudsmith.io/3panel/3panel`（写） | 同步应用商店 | **运维脚本**，非面板运行时执行；只从上游读取，不外发你的数据 |
 | L5 | — | `pool.ntp.org` | NTP 对时 | 标准系统行为 |
 | L6 | `frontend/src/assets/images/enlarge_{black,white}.svg` | `at.alicdn.com`（协议相对地址）、`chrome-extension://…` | `<defs><style>@font-face` 注入块 | **已清理**（见 §7.5）。系图标下载类浏览器插件写入的残留；SVG 以 `<img>` 加载时浏览器禁止外部拉取，故实际为惰性引用，风险可忽略。 |
 
@@ -245,7 +245,7 @@ func RepoURL() string {
    通用出站路径共 9 处恢复校验；其余按配置驱动或内网场景有意保留，理由见 7.3。
 
 3. **【强烈建议】替换升级/资源通道域名** —— ✅ **已完成**
-   `RepoURL()` / `ResourceURL()` 已指向 `https://3panel.erguotou.me`，未注册域名引用全项目清零。
+   `RepoURL()` / `ResourceURL()` 已指向 `https://generic.cloudsmith.io/3panel/3panel`，未注册域名引用全项目清零。
 
 4. **【建议】移除埋点上报** —— ✅ **已完成**
    `asyncReportAIProviderInstall` 及其调用点已删除。
@@ -269,17 +269,17 @@ func RepoURL() string {
 | --- | --- | --- |
 | 1 | **删除 AI Provider 埋点上报**（#M1） | 删除 `agent/app/service/agents_utils.go` 的 `asyncReportAIProviderInstall` 与 `agent/app/service/agents.go` 调用，清理 3 个失效 import。全项目 `installation-analytics` 零残留。 |
 | 2 | **删除升级后远程脚本执行机制**（#H1） | **机制整体移除**：`core/app/service/logs.go` 删除 `writeLogs`、`runRemoteShellScript`、`logs` 常量及 7 个失效 import；`core/app/service/upgrade.go` 移除 `go writeLogs(req.Version)`。全项目已无 `installation-log` / `writeLogs` / `runRemoteShellScript` 残留。原先准备的替代脚本 `scripts/installation-log.sh` 一并删除（机制没了就不需要它）。 |
-| 3 | **域名全部改指自有域名**（#M2/#M3） | `core/global/global.go` 与 `agent/global/global.go` 的 `RepoURL()`/`ResourceURL()` → `https://3panel.erguotou.me/package`、`/resource`；文档索引、代理检测同步改指自有域名。全项目 `*.3panel.pro` / `3panel.cn` 等未注册域名引用**清零**。 |
+| 3 | **域名全部改指自有域名**（#M2/#M3） | `core/global/global.go` 与 `agent/global/global.go` 的 `RepoURL()`/`ResourceURL()` → `https://generic.cloudsmith.io/3panel/3panel/package`、`/resource`；文档索引、代理检测同步改指自有域名。全项目 `*.3panel.pro` / `3panel.cn` 等未注册域名引用**清零**。 |
 | 4 | **恢复 TLS 证书校验**（#H2） | 共 **9 处**移除 `InsecureSkipVerify: true`：<br>`core/utils/req_helper/requset.go`（2 处，覆盖所有通用出站请求，含升级包下载）<br>`core/utils/xpack/helper/multi_node_helper.go`（`LoadRequestTransport`，注释本就写着"应信任系统根证书"）<br>`agent/utils/xpack/helper/multi_node.go`<br>`agent/utils/req_helper/request.go`<br>`agent/utils/version/version.go`<br>`core/app/service/setting.go`（代理检测）<br>`agent/utils/cloud_storage/client/ali.go`（**8 处**，`api.alipan.com` 是公网受信 CA 证书，关校验无正当理由）<br>`core/utils/cloud_storage/refresh_token.go`（`api.aliyundrive.com`，同上） |
 | 5 | **前端推广/论坛外链清除**（#L3） | 按你的决定**直接删除**而非替换地址：<br>`footer-navigation/model.ts` — 导航键从 4 个（`learnMore`/`forum`/`documentation`/`project`）缩减为 2 个（`documentation`/`project`），商业版推广与论坛入口移除<br>`router-button/index.vue` — 删除 `goXpack()` 与「快速跳转」推广链接<br>`system-upgrade/index.vue` — 删除版本号旁的 `license.ee`/`license.pro`/`license.offLine`/`license.community` 四个版本标识链接及 `toLxware`/`to3Panel`/`toEdition` 三个函数<br>`license-import/index.vue` — 删除「了解更多专业版」按钮与 `toEdition`<br>连带清理 4 个文件里因此失效的 `isIntl` 等变量。功能保留：`documentation`（自有文档）、`project`（真实仓库 `cnb.cool/erguotou520/3panel`）、版本号、检查更新。 |
-| 6 | **示例配置域名** | `agent/cmd/server/nginx_conf/ssl.conf` 证书路径 `/www/sites/3panel.pro/` → `/www/sites/3panel.erguotou.me/`。 |
+| 6 | **示例配置域名** | `agent/cmd/server/nginx_conf/ssl.conf` 证书路径 `/www/sites/3panel.pro/` → `/www/sites/generic.cloudsmith.io/3panel/3panel/`。 |
 | 7 | **升级包完整性校验** | `core/app/service/upgrade.go` 新增 `verifyUpgradePackage`：**取到 `.sha256` 则强制校验、不一致即中止升级**（不覆盖任何文件）；取不到则记警告后继续。配套 `FileSHA256`/`VerifyFileSHA256`/`ParseSHA256File`（`core/utils/files/files.go`）与 17 个单元测试（`core/utils/files/checksum_test.go`）。 |
 | 8 | **自建发布流水线** | 新增 `packaging/`（`3pctl` 模板、`install.sh`、`build-release.sh`、`initscript/` 下 8 个服务定义）与 `.github/workflows/release-stable.yml`：打 tag 即自动构建 amd64/arm64 升级包、生成 `.sha256` 与 `latest`/`latest.current`，上传到面板约定的请求路径。详见 `docs/UPGRADE-升级通道部署.md`。 |
 | 9 | **代理探测可靠性** | `core/app/service/setting.go` 的 `checkProxy()` 超时 3s → **10s**（跨境经代理建连 3s 偏紧易误判），并补充注释说明「只看建连、不看状态码」。 |
 | 10 | **语言包内置 + 残留资源清理** | 新增 `packaging/lang/{en,zh}.sh`（各 47 个键，覆盖 `3pctl` 与 `install.sh` 全部引用），`build-release.sh` 改为**优先使用仓库内置语言包**、远端仅作回退 —— 构建不再依赖外部主机可用性。同时校验 `lang/zh.sh` 存在（`initLang()` 以它为「语言包已安装」哨兵，缺失会导致面板**每次启动都重新下载**）。另清理 `enlarge_{black,white}.svg` 中被注入的远程字体引用（#L6）。 |
 | 11 | **「关于」页死链修复** | `frontend/src/views/setting/about/index.vue` 的「项目 / 问题反馈 / star」三个入口原指向 `github.com/3panel-dev/3panel`（**实测 404**），改指真实仓库 `https://cnb.cool/erguotou520/3panel`、其 `/-/issues` 与 `/-/stargazers`（均实测 200）。函数名 `toGithub`/`toGithubStar` → `toRepo`/`toRepoStar`。 |
 | 12 | **`.gitignore` 误伤修复** | 原 `3pctl` / `install.sh` / `3panel.service` 三条**裸文件名**规则会把 `packaging/` 下的同名发布资产一并忽略（CI 必然失败），改为锚定根目录 `/3pctl`、`/install.sh`、`/3panel.service`。 |
-| 13 | **页脚版权 / 文档地址 / 仓库地址收口**（后续调整） | ① `frontend/src/layout/components/AppFooter.vue`：页脚版权去掉上游主体，`Copyright © 2014-{{year}} 飞致云 (1Panel) · 3Panel · GPLv3` → `Copyright © {{year}} 3Panel · GPLv3`，同步删除 12 个语言包里的 `commons.fit2cloud` 键（GPLv3 権利声明仍在 `NOTICE.md` / `LICENSE` 保留）。<br>② `frontend/src/store/modules/global.ts`：`CN_DOCS_URL`/`INTL_DOCS_URL` 由自建 `https://3panel.erguotou.me/docs/v2`（**实测 404**）改指上游 `https://1panel.cn/docs/v2` / `https://1panel.pro/docs/v2`；全站 `/user_manual/...`、`/dev_manual/api_manual/` 深链实测均 200。<br>③ `frontend/src/components/footer-navigation/model.ts` 与 `frontend/src/views/setting/about/index.vue`：仓库地址 `https://cnb.cool/erguotou520/3panel` → `https://github.com/erguotou520/3Panel`，issue 路径 `/-/issues` → `/issues`；star 因 GitHub 在 0 star 时 `/stargazers` 返回 404，暂落仓库首页。 |
+| 13 | **页脚版权 / 文档地址 / 仓库地址收口**（后续调整） | ① `frontend/src/layout/components/AppFooter.vue`：页脚版权去掉上游主体，`Copyright © 2014-{{year}} 飞致云 (1Panel) · 3Panel · GPLv3` → `Copyright © {{year}} 3Panel · GPLv3`，同步删除 12 个语言包里的 `commons.fit2cloud` 键（GPLv3 権利声明仍在 `NOTICE.md` / `LICENSE` 保留）。<br>② `frontend/src/store/modules/global.ts`：`CN_DOCS_URL`/`INTL_DOCS_URL` 由自建 `https://generic.cloudsmith.io/3panel/3panel/docs/v2`（**实测 404**）改指上游 `https://1panel.cn/docs/v2` / `https://1panel.pro/docs/v2`；全站 `/user_manual/...`、`/dev_manual/api_manual/` 深链实测均 200。<br>③ `frontend/src/components/footer-navigation/model.ts` 与 `frontend/src/views/setting/about/index.vue`：仓库地址 `https://cnb.cool/erguotou520/3panel` → `https://github.com/erguotou520/3Panel`，issue 路径 `/-/issues` → `/issues`；star 因 GitHub 在 0 star 时 `/stargazers` 返回 404，暂落仓库首页。 |
 
 **TLS 校验关闭的根因（回答"是不是多节点引入"）**：**不是**。
 `core/utils/req_helper/requset.go` 与上游 1Panel 的 `master` 分支逐字对比，
@@ -306,12 +306,12 @@ func RepoURL() string {
 
 恢复 TLS 校验后**不会影响任何正常功能**，因为：
 
-1. **被打通的路径本来就都是公网 HTTPS**：升级包下载（`3panel.erguotou.me`，Cloudflare 证书）、
+1. **被打通的路径本来就都是公网 HTTPS**：升级包下载（`generic.cloudsmith.io/3panel/3panel`，Cloudflare 证书）、
    应用商店、AI 模型 API、云存储公网 API —— 全由受信任 CA 签发，校验天然通过；
 2. **需要自签名/不校验的场景一处没动**：自建 WebDAV/MinIO/S3（`webdav.go`/`minio.go`/`s3.go`）、
    自签 HTTPS 代理（`ssh/http.go`）、MongoDB/MySQL（配置项开关）、节点加入 bootstrap（`join.go`）
    —— 这些仍保持原行为；
-3. **唯一会"变坏"的情况**：如果 `3panel.erguotou.me` 用了**自签名证书**，升级会失败；
+3. **唯一会"变坏"的情况**：如果 `generic.cloudsmith.io/3panel/3panel` 用了**自签名证书**，升级会失败；
    Cloudflare 托管默认满足受信 CA 要求。
 
 **验证结果**：`core` 与 `agent` 两个 Go 模块 `go build ./...` 完全通过；

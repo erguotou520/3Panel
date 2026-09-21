@@ -849,7 +849,7 @@ func checkProxy(req dto.ProxyUpdate) error {
 	client := http.Client{Timeout: 10 * time.Second, Transport: &transport}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://3panel.erguotou.me/", nil)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://generic.cloudsmith.io/3panel/3panel/", nil)
 	if err != nil {
 		return buserr.WithErr("ErrProxySetting", err)
 	}

@@ -2,7 +2,7 @@
 # ---------------------------------------------------------------------------
 # 3Panel one-line installer — bootstrap only.
 #
-#   bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
+#   bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/quick_start.sh)"
 #
 # What this does: resolve the newest release for this machine's architecture,
 # download the package, verify its sha256 against the published value, extract
@@ -18,7 +18,7 @@
 # Environment knobs (all optional)
 #   PANEL3_MIRROR     use exactly this base URL and skip probing (local mirror)
 #   PANEL3_ORIGIN     release-channel base, INCLUDING the /package segment
-#                     (default https://3panel.erguotou.me/package)
+#                     (default https://generic.cloudsmith.io/3panel/3panel/package)
 #   PANEL3_WORKDIR    where the package is unpacked  (default ./3panel-install)
 #   PANEL3_RETRIES    download attempts per URL      (default 5)
 #   PANEL3_PROBE_RETRIES
@@ -47,9 +47,9 @@ ESC_OFF=$'\033[0m'
 
 # The release-channel BASE, not the site root: every lookup below appends
 # /$MODE/latest, so this must already carry the "/package" segment. Getting this
-# wrong produces a plain 404 on https://3panel.erguotou.me/stable/latest, which
+# wrong produces a plain 404 on https://generic.cloudsmith.io/3panel/3panel/stable/latest, which
 # looks like a network problem rather than a wrong URL.
-ORIGIN=${PANEL3_ORIGIN:-https://3panel.erguotou.me/package}
+ORIGIN=${PANEL3_ORIGIN:-https://generic.cloudsmith.io/3panel/3panel/package}
 MODE=${INSTALL_MODE:-stable}
 WORKDIR=${PANEL3_WORKDIR:-$PWD/3panel-install}
 RETRIES=${PANEL3_RETRIES:-5}
@@ -164,7 +164,7 @@ usage() {
     cat <<'EOF'
 3Panel one-line installer (bootstrap)
 
-  bash -c "$(curl -sSL https://3panel.erguotou.me/package/quick_start.sh)"
+  bash -c "$(curl -sSL https://generic.cloudsmith.io/3panel/3panel/package/quick_start.sh)"
 
 Options:
   --help          show this help and exit
@@ -176,7 +176,7 @@ Environment:
   ARCH=amd64|arm64                 override architecture detection
   PANEL3_MIRROR=<base url>         use one exact base, skip probing
   PANEL3_ORIGIN=<base url>         release-channel base, INCLUDING /package
-                                   (default https://3panel.erguotou.me/package)
+                                   (default https://generic.cloudsmith.io/3panel/3panel/package)
   PANEL3_WORKDIR=<dir>             unpack location   (default ./3panel-install)
   PANEL3_RETRIES=<n>               download attempts per URL (default 5)
   PANEL3_PROBE_RETRIES=<n>         version-probe attempts per base (default 6)

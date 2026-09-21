@@ -922,8 +922,8 @@ func orderedAppRepoURLs(preferred string) []string {
 	return urls
 }
 
-// selectAppRepoBase races the tiny version marker only. The winning base is
-// then reused for the list, icons, compose files and application archives.
+// selectAppRepoBase probes the configured repository's version marker, then
+// reuses that base for the list, icons, compose files and application archives.
 func selectAppRepoBase() (string, []byte, error) {
 	bases := global.AppRepoURLs()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(constant.TimeOut20s)*time.Second)

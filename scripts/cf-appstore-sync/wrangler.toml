@@ -2,21 +2,20 @@ name = "appstore-sync"
 main = "src/index.js"
 compatibility_date = "2026-09-17"
 
-# 每 6 小时跑一次；一轮只处理 ASSETS_PER_RUN 个资源，游标存在 R2 里循环推进
-# 第二个表达式是每周一次的强制复检（见 FORCE_CRON）：即使上游 version.txt 没变，
-# 也会用 If-None-Match 重新校验全部资源，覆盖"改了文件但没 bump 版本"的情况
-[triggers]
-crons = ["0 */6 * * *", "0 3 * * SUN"]
+# 定时同步已迁至 .github/workflows/sync-appstore.yml。保留 Worker 源码仅供
+# 手动调试，不配置 cron，避免它与 GitHub Actions 并发覆盖同一份制品。
 
 [vars]
 # 面板 app.yaml 里的 base.mode，必须与客户端一致。
 # 实测上游 apps.1panel.pro 仅 dev 与 stable 可用（200），beta 与 prod 一律返回 403，不要填。
-MODE = "dev"
+MODE = "stable"
 # 上游源站，保持默认即可
 SRC_ORIGIN = "https://apps.1panel.pro"
 # 你的 R2 公开域名（自定义域名或 r2.dev），必须是 https 且不带结尾斜杠
-# 例：https://3panel.erguotou.me 或 https://appstore-xxx.your-subdomain.r2.dev
-DST_ORIGIN = "https://3panel.erguotou.me"
+# 例：https://generic.cloudsmith.io/3panel/3panel 或 https://appstore-xxx.your-subdomain.r2.dev
+DST_ORIGIN = "https://generic.cloudsmith.io/3panel/3panel"
+CLOUDSMITH_OWNER = "3panel"
+CLOUDSMITH_REPOSITORY = "3panel"
 # 每轮最多处理多少个资源（图标 / docker-compose / 应用包）。真正的刹车是下面的子请求预算
 # 总资源量：不镜像应用包 351，镜像应用包 1767（包多为 1KB 级模板，少数大包最大 ~45MB，总量约 0.7GB）
 ASSETS_PER_RUN = "1000"
@@ -28,13 +27,13 @@ SUBREQUEST_LIMIT = "50"
 # 单个资源连续失败多少次后放弃（避免坏条目让整轮永远跑不完）
 RETRY_MAX_ATTEMPTS = "5"
 # 是否连应用安装包（*.tar.gz）一起镜像。约 1416 个文件 / 总量 ~0.7GB，R2 免费额度 10GB 足够
-SYNC_APP_PACKAGES = "false"
+SYNC_APP_PACKAGES = "true"
 # 与 crons 中某个表达式完全一致时，该次触发执行强制全量复检（忽略 version.txt 是否变化）
 # 留空则关闭该能力；若不需要每周复检，把 crons 里的第二个表达式一起删掉
 FORCE_CRON = "0 3 * * SUN"
 
 # ---------------------------------------------------------------------------
-# 资源通道（ResourceURL = https://3panel.erguotou.me/resource）
+# 资源通道（ResourceURL = https://generic.cloudsmith.io/3panel/3panel/resource）
 #
 # 面板向这里要 5 个对象：脚本库 3 个 + 语言包 + GeoIP。
 # 上游把它们的路径拆开了：脚本库在 /resource/v2/ 前缀下，语言包和 GeoIP 在 /resource/ 下。
@@ -51,10 +50,6 @@ SYNC_RESOURCE = "true"
 SYNC_RESOURCE_LANG = "false"
 # 是否让 cron 镜像 GeoIP.mmdb（19.5 MB）。默认 false；需要时用 /sync-resource?geoip=true。
 SYNC_RESOURCE_GEOIP = "false"
-
-[[r2_buckets]]
-binding = "APPSTORE"
-bucket_name = "appstore"
 
 # 单次调用的子请求上限。免费版默认/上限都是 50；付费版默认 10000、最高 10000000。
 # 想一轮跑完全部 1767 个资源：付费版把它和 SUBREQUEST_LIMIT 一起改成 2200。
