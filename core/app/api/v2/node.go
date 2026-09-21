@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/3panel-dev/3panel/core/app/api/v2/helper"
+	appauth "github.com/3panel-dev/3panel/core/app/auth"
 	"github.com/3panel-dev/3panel/core/app/dto"
 	"github.com/gin-gonic/gin"
 )
@@ -87,12 +88,16 @@ func (b *BaseApi) CreateNode(c *gin.Context) {
 	}
 	// The command has to point at whatever host the operator is using right
 	// now, otherwise it would send the agent to 127.0.0.1 on the wrong machine.
-	res, err := nodeService.Create(req, "https://"+c.Request.Host)
+	res, err := nodeService.Create(req, requestOrigin(c))
 	if err != nil {
 		helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrNodeCreate", err)
 		return
 	}
 	helper.SuccessWithData(c, res)
+}
+
+func requestOrigin(c *gin.Context) string {
+	return appauth.PasskeyRequestScheme(c) + "://" + c.Request.Host
 }
 
 // @Tags Node

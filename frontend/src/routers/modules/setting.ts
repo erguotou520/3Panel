@@ -5,7 +5,7 @@ const settingPermissions = ['alert_view', 'backup_view'];
 
 const redirectToAvailableSetting = () => {
     const globalStore = GlobalStore();
-    if (globalStore.isAdmin) {
+    if (globalStore.isAdmin && globalStore.isMaster) {
         return '/settings/panel';
     }
     if (globalStore.hasPermission('alert_view')) {
@@ -48,6 +48,7 @@ const settingRouter = {
                         title: 'setting.panel',
                         activeMenu: '/settings',
                         adminOnly: true,
+                        masterOnly: true,
                     },
                 },
                 {
@@ -84,6 +85,7 @@ const settingRouter = {
                         title: 'setting.about',
                         activeMenu: '/settings',
                         adminOnly: true,
+                        masterOnly: true,
                     },
                 },
                 {
@@ -96,6 +98,7 @@ const settingRouter = {
                         title: 'setting.safe',
                         activeMenu: '/settings',
                         adminOnly: true,
+                        masterOnly: true,
                     },
                 },
                 {
@@ -120,6 +123,7 @@ const settingRouter = {
                         title: 'xpack.node.nodeManagement',
                         activeMenu: '/settings',
                         adminOnly: true,
+                        masterOnly: true,
                     },
                 },
                 {

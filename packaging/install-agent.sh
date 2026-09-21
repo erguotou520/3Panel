@@ -271,18 +271,28 @@ open_firewall() {
 run_join() {
     step "$(say "向面板换取证书并切换到节点模式" "Exchanging the token for certificates")"
     local args=("join" "--master" "$MASTER" "--token" "$TOKEN" "--port" "$NODE_PORT")
-    local attempt
+    local attempt output_file joined_addr
     [[ -n "$NODE_ADDR" ]] && args+=("--addr" "$NODE_ADDR")
+    output_file="$(mktemp "${TMPDIR:-/tmp}/3panel-join.XXXXXX")"
     # 主控只在成功时消耗 token，重试是安全的；TLS 握手偶发被重置不值得整个失败。
     for attempt in 1 2 3; do
         if [[ "$attempt" -gt 1 ]]; then
             warn "$(say "第 ${attempt} 次尝试…" "attempt ${attempt}…")"
             sleep 2
         fi
-        if "/usr/local/bin/$AGENT_BIN_NAME" "${args[@]}"; then
+        if "/usr/local/bin/$AGENT_BIN_NAME" "${args[@]}" 2>&1 | tee "$output_file"; then
+            if [[ -z "$NODE_ADDR" ]]; then
+                joined_addr="$(sed -n 's/^joined master .* (\(.*\))$/\1/p' "$output_file" | tail -n 1)"
+                case "$joined_addr" in
+                    \[*\]:*) NODE_ADDR="${joined_addr#\[}"; NODE_ADDR="${NODE_ADDR%\]:*}" ;;
+                    *:*) NODE_ADDR="${joined_addr%:*}" ;;
+                esac
+            fi
+            rm -f "$output_file"
             return 0
         fi
     done
+    rm -f "$output_file"
     err "$(say "加入失败（已尝试 3 次）：确认面板地址可达、token 未过期且未被使用" \
         "join failed after 3 attempts: the master must be reachable and the token unused and unexpired")"
 }

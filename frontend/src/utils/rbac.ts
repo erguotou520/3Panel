@@ -7,6 +7,7 @@ export type PermissionMetaValue = string | string[];
 
 type RouteAccessMeta = {
     adminOnly?: boolean;
+    masterOnly?: boolean;
     protectedRoleOnly?: boolean;
     permission?: PermissionMetaValue;
 };
@@ -60,6 +61,9 @@ export const hasRouteRoleAccess = (meta?: RouteMeta & RouteAccessMeta) => {
 
     if (!meta) {
         return true;
+    }
+    if (meta.masterOnly && !globalStore.isMaster) {
+        return false;
     }
     if (globalStore.isAdmin) {
         return true;

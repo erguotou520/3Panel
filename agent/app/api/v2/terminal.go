@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -35,7 +37,60 @@ import (
 // @Security Timestamp
 // @Router /hosts/terminal/local [get]
 func (b *BaseApi) WsLocalTerminal(c *gin.Context) {
+	if !global.IsMaster {
+		b.runLocalCommandSession(c)
+		return
+	}
 	b.runSSHSession(c, "local", loadLocalConn, c.DefaultQuery("command", ""))
+}
+
+func (b *BaseApi) runLocalCommandSession(c *gin.Context) {
+	wsConn, cols, rows, ok := prepareTerminalSession(c)
+	if !ok {
+		return
+	}
+	defer wsConn.Close()
+	identity, ok := loadTerminalIdentity(c)
+	if !ok {
+		_ = wshandleError(wsConn, errors.New("missing terminal identity"))
+		return
+	}
+
+	opts := terminal.SessionOptions{
+		Identity:   identity,
+		Kind:       "local",
+		Title:      sanitizeTerminalTitle(c.Query("title")),
+		Persistent: c.Query("terminalPersistent") == "true",
+		Cols:       cols,
+		Rows:       rows,
+	}
+	if err := terminal.ServeCommand(wsConn, strings.TrimSpace(c.Query("session")), opts, func() (*terminal.LocalCommand, error) {
+		return newLocalShell(c.DefaultQuery("command", ""))
+	}); err != nil {
+		_ = wshandleError(wsConn, err)
+	}
+}
+
+func newLocalShell(command string) (*terminal.LocalCommand, error) {
+	shell := strings.TrimSpace(os.Getenv("SHELL"))
+	if shell == "" {
+		if bash, err := exec.LookPath("bash"); err == nil {
+			shell = bash
+		} else {
+			shell = "/bin/sh"
+		}
+	}
+	local, err := terminal.NewCommand(shell, "-l")
+	if err != nil {
+		return nil, err
+	}
+	if command != "" {
+		if _, err := local.Write([]byte(command + "\n")); err != nil {
+			_ = local.Close()
+			return nil, err
+		}
+	}
+	return local, nil
 }
 
 // @Tags Terminal

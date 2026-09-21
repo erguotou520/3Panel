@@ -201,6 +201,10 @@ func (b *BaseApi) LoadLocalConn(c *gin.Context) {
 // @Security Timestamp
 // @Router /settings/ssh/check [post]
 func (b *BaseApi) CheckLocalConn(c *gin.Context) {
+	if !global.IsMaster {
+		helper.SuccessWithData(c, true)
+		return
+	}
 	client, err := loadLocalConn()
 	if err == nil && client != nil {
 		client.Close()
