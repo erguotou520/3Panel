@@ -1,4 +1,4 @@
-package xpack
+package alert
 
 import (
 	"fmt"
@@ -6,7 +6,6 @@ import (
 
 	"github.com/3panel-dev/3panel/agent/app/dto"
 	"github.com/3panel-dev/3panel/agent/app/model"
-	"github.com/3panel-dev/3panel/agent/utils/xpack/providers"
 )
 
 func DeliverCustomWebhookAlertLog(
@@ -19,13 +18,13 @@ func DeliverCustomWebhookAlertLog(
 	transport *http.Transport,
 	agentInfo *dto.AgentInfo,
 	task dto.AlertTaskMetadata,
-) (providers.DeliveryResult, error) {
-	if provider, ok := AlertProvider.(providers.CustomWebhookDeliveryProvider); ok {
+) (DeliveryResult, error) {
+	if provider, ok := Provider.(CustomWebhookDeliveryProvider); ok {
 		result, err := provider.CreateCustomWebhookAlertLog(alertType, info, create, project, params, config, transport, agentInfo, task)
 		return validateCustomWebhookDeliveryResult(result, err)
 	}
-	err := AlertProvider.CreateWebhookAlertLog(alertType, info, create, project, params, config, transport, agentInfo)
-	return providers.DeliveryResult{}, err
+	err := Provider.CreateWebhookAlertLog(alertType, info, create, project, params, config, transport, agentInfo)
+	return DeliveryResult{}, err
 }
 
 func DeliverTaskScanCustomWebhookAlertLog(
@@ -37,21 +36,21 @@ func DeliverTaskScanCustomWebhookAlertLog(
 	transport *http.Transport,
 	agentInfo *dto.AgentInfo,
 	task dto.AlertTaskMetadata,
-) (providers.DeliveryResult, error) {
-	if provider, ok := AlertProvider.(providers.CustomWebhookDeliveryProvider); ok {
+) (DeliveryResult, error) {
+	if provider, ok := Provider.(CustomWebhookDeliveryProvider); ok {
 		result, err := provider.CreateTaskScanCustomWebhookAlertLog(alert, alertType, create, pushAlert, config, transport, agentInfo, task)
 		return validateCustomWebhookDeliveryResult(result, err)
 	}
-	err := AlertProvider.CreateTaskScanWebhookAlertLog(alert, alertType, create, pushAlert, config, transport, agentInfo)
-	return providers.DeliveryResult{}, err
+	err := Provider.CreateTaskScanWebhookAlertLog(alert, alertType, create, pushAlert, config, transport, agentInfo)
+	return DeliveryResult{}, err
 }
 
-func validateCustomWebhookDeliveryResult(result providers.DeliveryResult, err error) (providers.DeliveryResult, error) {
+func validateCustomWebhookDeliveryResult(result DeliveryResult, err error) (DeliveryResult, error) {
 	if err != nil {
 		return result, err
 	}
 	if result.Queued && result.LogID == 0 {
-		return providers.DeliveryResult{}, fmt.Errorf("custom webhook provider queued a delivery without a log ID")
+		return DeliveryResult{}, fmt.Errorf("custom webhook provider queued a delivery without a log ID")
 	}
 	return result, nil
 }

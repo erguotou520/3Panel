@@ -25,7 +25,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/encrypt"
 	"github.com/3panel-dev/3panel/agent/utils/firewall"
 	"github.com/3panel-dev/3panel/agent/utils/ssh"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/google/uuid"
@@ -104,7 +104,7 @@ var InitSetting = &gormigrate.Migration{
 	ID: "20240722-init-setting",
 	Migrate: func(tx *gorm.DB) error {
 		global.CONF.Base.EncryptKey = common.RandStr(16)
-		nodeInfo, err := xpack.MultiNodeProvider.LoadNodeInfo(true)
+		nodeInfo, err := multinode.Provider.LoadNodeInfo(true)
 		if err != nil {
 			return err
 		}

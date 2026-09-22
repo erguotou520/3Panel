@@ -10,7 +10,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/api/v2/helper"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/gin-gonic/gin"
 )
 
@@ -20,7 +20,7 @@ func Certificate() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		if !xpack.MultiNodeProvider.ValidateCertificate(c) {
+		if !multinode.Provider.ValidateCertificate(c) {
 			CloseDirectly(c)
 			return
 		}

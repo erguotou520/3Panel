@@ -20,7 +20,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/appicon"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 )
 
 type appSyncContext struct {
@@ -87,7 +87,7 @@ func (a AppService) createSyncAppStoreTask(sharedCtx **appSyncContext) func(t *t
 
 		ctx := &appSyncContext{
 			task:           t,
-			httpClient:     http.Client{Timeout: time.Duration(constant.TimeOut20s) * time.Second, Transport: xpack.MultiNodeProvider.LoadRequestTransport()},
+			httpClient:     http.Client{Timeout: time.Duration(constant.TimeOut20s) * time.Second, Transport: multinode.Provider.LoadRequestTransport()},
 			baseRemoteUrl:  fmt.Sprintf("%s/%s/3panel", appRepoBase, global.CONF.Base.Mode),
 			systemVersion:  setting.SystemVersion,
 			settingService: settingService,

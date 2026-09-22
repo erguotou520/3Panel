@@ -19,7 +19,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/init/viper"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/encrypt"
-	"github.com/3panel-dev/3panel/agent/utils/xpack/helper"
+	"github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/spf13/cobra"
 )
 
@@ -99,7 +99,7 @@ func runJoin(cmd *cobra.Command, args []string) error {
 	if port == 0 {
 		port = joinPort
 	}
-	if err := helper.SaveNodeConfig(port); err != nil {
+	if err := multinode.SaveNodeConfig(port); err != nil {
 		return fmt.Errorf("write node config failed: %w", err)
 	}
 

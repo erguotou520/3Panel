@@ -24,7 +24,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/docker"
 	terminalai "github.com/3panel-dev/3panel/agent/utils/terminal/ai"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/docker/docker/api/types/container"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
@@ -151,7 +151,7 @@ func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 	if installs, _ := appInstallRepo.ListBy(context.Background(), repo.WithByLowerName(req.Name)); len(installs) > 0 {
 		return nil, buserr.New("ErrNameIsExist")
 	}
-	if !global.CONF.Base.IsEnterprise && !xpack.MultiNodeProvider.IsXpack() {
+	if !global.CONF.Base.IsEnterprise && !multinode.Provider.IsXpack() {
 		count, _, err := agentRepo.Page(1, 1)
 		if err != nil {
 			return nil, err

@@ -22,8 +22,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/copier"
 	"github.com/3panel-dev/3panel/agent/utils/email"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
-	"github.com/3panel-dev/3panel/agent/utils/xpack/providers"
+	alert "github.com/3panel-dev/3panel/agent/platform/alert"; multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/shirou/gopsutil/v4/disk"
 )
 
@@ -908,7 +907,7 @@ func (a AlertService) TestAlertConfig(req dto.AlertConfigTest) (bool, error) {
 		Body:    i18n.GetMsgByKey("TestAlert"),
 		IsHTML:  false,
 	}
-	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	transport := multinode.Provider.LoadRequestTransport()
 	if err := email.SendMail(cfg, msg, transport); err != nil {
 		return false, err
 	}
@@ -980,11 +979,11 @@ func (a AlertService) TestCustomAlertConfig(req dto.AlertConfigTest) (dto.AlertC
 	if err != nil {
 		return dto.AlertConfigTestResult{}, err
 	}
-	tester, ok := xpack.AlertProvider.(providers.CustomWebhookTester)
+	tester, ok := alert.Provider.(alert.CustomWebhookTester)
 	if !ok {
 		return dto.AlertConfigTestResult{
 			Success: false,
-			Message: providers.ErrCustomWebhookUnsupported.Error(),
+			Message: alert.ErrCustomWebhookUnsupported.Error(),
 		}, nil
 	}
 	return tester.TestCustomWebhook(resolved)

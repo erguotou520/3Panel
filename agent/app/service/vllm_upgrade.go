@@ -6,7 +6,7 @@ import (
 
 	"github.com/3panel-dev/3panel/agent/buserr"
 	"github.com/3panel-dev/3panel/agent/utils/common"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 )
 
 const (
@@ -24,7 +24,7 @@ func isVllmProOnlyVersion(appKey, version string) bool {
 }
 
 func canAccessVllmVersion(appKey, version string) bool {
-	return !isVllmProOnlyVersion(appKey, version) || xpack.MultiNodeProvider.IsXpack()
+	return !isVllmProOnlyVersion(appKey, version) || multinode.Provider.IsXpack()
 }
 
 func checkVllmVersionAccess(appKey, version string) error {

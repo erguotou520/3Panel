@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 
 	"github.com/3panel-dev/3panel/agent/buserr"
 	"github.com/3panel-dev/3panel/agent/global"
@@ -47,7 +47,7 @@ func HandleGet(url string) (*http.Response, error) {
 }
 
 func HandleRequest(url, method string, timeout int) (int, []byte, error) {
-	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	transport := multinode.Provider.LoadRequestTransport()
 	client := http.Client{Timeout: time.Duration(timeout) * time.Second, Transport: transport}
 	return HandleRequestWithClient(&client, url, method, timeout)
 }
@@ -134,7 +134,7 @@ func RequestFile(url, method string, timeout int) (io.ReadCloser, context.Cancel
 			return
 		}
 	}()
-	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	transport := multinode.Provider.LoadRequestTransport()
 	client := http.Client{Timeout: time.Duration(timeout) * time.Second, Transport: transport}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout)*time.Second)
 	request, err := http.NewRequestWithContext(ctx, method, url, nil)

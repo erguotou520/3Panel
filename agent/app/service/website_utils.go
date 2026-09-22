@@ -17,7 +17,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 
 	"github.com/3panel-dev/3panel/agent/app/repo"
 
@@ -589,7 +589,7 @@ func delNginxConfig(website model.Website, force bool) error {
 	}
 	sitePath := GetSiteDir(website.Alias)
 	if fileOp.Stat(sitePath) {
-		xpack.MultiNodeProvider.RemoveTamper(website.Alias)
+		multinode.Provider.RemoveTamper(website.Alias)
 		_ = fileOp.DeleteDir(sitePath)
 	}
 

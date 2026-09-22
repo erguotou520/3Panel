@@ -1,4 +1,4 @@
-package helper
+package alert
 
 import (
 	"net/http"
@@ -7,23 +7,22 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/model"
 	"github.com/3panel-dev/3panel/agent/constant"
 	alertUtil "github.com/3panel-dev/3panel/agent/utils/alert"
-	"github.com/3panel-dev/3panel/agent/utils/xpack/providers"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 )
 
 type alertHelper struct{}
 
 var (
-	_ providers.CustomWebhookTester           = (*alertHelper)(nil)
-	_ providers.CustomWebhookDeliveryProvider = (*alertHelper)(nil)
+	_ CustomWebhookTester           = (*alertHelper)(nil)
+	_ CustomWebhookDeliveryProvider = (*alertHelper)(nil)
 )
 
 var loadCommunityCustomWebhookContext = func() (*http.Transport, *dto.AgentInfo) {
-	multiNode := &multiNodeHelper{}
-	agentInfo, _ := multiNode.GetAgentInfo()
-	return multiNode.LoadRequestTransport(), agentInfo
+	agentInfo, _ := multinode.Provider.GetAgentInfo()
+	return multinode.Provider.LoadRequestTransport(), agentInfo
 }
 
-func NewIAlertProvider() providers.AlertProvider {
+func NewProvider() AlertProvider {
 	return &alertHelper{}
 }
 
@@ -49,14 +48,14 @@ func (a *alertHelper) CreateWebhookAlertLog(alertType string, info dto.AlertDTO,
 	return nil
 }
 
-func (a *alertHelper) CreateCustomWebhookAlertLog(alertType string, info dto.AlertDTO, create dto.AlertLogCreate, project string, params []dto.Param, config model.AlertConfig, transport *http.Transport, agentInfo *dto.AgentInfo, _ dto.AlertTaskMetadata) (providers.DeliveryResult, error) {
+func (a *alertHelper) CreateCustomWebhookAlertLog(alertType string, info dto.AlertDTO, create dto.AlertLogCreate, project string, params []dto.Param, config model.AlertConfig, transport *http.Transport, agentInfo *dto.AgentInfo, _ dto.AlertTaskMetadata) (DeliveryResult, error) {
 	err := alertUtil.CreateCustomWebhookAlertLog(alertType, info, create, project, params, config, transport, agentInfo)
-	return providers.DeliveryResult{}, err
+	return DeliveryResult{}, err
 }
 
-func (a *alertHelper) CreateTaskScanCustomWebhookAlertLog(alert dto.AlertDTO, alertType string, create dto.AlertLogCreate, pushAlert dto.PushAlert, config model.AlertConfig, transport *http.Transport, agentInfo *dto.AgentInfo, _ dto.AlertTaskMetadata) (providers.DeliveryResult, error) {
+func (a *alertHelper) CreateTaskScanCustomWebhookAlertLog(alert dto.AlertDTO, alertType string, create dto.AlertLogCreate, pushAlert dto.PushAlert, config model.AlertConfig, transport *http.Transport, agentInfo *dto.AgentInfo, _ dto.AlertTaskMetadata) (DeliveryResult, error) {
 	err := alertUtil.CreateTaskScanCustomWebhookAlertLog(alert, alertType, create, pushAlert, config, transport, agentInfo)
-	return providers.DeliveryResult{}, err
+	return DeliveryResult{}, err
 }
 
 func (a *alertHelper) TestCustomWebhook(config dto.AlertCustomWebhookResolvedConfig) (dto.AlertConfigTestResult, error) {

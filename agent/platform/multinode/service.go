@@ -1,4 +1,4 @@
-package helper
+package multinode
 
 import (
 	"encoding/json"
@@ -15,7 +15,6 @@ import (
 	"github.com/3panel-dev/3panel/agent/buserr"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/common"
-	"github.com/3panel-dev/3panel/agent/utils/xpack/providers"
 	"github.com/gin-gonic/gin"
 )
 
@@ -47,7 +46,7 @@ type nodeConfig struct {
 
 type multiNodeHelper struct{}
 
-func NewIMultiNodeProvider() providers.MultiNodeProvider {
+func NewProvider() MultiNodeProvider {
 	return &multiNodeHelper{}
 }
 

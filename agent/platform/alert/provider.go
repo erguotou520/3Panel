@@ -1,4 +1,4 @@
-package providers
+package alert
 
 import (
 	"errors"

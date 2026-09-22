@@ -37,7 +37,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/nginx/parser"
 	"github.com/3panel-dev/3panel/agent/utils/re"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/pkg/errors"
@@ -1087,7 +1087,7 @@ func upApp(task *task.Task, appInstall *model.AppInstall, pullImages, useLifecyc
 			if err != nil {
 				return err
 			}
-			imagePrefix := xpack.MultiNodeProvider.GetImagePrefix()
+			imagePrefix := multinode.Provider.GetImagePrefix()
 			dockerCLi, err := docker.NewClient()
 			if err != nil {
 				return err
@@ -1694,7 +1694,7 @@ func addDockerComposeCommonParam(composeMap map[string]interface{}, serviceName 
 	if !serviceValid {
 		return buserr.New("ErrFileParse")
 	}
-	imagePreFix := xpack.MultiNodeProvider.GetImagePrefix()
+	imagePreFix := multinode.Provider.GetImagePrefix()
 	if imagePreFix != "" {
 		for _, service := range services {
 			serviceValue := service.(map[string]interface{})

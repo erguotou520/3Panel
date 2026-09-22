@@ -22,7 +22,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/controller"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/jinzhu/copier"
 	"github.com/robfig/cron/v3"
 )
@@ -180,7 +180,7 @@ func (c *ClamService) Create(req dto.ClamCreate, operator string) error {
 		clam.InfectedDir = ""
 	}
 	if len(req.Spec) != 0 {
-		entryID, err := xpack.MultiNodeProvider.StartClam(&clam, false)
+		entryID, err := multinode.Provider.StartClam(&clam, false)
 		if err != nil {
 			return err
 		}
@@ -233,7 +233,7 @@ func (c *ClamService) Update(req dto.ClamUpdate, operator string) error {
 		upMap["entry_id"] = 0
 	}
 	if len(req.Spec) != 0 && clam.Status != constant.StatusDisable {
-		newEntryID, err := xpack.MultiNodeProvider.StartClam(&clamItem, true)
+		newEntryID, err := multinode.Provider.StartClam(&clamItem, true)
 		if err != nil {
 			return err
 		}
@@ -277,7 +277,7 @@ func (c *ClamService) UpdateStatus(id uint, status string) error {
 		err     error
 	)
 	if status == constant.StatusEnable {
-		entryID, err = xpack.MultiNodeProvider.StartClam(&clam, true)
+		entryID, err = multinode.Provider.StartClam(&clam, true)
 		if err != nil {
 			return err
 		}

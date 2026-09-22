@@ -32,7 +32,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/docker"
 	"github.com/3panel-dev/3panel/agent/utils/files"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"gopkg.in/yaml.v3"
 )
 
@@ -930,7 +930,7 @@ func selectAppRepoBase() (string, []byte, error) {
 	defer cancel()
 	client := http.Client{
 		Timeout:   time.Duration(constant.TimeOut20s) * time.Second,
-		Transport: xpack.MultiNodeProvider.LoadRequestTransport(),
+		Transport: multinode.Provider.LoadRequestTransport(),
 	}
 	defer client.CloseIdleConnections()
 	results := make(chan appRepoProbeResult, len(bases))
@@ -1051,7 +1051,7 @@ func deleteCustomApp() {
 }
 
 func (a AppService) SyncAppListFromRemote(taskID string) (err error) {
-	if xpack.MultiNodeProvider.IsUseCustomApp() {
+	if multinode.Provider.IsUseCustomApp() {
 		return nil
 	}
 

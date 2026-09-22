@@ -10,7 +10,8 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	alertUtil "github.com/3panel-dev/3panel/agent/utils/alert"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	alertPlatform "github.com/3panel-dev/3panel/agent/platform/alert"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/jinzhu/copier"
 )
 
@@ -86,7 +87,7 @@ func sendAlert(alertRepo repo.IAlertRepo, alert dto.AlertDTO, pushAlert dto.Push
 			Count:   todayCount + 1,
 			Method:  methodStr,
 		}
-		err = xpack.AlertProvider.CreateTaskScanSMSAlertLog(alert, alert.Type, create, pushAlert, config, methodStr)
+		err = alertPlatform.Provider.CreateTaskScanSMSAlertLog(alert, alert.Type, create, pushAlert, config, methodStr)
 		if err != nil {
 			global.LOG.Errorf("%s alert sms push failed: %v", alert.Type, err)
 			return
@@ -104,8 +105,8 @@ func sendAlert(alertRepo repo.IAlertRepo, alert dto.AlertDTO, pushAlert dto.Push
 			Count:   todayCount + 1,
 			Method:  methodStr,
 		}
-		transport := xpack.MultiNodeProvider.LoadRequestTransport()
-		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
+		transport := multinode.Provider.LoadRequestTransport()
+		agentInfo, _ := multinode.Provider.GetAgentInfo()
 		err = alertUtil.CreateTaskScanEmailAlertLog(alert, create, pushAlert, constant.Email, transport, agentInfo, config)
 		if err != nil {
 			global.LOG.Errorf("%s alert email push failed: %v", alert.Type, err)
@@ -124,8 +125,8 @@ func sendAlert(alertRepo repo.IAlertRepo, alert dto.AlertDTO, pushAlert dto.Push
 			Count:   todayCount + 1,
 			Method:  methodStr,
 		}
-		transport := xpack.MultiNodeProvider.LoadRequestTransport()
-		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
+		transport := multinode.Provider.LoadRequestTransport()
+		agentInfo, _ := multinode.Provider.GetAgentInfo()
 		params := alertUtil.CreateAlertParams(alertUtil.GetCronJobTypeName(pushAlert.Param))
 		alertDetail := alertUtil.ProcessAlertDetail(alert, pushAlert.TaskName, params, constant.Bark)
 		alertRule := alertUtil.ProcessAlertRule(alert)
@@ -149,8 +150,8 @@ func sendAlert(alertRepo repo.IAlertRepo, alert dto.AlertDTO, pushAlert dto.Push
 			Count:   todayCount + 1,
 			Method:  methodStr,
 		}
-		transport := xpack.MultiNodeProvider.LoadRequestTransport()
-		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
+		transport := multinode.Provider.LoadRequestTransport()
+		agentInfo, _ := multinode.Provider.GetAgentInfo()
 		queued := false
 		if config.Type == constant.Custom {
 			task := dto.AlertTaskMetadata{
@@ -160,13 +161,13 @@ func sendAlert(alertRepo repo.IAlertRepo, alert dto.AlertDTO, pushAlert dto.Push
 				QuotaType: strconv.Itoa(int(pushAlert.EntryID)),
 				Method:    methodStr,
 			}
-			result, deliveryErr := xpack.DeliverTaskScanCustomWebhookAlertLog(alert, alert.Type, create, pushAlert, config, transport, agentInfo, task)
+			result, deliveryErr := alertPlatform.DeliverTaskScanCustomWebhookAlertLog(alert, alert.Type, create, pushAlert, config, transport, agentInfo, task)
 			queued, err = result.Queued, deliveryErr
 			if err == nil && result.Queued {
 				_, err = alertUtil.RecordQueuedAlertTask(result.LogID, task)
 			}
 		} else {
-			err = xpack.AlertProvider.CreateTaskScanWebhookAlertLog(alert, alert.Type, create, pushAlert, config, transport, agentInfo)
+			err = alertPlatform.Provider.CreateTaskScanWebhookAlertLog(alert, alert.Type, create, pushAlert, config, transport, agentInfo)
 		}
 		if err != nil {
 			global.LOG.Errorf("%s alert %s webhook push failed: %v", alert.Type, methodStr, err)

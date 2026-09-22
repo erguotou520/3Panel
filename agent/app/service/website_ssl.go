@@ -33,7 +33,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/files"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
 	"github.com/3panel-dev/3panel/agent/utils/ssl"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	gormv2 "gorm.io/gorm"
 )
 
@@ -290,7 +290,7 @@ func normalizeSSLPushConfig(pushNode bool, nodes string) (bool, string) {
 
 func setSSLPushConfig(websiteSSL *model.WebsiteSSL, pushNode bool, nodes string) {
 	pushNode, nodes = normalizeSSLPushConfig(pushNode, nodes)
-	if !global.IsMaster || !xpack.MultiNodeProvider.IsXpack() {
+	if !global.IsMaster || !multinode.Provider.IsXpack() {
 		pushNode = false
 		nodes = ""
 	}
@@ -300,7 +300,7 @@ func setSSLPushConfig(websiteSSL *model.WebsiteSSL, pushNode bool, nodes string)
 
 func pushSSLToNode(websiteSSL *model.WebsiteSSL, logger *log.Logger) error {
 	printSSLLog(logger, "StartPushSSLToNode", nil)
-	if err := xpack.MultiNodeProvider.PushSSLToNode(websiteSSL); err != nil {
+	if err := multinode.Provider.PushSSLToNode(websiteSSL); err != nil {
 		printSSLLog(logger, "PushSSLToNodeFailed", map[string]interface{}{"err": err.Error()})
 		return err
 	}
@@ -777,7 +777,7 @@ func (w WebsiteSSLService) Update(update request.WebsiteSSLUpdate) error {
 		updateParams["shell"] = ""
 	}
 	pushNode, nodes := normalizeSSLPushConfig(update.PushNode, update.Nodes)
-	if !global.IsMaster || !xpack.MultiNodeProvider.IsXpack() {
+	if !global.IsMaster || !multinode.Provider.IsXpack() {
 		pushNode = false
 		nodes = ""
 	}
@@ -944,7 +944,7 @@ func (w WebsiteSSLService) PushToNode(req request.WebsiteSSLPush) error {
 	if !global.IsMaster {
 		return errors.New("only master node can push SSL to nodes")
 	}
-	if !xpack.MultiNodeProvider.IsXpack() {
+	if !multinode.Provider.IsXpack() {
 		return errors.New("SSL node push is an XPack feature")
 	}
 	pushNode, nodes := normalizeSSLPushConfig(req.PushNode, req.Nodes)
@@ -974,7 +974,7 @@ func (w WebsiteSSLService) PushToNode(req request.WebsiteSSLPush) error {
 	websiteSSL.Nodes = nodes
 
 	if req.Sync {
-		return xpack.MultiNodeProvider.PushSSLToNode(websiteSSL)
+		return multinode.Provider.PushSSLToNode(websiteSSL)
 	}
 
 	pushTask, err := task.NewTask(task.GetTaskName(websiteSSL.PrimaryDomain, task.TaskPush, "SSL"), task.TaskPush, task.TaskScopeWebsite, req.TaskID, websiteSSL.ID)
@@ -983,7 +983,7 @@ func (w WebsiteSSLService) PushToNode(req request.WebsiteSSLPush) error {
 	}
 	pushTask.AddSubTask(i18n.GetMsgByKey("StartPushSSLToNode"), func(t *task.Task) error {
 		t.Log(i18n.GetMsgByKey("StartPushSSLToNode"))
-		if err := xpack.MultiNodeProvider.PushSSLToNode(websiteSSL); err != nil {
+		if err := multinode.Provider.PushSSLToNode(websiteSSL); err != nil {
 			t.Log(i18n.GetMsgWithMap("PushSSLToNodeFailed", map[string]interface{}{"err": err.Error()}))
 			return err
 		}

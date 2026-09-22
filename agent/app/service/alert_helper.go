@@ -21,7 +21,8 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/psutil"
 	versionUtil "github.com/3panel-dev/3panel/agent/utils/version"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	alertPlatform "github.com/3panel-dev/3panel/agent/platform/alert"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/load"
@@ -611,7 +612,7 @@ func isIPInWhitelist(ip string, whitelist []string) bool {
 
 func loadNodeException(alert dto.AlertDTO) {
 	// only master alert
-	failCount, err := xpack.AlertProvider.GetNodeErrorAlert()
+	failCount, err := alertPlatform.Provider.GetNodeErrorAlert()
 	if err != nil {
 		global.LOG.Errorf("error getting node, err: %s", err)
 		return
@@ -640,7 +641,7 @@ func loadNodeException(alert dto.AlertDTO) {
 
 func loadLicenseException(alert dto.AlertDTO) {
 	// only master alert
-	failCount, err := xpack.AlertProvider.GetLicenseErrorAlert()
+	failCount, err := alertPlatform.Provider.GetLicenseErrorAlert()
 	if err != nil {
 		global.LOG.Errorf("error getting license, err: %s", err)
 		return
@@ -731,7 +732,7 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 			Count:   todayCount + 1,
 			Method:  methodStr,
 		}
-		alertErr := xpack.AlertProvider.CreateSMSAlertLog(alertType, alert, create, quotaType, params, config, methodStr)
+		alertErr := alertPlatform.Provider.CreateSMSAlertLog(alertType, alert, create, quotaType, params, config, methodStr)
 		if alertErr != nil {
 			global.LOG.Infof("%s alert sms push faild, err: %v", alertType, alertErr.Error())
 			return
@@ -753,8 +754,8 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 		alertInfo.Type = alertType
 		create.AlertRule = alertUtil.ProcessAlertRule(alert)
 		create.AlertDetail = alertUtil.ProcessAlertDetail(alertInfo, quotaType, params, constant.Email)
-		transport := xpack.MultiNodeProvider.LoadRequestTransport()
-		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
+		transport := multinode.Provider.LoadRequestTransport()
+		agentInfo, _ := multinode.Provider.GetAgentInfo()
 		alertErr := alertUtil.CreateEmailAlertLog(create, alertInfo, params, transport, agentInfo, config)
 		if alertErr != nil {
 			global.LOG.Infof("%s alert email push faild, err: %v", alertType, alertErr.Error())
@@ -777,8 +778,8 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 		alertInfo.Type = alertType
 		create.AlertRule = alertUtil.ProcessAlertRule(alert)
 		create.AlertDetail = alertUtil.ProcessAlertDetail(alertInfo, quotaType, params, constant.Bark)
-		transport := xpack.MultiNodeProvider.LoadRequestTransport()
-		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
+		transport := multinode.Provider.LoadRequestTransport()
+		agentInfo, _ := multinode.Provider.GetAgentInfo()
 		alertErr := alertUtil.CreateBarkAlertLog(create, alertInfo, params, transport, agentInfo, config)
 		if alertErr != nil {
 			global.LOG.Infof("%s alert %s push failed, err: %v", alertType, methodStr, alertErr.Error())
@@ -797,8 +798,8 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 			Count:   todayCount + 1,
 			Method:  methodStr,
 		}
-		transport := xpack.MultiNodeProvider.LoadRequestTransport()
-		agentInfo, _ := xpack.MultiNodeProvider.GetAgentInfo()
+		transport := multinode.Provider.LoadRequestTransport()
+		agentInfo, _ := multinode.Provider.GetAgentInfo()
 		queued := false
 		var alertErr error
 		if config.Type == constant.Custom {
@@ -809,13 +810,13 @@ func doSendAlert(alert dto.AlertDTO, alertType, quota, quotaType string, params 
 				QuotaType: quotaType,
 				Method:    methodStr,
 			}
-			result, deliveryErr := xpack.DeliverCustomWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo, task)
+			result, deliveryErr := alertPlatform.DeliverCustomWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo, task)
 			queued, alertErr = result.Queued, deliveryErr
 			if alertErr == nil && result.Queued {
 				_, alertErr = alertUtil.RecordQueuedAlertTask(result.LogID, task)
 			}
 		} else {
-			alertErr = xpack.AlertProvider.CreateWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo)
+			alertErr = alertPlatform.Provider.CreateWebhookAlertLog(alertType, alert, create, quotaType, params, config, transport, agentInfo)
 		}
 		if alertErr != nil {
 			global.LOG.Infof("%s alert webhook %s push faild, err: %v", alertType, methodStr, alertErr)

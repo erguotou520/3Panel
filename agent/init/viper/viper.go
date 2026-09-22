@@ -9,7 +9,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/cmd/server/conf"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/files"
-	"github.com/3panel-dev/3panel/agent/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"
@@ -57,7 +57,7 @@ func Init() {
 }
 
 func initBaseInfo() {
-	nodeInfo, err := xpack.MultiNodeProvider.LoadNodeInfo(true)
+	nodeInfo, err := multinode.Provider.LoadNodeInfo(true)
 	if err != nil {
 		panic(err)
 	}
