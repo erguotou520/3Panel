@@ -191,13 +191,16 @@ const loadNodes = async () => {
         });
 };
 const changeNode = async (command: string) => {
-    if (currentNode.value === command || switchingNode.value) {
+    if (switchingNode.value) {
         return;
     }
     switchingNode.value = true;
     try {
         for (const item of nodes.value) {
             if (item.name == command) {
+                if (currentNode.value === command && props.version == item.version) {
+                    return;
+                }
                 if (command == 'local') {
                     if (isEnterprise.value) {
                         await loadCurrentUser('local');
