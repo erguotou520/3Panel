@@ -1,8 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -24,11 +26,10 @@ const (
 
 	joinTokenTTL    = 30 * time.Minute
 	joinTokenLength = 32
-	// joinScriptName / upgradeScriptName live at fixed paths on the release
+	// joinScriptName lives at a fixed path on the release
 	// host — publish-bootstrap.yml re-uploads them on every change, so a
 	// version never appears in the URL.
 	joinScriptName     = "join.sh"
-	upgradeScriptName  = "upgrade-agent.sh"
 	defaultNodePort    = 9999
 	remoteProbeTimeout = 5 * time.Second
 	nodeStatusOnline   = "Online"
@@ -44,7 +45,7 @@ type INodeService interface {
 	Options() ([]dto.NodeInfo, error)
 	Create(req dto.NodeCreate, masterAddr string) (*dto.NodeJoinCommand, error)
 	Join(req dto.NodeJoin) (*dto.NodeJoinResult, error)
-	UpgradeCommand() *dto.NodeUpgradeCommand
+	Upgrade(req dto.NodeUpgrade) (*dto.NodeUpgradeResult, error)
 	Delete(id uint) error
 	Check() ([]dto.NodeInfo, error)
 	Favorite(req dto.NodeFavorite) error
@@ -261,34 +262,51 @@ func joinBootstrapCommand(masterAddr, token string) string {
 		masterAddr, token, direct)
 }
 
-// UpgradeCommand returns the line an operator runs on an already-joined node
-// to swap its agent binary for the current release.
-//
-// A master upgrade does not carry its nodes along: core only reports each
-// node's version, it never pushes anything. Re-running the join bootstrap is
-// not an option either — join tokens are single use and a node name can only
-// be created once, so the old host cannot redeem a fresh token. Upgrading is
-// therefore a separate path that keeps the certificate and only replaces the
-// binaries.
-func (u *NodeService) UpgradeCommand() *dto.NodeUpgradeCommand {
-	direct := strings.TrimSuffix(global.RepoURL(), "/") + "/" + upgradeScriptName
-	// Read the version the same way the upgrade flow does
-	// (core/app/service/upgrade.go:94) rather than from the embedded app.yaml:
-	// it is what the panel shows as its own version, so the number in the node
-	// dialog agrees with the one on the upgrade page. It is only a hint, so a
-	// settings hiccup must not take the command itself down.
+func (u *NodeService) Upgrade(req dto.NodeUpgrade) (*dto.NodeUpgradeResult, error) {
+	node, err := nodeRepo.Get(repo.WithByID(req.ID))
+	if err != nil {
+		return nil, buserr.New("ErrRecordNotFound")
+	}
+	if node.Addr == "" {
+		return nil, fmt.Errorf("node %s has no address", node.Name)
+	}
+
 	version, err := settingRepo.GetValueByKey("SystemVersion")
 	if err != nil || version == "" {
 		version = global.CONF.Base.Version
 	}
-	// Pin the channel instead of letting the script default to stable: a node
-	// has to move along the same stream its master upgrades from, and
-	// upgrade.go:450 picks that from base.mode. Without this a dev-mode panel
-	// would quietly push its nodes onto stable.
-	return &dto.NodeUpgradeCommand{
-		Command: fmt.Sprintf("PANEL3_CHANNEL='%s' bash -c \"$(curl -sSL %s)\"", upgradeChannel(), direct),
-		Version: version,
+	payload, err := json.Marshal(map[string]string{
+		"version": version,
+		"channel": upgradeChannel(),
+	})
+	if err != nil {
+		return nil, err
 	}
+	tlsCfg, err := nodecert.TLSConfig(node.Addr)
+	if err != nil {
+		return nil, err
+	}
+	client := &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+	resp, err := client.Post("https://"+node.Addr+"/api/v2/settings/node/upgrade", "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return nil, fmt.Errorf("dispatch upgrade to node %s: %w", node.Name, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var result dto.Response
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("unexpected node response: %w", err)
+	}
+	if result.Code != http.StatusOK {
+		return nil, fmt.Errorf("node rejected upgrade: %s", result.Message)
+	}
+	return &dto.NodeUpgradeResult{Version: version}, nil
 }
 
 // upgradeChannel mirrors the channel upgrade.go resolves its own releases from.
@@ -406,7 +424,16 @@ func (u *NodeService) refresh(node *model.Node) {
 	if node.Addr == "" {
 		return
 	}
-	if err := nodecert.Dial(node.Addr); err != nil {
+	tlsCfg, err := nodecert.TLSConfig(node.Addr)
+	if err != nil {
+		return
+	}
+	client := &http.Client{
+		Timeout:   remoteProbeTimeout,
+		Transport: &http.Transport{TLSClientConfig: tlsCfg},
+	}
+	var info agentNodeInfo
+	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/dashboard/current/node", &info); err != nil {
 		global.LOG.Debugf("node %s (%s) unreachable: %v", node.Name, node.Addr, err)
 		if node.Status != nodeStatusOffline {
 			node.Status = nodeStatusOffline
@@ -416,9 +443,13 @@ func (u *NodeService) refresh(node *model.Node) {
 	}
 	now := time.Now()
 	node.Status = nodeStatusOnline
+	if info.Version != "" {
+		node.Version = info.Version
+	}
 	node.LastSeenAt = &now
 	_ = nodeRepo.Update(node.ID, map[string]interface{}{
 		"status":       nodeStatusOnline,
+		"version":      node.Version,
 		"last_seen_at": now,
 	})
 }

@@ -222,6 +222,11 @@ const changeNode = async (command: string) => {
                 }
                 if (props.version != item.version) {
                     MsgError(i18n.global.t('setting.versionNotSame'));
+                    popoverVisible.value = false;
+                    if (currentNode.value !== 'local') {
+                        await changeToLocal();
+                    }
+                    routerToNameWithQuery('SettingNode', { uncached: 'true' });
                     return;
                 }
                 await loadGlobalSetting(command);

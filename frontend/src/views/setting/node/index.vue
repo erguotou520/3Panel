@@ -8,9 +8,6 @@
                 <el-button type="primary" plain @click="onCheck()">
                     {{ $t('xpack.node.healthCheck') }}
                 </el-button>
-                <el-button type="primary" plain @click="onUpgrade()">
-                    {{ $t('xpack.node.upgradeNode') }}
-                </el-button>
             </template>
             <template #rightToolBar>
                 <TableSearch @search="search()" v-model:searchName="searchName" />
@@ -44,8 +41,17 @@
                         min-width="140"
                         prop="description"
                     />
-                    <el-table-column :label="$t('commons.table.operate')" min-width="120" fix="right">
+                    <el-table-column :label="$t('commons.table.operate')" min-width="180" fix="right">
                         <template #default="{ row }">
+                            <el-button
+                                v-if="row.status === 'Online' && row.version !== panelVersion"
+                                link
+                                type="primary"
+                                :loading="upgradingIDs.has(row.id)"
+                                @click="onUpgrade(row)"
+                            >
+                                {{ $t('xpack.node.upgradeNode') }}
+                            </el-button>
                             <el-button link type="danger" @click="onDelete(row)">
                                 {{ $t('commons.button.delete') }}
                             </el-button>
@@ -81,24 +87,6 @@
         </el-dialog>
 
         <el-dialog
-            v-model="upgradeVisible"
-            :title="$t('xpack.node.upgradeNode')"
-            width="700px"
-            :close-on-click-modal="false"
-        >
-            <div class="join-hint">{{ $t('xpack.node.upgradeCommandHelper') }}</div>
-            <div class="join-cmd">{{ upgradeCommand }}</div>
-            <div class="join-actions">
-                <el-button type="primary" @click="copyText(upgradeCommand)">
-                    {{ $t('xpack.node.copyCommand') }}
-                </el-button>
-                <span v-if="panelVersion" class="join-expire">
-                    {{ $t('xpack.node.upgradeVersionHint', [panelVersion]) }}
-                </span>
-            </div>
-        </el-dialog>
-
-        <el-dialog
             v-model="joinVisible"
             :title="$t('xpack.node.joinCommand')"
             width="700px"
@@ -129,13 +117,20 @@
 </template>
 
 <script lang="ts" setup>
-import { reactive, ref } from 'vue';
+import { onBeforeUnmount, reactive, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
 import { copyText } from '@/utils/clipboard';
 import { dateFormatSimpleWithSecond } from '@/utils/date';
 import { Setting } from '@/api/interface/setting';
-import { checkNodes, createNode, deleteNode, searchNodes, upgradeNodeCommand } from '@/api/modules/setting';
+import {
+    checkNodes,
+    createNode,
+    deleteNode,
+    getSettingBaseInfo,
+    searchNodes,
+    upgradeNode,
+} from '@/api/modules/setting';
 
 const loading = ref(false);
 const data = ref<Setting.NodeItem[]>([]);
@@ -154,21 +149,38 @@ const joinCommand = ref('');
 const agentCommand = ref('');
 const joinExpiredAt = ref('');
 
-// 升级命令是常量（不含 token），取一次缓存住即可。
-const upgradeVisible = ref(false);
-const upgradeCommand = ref('');
 const panelVersion = ref('');
-const onUpgrade = async () => {
-    upgradeVisible.value = true;
-    if (upgradeCommand.value) return;
+const upgradingIDs = reactive(new Set<number>());
+const pollingTimers = new Set<number>();
+const onUpgrade = async (row: Setting.NodeItem) => {
+    upgradingIDs.add(row.id);
     try {
-        const res = await upgradeNodeCommand();
-        upgradeCommand.value = res.data.command;
-        panelVersion.value = res.data.version;
+        const res = await upgradeNode(row.id);
+        MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+        pollUpgrade(row.id, res.data.version);
     } catch {
-        /* message already shown by interceptor */
-        upgradeVisible.value = false;
+        upgradingIDs.delete(row.id);
     }
+};
+
+const pollUpgrade = (id: number, targetVersion: string, attempts = 0) => {
+    const timer = window.setTimeout(async () => {
+        pollingTimers.delete(timer);
+        try {
+            const res = await checkNodes();
+            data.value = res.data || [];
+            const node = data.value.find((item) => item.id === id);
+            if (node?.version === targetVersion) {
+                upgradingIDs.delete(id);
+                return;
+            }
+        } catch {
+            // The agent is expected to be briefly unavailable while restarting.
+        }
+        if (attempts < 59) pollUpgrade(id, targetVersion, attempts + 1);
+        else upgradingIDs.delete(id);
+    }, 5000);
+    pollingTimers.add(timer);
 };
 
 const search = async () => {
@@ -242,7 +254,8 @@ const onDelete = async (row: Setting.NodeItem) => {
     }
 };
 
-search();
+Promise.all([search(), getSettingBaseInfo().then((res) => (panelVersion.value = res.data.systemVersion))]);
+onBeforeUnmount(() => pollingTimers.forEach((timer) => window.clearTimeout(timer)));
 </script>
 
 <style scoped>

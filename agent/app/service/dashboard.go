@@ -108,7 +108,13 @@ func (u *DashboardService) LoadOsInfo() (*dto.OsInfo, error) {
 }
 
 func (u *DashboardService) LoadCurrentInfoForNode() *dto.NodeCurrent {
-	var currentInfo dto.NodeCurrent
+	currentInfo := dto.NodeCurrent{
+		Version: global.CONF.Base.Version,
+		Scope:   "master",
+	}
+	if !global.IsMaster {
+		currentInfo.Scope = "node"
+	}
 
 	currentInfo.CPUTotal, _ = psutil.CPUInfo.GetLogicalCores(false)
 

@@ -39,6 +39,11 @@ type AgentSettingUpdate struct {
 	Value string `json:"value"`
 }
 
+type NodeUpgrade struct {
+	Version string `json:"version" validate:"required"`
+	Channel string `json:"channel" validate:"required,oneof=stable dev"`
+}
+
 type SyncTime struct {
 	NtpSite string `json:"ntpSite" validate:"required"`
 }

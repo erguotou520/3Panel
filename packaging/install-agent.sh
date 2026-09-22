@@ -331,6 +331,12 @@ start_service() {
 
 print_summary() {
     step "$(say "完成" "Done")"
+    if [[ -z "$NODE_ADDR" ]] && command -v ip >/dev/null 2>&1; then
+        NODE_ADDR="$(ip route get 8.8.8.8 2>/dev/null | awk '{for (i=1; i<=NF; i++) if ($i == "src") {print $(i+1); exit}}')"
+    fi
+    if [[ -z "$NODE_ADDR" ]] && command -v hostname >/dev/null 2>&1; then
+        NODE_ADDR="$(hostname -I 2>/dev/null | awk '{print $1}')"
+    fi
     if [[ "$NO_JOIN" == "1" ]]; then
         cat <<EOF
   $(say "节点地址" "node address")  ${NODE_ADDR:-<auto>}:$NODE_PORT

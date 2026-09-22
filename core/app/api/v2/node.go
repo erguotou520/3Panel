@@ -100,13 +100,18 @@ func requestOrigin(c *gin.Context) string {
 	return appauth.PasskeyRequestScheme(c) + "://" + c.Request.Host
 }
 
-// @Tags Node
-// @Summary Upgrade command for a node that has already joined
-// @Success 200 {object} dto.NodeUpgradeCommand
-// @Security ApiKeyAuth
-// @Router /nodes/upgrade [get]
-func (b *BaseApi) NodeUpgradeCommand(c *gin.Context) {
-	helper.SuccessWithData(c, nodeService.UpgradeCommand())
+// UpgradeNode asks an already connected agent to upgrade itself.
+func (b *BaseApi) UpgradeNode(c *gin.Context) {
+	var req dto.NodeUpgrade
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	res, err := nodeService.Upgrade(req)
+	if err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.SuccessWithData(c, res)
 }
 
 // @Tags Node

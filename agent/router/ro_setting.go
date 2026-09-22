@@ -35,6 +35,7 @@ func (s *SettingRouter) InitRouter(Router *gin.RouterGroup) {
 		settingRouter.POST("/snapshot/description/update", baseApi.UpdateSnapDescription)
 
 		settingRouter.GET("/basedir", baseApi.LoadBaseDir)
+		settingRouter.POST("/node/upgrade", baseApi.UpgradeNode)
 
 		settingRouter.POST("/ssh/check", baseApi.CheckLocalConn)
 		settingRouter.GET("/ssh/conn", baseApi.LoadLocalConn)

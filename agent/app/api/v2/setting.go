@@ -4,6 +4,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/api/v2/helper"
 	"github.com/3panel-dev/3panel/agent/app/dto"
 	"github.com/3panel-dev/3panel/agent/app/dto/request"
+	"github.com/3panel-dev/3panel/agent/app/service"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/ssh"
 	"github.com/gin-gonic/gin"
@@ -182,6 +183,20 @@ func (b *BaseApi) LoadWebsiteDir(c *gin.Context) {
 // @Router /settings/basedir [get]
 func (b *BaseApi) LoadBaseDir(c *gin.Context) {
 	helper.SuccessWithData(c, global.Dir.DataDir)
+}
+
+// UpgradeNode schedules an agent-only upgrade in a detached process. The
+// process must outlive this agent because the installer restarts the service.
+func (b *BaseApi) UpgradeNode(c *gin.Context) {
+	var req dto.NodeUpgrade
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := service.StartNodeUpgrade(req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
 }
 
 // @Tags System Setting

@@ -18,6 +18,10 @@ type NodeFavorite struct {
 	IsFavorite bool `json:"isFavorite"`
 }
 
+type NodeUpgrade struct {
+	ID uint `json:"id" validate:"required"`
+}
+
 // SimpleNodeItem is the lightweight per-node card shown on the dashboard
 // carousel. It mirrors the frontend's Setting.SimpleNodeItem.
 type SimpleNodeItem struct {
@@ -73,15 +77,7 @@ type NodeJoinCommand struct {
 	ExpiredAt    time.Time `json:"expiredAt"`
 }
 
-// NodeUpgradeCommand is the one-liner that upgrades the agent of a node that
-// has already joined.
-//
-// It carries no token on purpose: the node keeps its certificate, and join
-// tokens are single use anyway, so upgrading is just a binary swap. Version is
-// the master's own version, shown so an operator can tell whether a node is
-// behind.
-type NodeUpgradeCommand struct {
-	Command string `json:"command"`
+type NodeUpgradeResult struct {
 	Version string `json:"version"`
 }
 

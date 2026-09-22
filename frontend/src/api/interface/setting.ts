@@ -354,10 +354,7 @@ export namespace Setting {
         agentCommand: string;
         expiredAt: string;
     }
-    // NodeUpgradeCommand: 已加入节点的 agent 升级命令。与 join 命令不同，它不带
-    // token —— 节点保留自己的证书，升级只是换二进制。version 是面板自身版本。
-    export interface NodeUpgradeCommand {
-        command: string;
+    export interface NodeUpgradeResult {
         version: string;
     }
     export interface ReleasesNotes {
