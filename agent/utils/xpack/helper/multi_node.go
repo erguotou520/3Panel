@@ -54,7 +54,7 @@ func NewIMultiNodeProvider() providers.MultiNodeProvider {
 func (m *multiNodeHelper) RemoveTamper(website string) {}
 
 func (m *multiNodeHelper) StartClam(startClam *model.Clam, isUpdate bool) (int, error) {
-	return 0, buserr.New("ErrXpackNotFound")
+	return 0, buserr.New("ErrNotSupportType")
 }
 
 // LoadNodeInfo decides whether this process is the master or a node.
