@@ -299,14 +299,85 @@ func (u *NodeService) Upgrade(req dto.NodeUpgrade) (*dto.NodeUpgradeResult, erro
 	if err != nil {
 		return nil, err
 	}
+	if resp.StatusCode == http.StatusNotFound {
+		if err := u.upgradeLegacyNode(client, node, version); err != nil {
+			return nil, err
+		}
+		return &dto.NodeUpgradeResult{Version: version}, nil
+	}
 	var result dto.Response
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("unexpected node response: %w", err)
+		return nil, fmt.Errorf("unexpected node response (status %d): %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 	if result.Code != http.StatusOK {
 		return nil, fmt.Errorf("node rejected upgrade: %s", result.Message)
 	}
 	return &dto.NodeUpgradeResult{Version: version}, nil
+}
+
+// upgradeLegacyNode bootstraps agents released before the dedicated upgrade
+// endpoint existed. It uses their existing mTLS-protected cron API to start one
+// fixed, detached upgrade command, then removes the temporary cron entry.
+func (u *NodeService) upgradeLegacyNode(client *http.Client, node model.Node, version string) error {
+	name := fmt.Sprintf("3panel-agent-upgrade-%d", time.Now().UnixNano())
+	url := strings.TrimSuffix(global.RepoURL(), "/") + "/upgrade-agent.sh"
+	unit := fmt.Sprintf("3panel-agent-upgrade-%d", time.Now().Unix())
+	addr := nodecert.HostOf(node.Addr)
+	upgrade := fmt.Sprintf("sleep 2; set -o pipefail; curl -sSfL --connect-timeout 20 --max-time 60 %s | bash", url)
+	script := fmt.Sprintf("if command -v systemd-run >/dev/null 2>&1; then systemd-run --unit=%s --collect --no-block --setenv=PANEL3_CHANNEL=%s --setenv=PANEL3_VERSION=%s --setenv=PANEL3_ADDR=%s /bin/bash -c %q; else nohup env PANEL3_CHANNEL=%s PANEL3_VERSION=%s PANEL3_ADDR=%s setsid /bin/bash -c %q >/tmp/3panel-agent-upgrade.log 2>&1 </dev/null & fi", unit, upgradeChannel(), version, addr, upgrade, upgradeChannel(), version, addr, upgrade)
+	create := map[string]interface{}{
+		"name": name, "type": "shell", "spec": "0 0 1 1 *", "executor": "bash",
+		"scriptMode": "input", "script": script, "retainCopies": 1, "retryTimes": 0, "timeout": 15,
+	}
+	if err := postNodeAPI(client, node.Addr, "/api/v2/cronjobs", create, nil); err != nil {
+		return fmt.Errorf("bootstrap legacy node upgrade: %w", err)
+	}
+	var page struct {
+		Items []struct {
+			ID uint `json:"id"`
+		} `json:"items"`
+	}
+	search := map[string]interface{}{"page": 1, "pageSize": 10, "info": name, "groupIDs": []uint{}, "orderBy": "name", "order": "ascending"}
+	if err := postNodeAPI(client, node.Addr, "/api/v2/cronjobs/search", search, &page); err != nil {
+		return fmt.Errorf("find legacy upgrade task: %w", err)
+	}
+	if len(page.Items) == 0 {
+		return fmt.Errorf("legacy upgrade task was not created")
+	}
+	id := page.Items[0].ID
+	if err := postNodeAPI(client, node.Addr, "/api/v2/cronjobs/handle", map[string]uint{"id": id}, nil); err != nil {
+		return fmt.Errorf("start legacy upgrade task: %w", err)
+	}
+	time.Sleep(time.Second)
+	_ = postNodeAPI(client, node.Addr, "/api/v2/cronjobs/del", map[string]interface{}{"ids": []uint{id}, "cleanData": true}, nil)
+	return nil
+}
+
+func postNodeAPI(client *http.Client, addr, path string, payload, data interface{}) error {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	resp, err := client.Post("https://"+addr+path, "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	var result struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("status %d: %w", resp.StatusCode, err)
+	}
+	if result.Code != http.StatusOK {
+		return fmt.Errorf("%s", result.Message)
+	}
+	if data != nil && len(result.Data) != 0 {
+		return json.Unmarshal(result.Data, data)
+	}
+	return nil
 }
 
 // upgradeChannel mirrors the channel upgrade.go resolves its own releases from.
