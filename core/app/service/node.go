@@ -147,7 +147,18 @@ func (u *NodeService) getJSON(client *http.Client, url string, out interface{}) 
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status %d", resp.StatusCode)
 	}
-	return json.NewDecoder(resp.Body).Decode(out)
+	var result struct {
+		Code    int             `json:"code"`
+		Message string          `json:"message"`
+		Data    json.RawMessage `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return err
+	}
+	if result.Code != http.StatusOK {
+		return fmt.Errorf("agent rejected request: %s", result.Message)
+	}
+	return json.Unmarshal(result.Data, out)
 }
 
 type agentNodeInfo struct {

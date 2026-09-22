@@ -1,10 +1,28 @@
 package service
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os/exec"
 	"strings"
 	"testing"
 )
+
+func TestGetJSONUnwrapsAgentResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"code":200,"message":"success","data":{"version":"v2.0.12","scope":"node"}}`))
+	}))
+	defer server.Close()
+
+	var info agentNodeInfo
+	if err := (&NodeService{}).getJSON(server.Client(), server.URL, &info); err != nil {
+		t.Fatal(err)
+	}
+	if info.Version != "v2.0.12" || info.Scope != "node" {
+		t.Fatalf("unexpected node info: %#v", info)
+	}
+}
 
 func TestJoinBootstrapCommandUsesCloudsmithDirectly(t *testing.T) {
 	command := joinBootstrapCommand("https://panel.example.com:9543", "test-token")

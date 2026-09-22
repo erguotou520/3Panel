@@ -11,7 +11,14 @@
                     class="-mt-0.5"
                     :hidden="version === 'Waiting' || !hasNewVersion"
                 >
-                    <el-link class="ml-2" underline="never" type="primary" @click="onLoadUpgradeInfo">
+                    <el-link
+                        class="ml-2"
+                        underline="never"
+                        type="primary"
+                        :disabled="loading"
+                        @click="onLoadUpgradeInfo"
+                    >
+                        <el-icon v-if="loading" class="is-loading mr-1"><Loading /></el-icon>
                         {{ $t('commons.button.update') }}
                     </el-link>
                 </el-badge>
@@ -55,28 +62,28 @@ const getVersionLog = () => {
 };
 
 const onLoadUpgradeInfo = async () => {
+    if (loading.value) {
+        return;
+    }
     loading.value = true;
-    await loadUpgradeInfo()
-        .then((res) => {
-            loading.value = false;
-            if (res.data.testVersion || res.data.newVersion || res.data.latestVersion) {
-                upgradeInfo.value = res.data;
-                if (upgradeInfo.value.latestVersion) {
-                    upgradeVersion.value = upgradeInfo.value.latestVersion;
-                } else if (upgradeInfo.value.testVersion) {
-                    upgradeVersion.value = upgradeInfo.value.testVersion;
-                } else if (upgradeInfo.value.newVersion) {
-                    upgradeVersion.value = upgradeInfo.value.newVersion;
-                }
-                upgradeRef.value.acceptParams({ upgradeInfo: upgradeInfo.value, upgradeVersion: upgradeVersion.value });
-            } else {
-                MsgSuccess(i18n.global.t('setting.noUpgrade'));
-                return;
+    try {
+        const res = await loadUpgradeInfo();
+        if (res.data.testVersion || res.data.newVersion || res.data.latestVersion) {
+            upgradeInfo.value = res.data;
+            if (upgradeInfo.value.latestVersion) {
+                upgradeVersion.value = upgradeInfo.value.latestVersion;
+            } else if (upgradeInfo.value.testVersion) {
+                upgradeVersion.value = upgradeInfo.value.testVersion;
+            } else if (upgradeInfo.value.newVersion) {
+                upgradeVersion.value = upgradeInfo.value.newVersion;
             }
-        })
-        .catch(() => {
-            loading.value = false;
-        });
+            upgradeRef.value.acceptParams({ upgradeInfo: upgradeInfo.value, upgradeVersion: upgradeVersion.value });
+        } else {
+            MsgSuccess(i18n.global.t('setting.noUpgrade'));
+        }
+    } finally {
+        loading.value = false;
+    }
 };
 
 onMounted(() => {
