@@ -83,25 +83,6 @@ ErrGroupIsDefault: "Varsayılan grup, silinemez"
 ErrGroupIsInUse: "Grup kullanımda ve silinemez."
 
 # lisans
-LicenseCheck: 'Lisansın mevcut olup olmadığını kontrol et'
-ErrLicenseInUsed: 'Lisans zaten bağlı. Lütfen kontrol edip tekrar deneyin'
-ErrLicenseExpired: 'Lisansın süresi dolmuş. Lütfen kontrol edip tekrar deneyin'
-ErrLicense: "Lisans format hatası, lütfen kontrol edip tekrar deneyin"
-ErrLicenseCheck: "Lisans doğrulama başarısız, lütfen kontrol edip tekrar deneyin"
-ErrLicenseSave: "Lisans bilgilerini kaydetme başarısız, hata {{ .err }}, lütfen tekrar deneyin"
-ErrLicenseSync: "Lisans senkronizasyonu başarısız, veritabanında lisans bilgisi tespit edilmedi"
-ErrLicenseExist: "Bu lisans kaydı zaten mevcut. Düğüm bağlama için doğrudan lisans sayfasına gidebilirsiniz."
-ErrEnterpriseLicenseRequired: "Enterprise Edition lisansı içe aktarılmamış. Önce bir lisans içe aktarın."
-ErrDeviceLost: "Lisans doğrulama için gerekli dosyalar eksik, lütfen kontrol edip tekrar deneyin"
-ErrDeviceErr: "Mevcut ortam lisans içe aktarma ortamıyla eşleşmiyor. Lütfen lisansı düzenleyip yeniden içe aktarın."
-ErrUnbindMaster: "Düğüm yönetiminde düğümler tespit edildi, mevcut lisansın bağı çözülemiyor, lütfen önce düğümleri kaldırın ve tekrar deneyin"
-ErrFreeNodeLimit: "Eklenebilecek düğüm sayısı sınırına ulaşıldı. Satın aldıktan sonra tekrar deneyin."
-ErrNodeBound: "Bu lisans başka bir düğüme bağlı, lütfen kontrol edip tekrar deneyin"
-ErrNodeBoundDelete: "Bu lisans bağlı ve silme işlemlerini desteklemiyor. Lütfen kontrol edip tekrar deneyin"
-ErrNodeBoundLimit: "Mevcut ücretsiz düğüm limitine ulaştı, lütfen kontrol edip tekrar deneyin"
-ErrLicenseFree: "Ücretsiz düğümler yalnızca lisans bir düğüme düzgün şekilde bağlandığında kullanılabilir. Lütfen doğrulayın ve tekrar deneyin"
-ErrLicenseUnbind: "Bu lisansa hala Community Sürümü düğümleri bağlı. Panel Ayarları > Lisans bölümünden bağlantıyı kaldırıp tekrar deneyin"
-ErrLicenseBindCount: "Yeni lisansın ücretsiz düğüm sayısı mevcut bağlı Community Sürümü düğüm sayısından az. Lütfen kontrol edip tekrar deneyin"
 ErrNoSuchNode: "Düğüm bilgisi bulunamadı, lütfen kontrol edip tekrar deneyin"
 ErrNodeUnbind: "Bu düğüm lisans bağlama aralığında değil, lütfen kontrol edip tekrar deneyin"
 ErrNodeBind: "Bu düğüm zaten bir lisansa bağlı, lütfen kontrol edip tekrar deneyin"

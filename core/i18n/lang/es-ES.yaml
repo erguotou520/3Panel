@@ -83,25 +83,6 @@ ErrGroupIsDefault: "Grupo predeterminado, no se puede eliminar"
 ErrGroupIsInUse: "El grupo está en uso y no se puede eliminar."
 
 # licencia
-LicenseCheck: 'Comprobar si la licencia está disponible'
-ErrLicenseInUsed: 'La licencia ya está vinculada. Verifique e intente de nuevo'
-ErrLicenseExpired: 'La licencia ha expirado. Verifique e intente de nuevo'
-ErrLicense: "Error en el formato de la licencia, verifique y reintente"
-ErrLicenseCheck: "Validación de licencia fallida, verifique y reintente"
-ErrLicenseSave: "Error al guardar la información de la licencia, error {{ .err }}, reintente"
-ErrLicenseSync: "Sincronización de licencia fallida, no se detectó información de licencia en la base de datos"
-ErrLicenseExist: "Este registro de licencia ya existe. Puede ir directamente a la página de licencia para la vinculación del nodo."
-ErrEnterpriseLicenseRequired: "La licencia de la edición Enterprise no se ha importado. Importa primero una licencia."
-ErrDeviceLost: "Faltan archivos necesarios para la verificación de licencia, verifique e intente de nuevo"
-ErrDeviceErr: "El entorno actual no coincide con el entorno de importación de la licencia. Edite la licencia e impórtela de nuevo"
-ErrUnbindMaster: "Se detectaron nodos en la gestión de nodos, no se puede desvincular la licencia actual, elimine los nodos primero e intente de nuevo"
-ErrFreeNodeLimit: "Se alcanzó el límite de nodos que se pueden añadir. Compra y vuelve a intentarlo."
-ErrNodeBound: "Esta licencia está vinculada a otro nodo, verifique e intente de nuevo"
-ErrNodeBoundDelete: "Esta licencia está vinculada y no admite operaciones de eliminación. Verifique e intente de nuevo"
-ErrNodeBoundLimit: "El nodo gratuito actual ha alcanzado su límite, verifique e intente de nuevo"
-ErrLicenseFree: "Los nodos gratuitos solo pueden usarse si la licencia está correctamente vinculada a un nodo. Verifique e intente de nuevo"
-ErrLicenseUnbind: "Esta licencia todavía tiene nodos de la edición Community vinculados. Desvincúlalos en Configuración del panel > Licencia y vuelve a intentarlo."
-ErrLicenseBindCount: "El número de nodos gratuitos de la nueva licencia es menor que el número actual de nodos de la edición Community vinculados. Verifique e intente de nuevo."
 ErrNoSuchNode: "Información del nodo no encontrada, verifique e intente de nuevo"
 ErrNodeUnbind: "Este nodo no está dentro del rango de vinculación de la licencia, verifique e intente de nuevo"
 ErrNodeBind: "Este nodo ya está vinculado a una licencia, verifique e intente de nuevo"

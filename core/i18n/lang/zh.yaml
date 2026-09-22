@@ -92,26 +92,6 @@ ErrSuperAdminCannotDelete: "超级管理员用户无法删除"
 ErrGroupIsDefault: "默认分组，无法删除"
 ErrGroupIsInUse: "分组正被使用，无法删除"
 
-# 许可证
-LicenseCheck: '检查许可证是否可用'
-ErrLicenseInUsed: '检查到该许可证已被绑定，请检查后重试！'
-ErrLicenseExpired: '检查到该许可证已过期，请检查后重试！'
-ErrLicense: "许可证格式错误，请检查后重试！"
-ErrLicenseCheck: "许可证校验失败，请检查后重试！"
-ErrLicenseSave: "许可证信息保存失败，错误 {{ .err }}，请重试！"
-ErrLicenseSync: "许可证信息同步失败，数据库中未检测到许可证信息！"
-ErrLicenseExist: "该许可证记录已存在，您可直接前往许可证页面进行节点绑定。"
-ErrEnterpriseLicenseRequired: "企业版许可证未导入，请先导入许可证"
-ErrDeviceLost: "许可证校验必要文件丢失，请检查后重试！"
-ErrDeviceErr: "当前环境与许可证导入环境不一致，请编辑许可证重新导入！"
-ErrUnbindMaster: "检测到节点管理内存在专业版节点，无法解绑当前许可证，请先移除或解绑后重试！"
-ErrFreeNodeLimit: "可添加节点数量已达到上限，请购买后重试！"
-ErrNodeBound: "该许可证已绑定到其他节点，请检查后重试！"
-ErrNodeBoundDelete: "该许可证已被绑定，不支持删除操作，请检查后重试！"
-ErrNodeBoundLimit: "当前免费节点已经达到上限，请检查后重试！"
-ErrLicenseFree: "仅当许可证正常绑定到节点后，才能使用其免费节点，请检查后重试！"
-ErrLicenseUnbind: "检测到该许可证存在社区版节点，请在 [ 面板设置 - 许可证 ] 中解绑后重试！"
-ErrLicenseBindCount: "新许可证免费节点数量小于当前已绑定的社区版节点数量，请检查后重试！"
 ErrNoSuchNode: "未能找到该节点信息，请检查后重试！"
 ErrNodeUnbind: "检测到该节点未在许可证绑定范围内，请检查后重试！"
 ErrNodeBind: "检测到该节点已绑定许可证，请检查后重试！"

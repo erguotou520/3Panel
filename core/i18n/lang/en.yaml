@@ -92,26 +92,6 @@ ErrSuperAdminCannotDelete: "Super admin users cannot be deleted"
 ErrGroupIsDefault: "Default group, unable to delete"
 ErrGroupIsInUse: "The group is in use and cannot be deleted."
 
-# license
-LicenseCheck: 'Check if the license is available'
-ErrLicenseInUsed: 'The license is already bound. Check and try again!'
-ErrLicenseExpired: 'The license has expired. Check and try again!'
-ErrLicense: "License format error, check and retry!"
-ErrLicenseCheck: "License validation failed, check and retry!"
-ErrLicenseSave: "Failed to save license information, error {{ .err }}, retry!"
-ErrLicenseSync: "License synchronization failed, no license info detected in database!"
-ErrLicenseExist: "This license record already exists. You can directly go to the license page for node binding."
-ErrEnterpriseLicenseRequired: "Enterprise Edition license is not imported. Import a license first."
-ErrDeviceLost: "Required files for license verification are missing, check and try again!"
-ErrDeviceErr: "Current environment does not match the license import environment. Edit the license and re-import."
-ErrUnbindMaster: "Nodes exist in node management. Remove nodes first, then unbind the current license."
-ErrFreeNodeLimit: "The number of nodes that can be added has reached the limit. Purchase and try again."
-ErrNodeBound: "This license is bound to another node, check and retry!"
-ErrNodeBoundDelete: "This license is bound and does not support delete operations. Check and try again!"
-ErrNodeBoundLimit: "The current free node has reached its limit, check and try again!"
-ErrLicenseFree: "Free nodes are available only when the license is correctly bound to a node. Verify and retry."
-ErrLicenseUnbind: "Community Edition nodes are still linked to this license. Unbind them in Panel Settings > License and try again."
-ErrLicenseBindCount: "The new license free node count is less than the currently linked Community Edition node count. Check and try again."
 ErrNoSuchNode: "Node information not found, check and retry!"
 ErrNodeUnbind: "This node is not within the license binding range, check and retry!"
 ErrNodeBind: "This node is already bound to a license, check and retry!"
