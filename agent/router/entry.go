@@ -1,5 +1,3 @@
-//go:build !xpack && !enterprise
-
 package router
 
 func RouterGroups() []CommonRouter {
