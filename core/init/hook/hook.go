@@ -11,7 +11,7 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/common"
 	"github.com/3panel-dev/3panel/core/utils/ctl_conf"
 	"github.com/3panel-dev/3panel/core/utils/encrypt"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
 )
 
 func Init() {
@@ -69,7 +69,7 @@ func handleUserInfo(tags string, settingRepo repo.ISettingRepo) {
 	}
 	if global.CONF.Base.IsEnterprise {
 		if len(settingMap["UserName"]) != 0 || len(settingMap["Password"]) != 0 {
-			if err := xpack.AuthProvider.ResetSuperAdminUser(settingMap["UserName"], settingMap["Password"]); err != nil {
+			if err := coreauth.Provider.ResetSuperAdminUser(settingMap["UserName"], settingMap["Password"]); err != nil {
 				global.LOG.Fatalf("reset enterprise super admin failed, err: %v", err)
 				return
 			}

@@ -21,7 +21,7 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/encrypt"
 	"github.com/3panel-dev/3panel/core/utils/passkey"
 	terminalsession "github.com/3panel-dev/3panel/core/utils/terminal_session"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
 	"github.com/gin-gonic/gin"
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
@@ -69,7 +69,7 @@ func (u *AuthService) LogOut(c *gin.Context) error {
 }
 
 func CloseTerminalSessions(scope, userID, authSessionID string) {
-	if err := xpack.AuthProvider.RevokeTerminalSessions(scope, userID, authSessionID); err != nil {
+	if err := coreauth.Provider.RevokeTerminalSessions(scope, userID, authSessionID); err != nil {
 		global.LOG.Warnf("revoke terminal sessions failed, scope=%s, err: %v", scope, err)
 	}
 }

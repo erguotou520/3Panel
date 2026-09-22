@@ -15,7 +15,7 @@ import (
 	"github.com/3panel-dev/3panel/core/global"
 	"github.com/3panel-dev/3panel/core/utils/ssh"
 	"github.com/3panel-dev/3panel/core/utils/terminal"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
 	"github.com/pkg/errors"
@@ -200,7 +200,7 @@ func (b *BaseApi) RunScript(c *gin.Context) {
 		tty.Start(quitChan)
 		go slave.Wait(quitChan)
 	} else {
-		connInfo, _, err := xpack.MultiNodeProvider.LoadNodeInfo(currentNode)
+		connInfo, _, err := multinode.Provider.LoadNodeInfo(currentNode)
 		if wshandleError(wsConn, errors.WithMessage(err, "invalid param rows in request")) {
 			return
 		}

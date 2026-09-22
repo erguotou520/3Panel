@@ -22,7 +22,7 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/common"
 	"github.com/3panel-dev/3panel/core/utils/files"
 	"github.com/3panel-dev/3panel/core/utils/req_helper"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 	"github.com/gin-gonic/gin"
 	"github.com/jinzhu/copier"
 	"gopkg.in/yaml.v2"
@@ -124,7 +124,7 @@ func (u *ScriptService) Create(req dto.ScriptOperate) error {
 	if req.IsInteractive {
 		return nil
 	}
-	if err := xpack.MultiNodeProvider.Sync(constant.SyncScripts); err != nil {
+	if err := multinode.Provider.Sync(constant.SyncScripts); err != nil {
 		global.LOG.Errorf("sync scripts to node failed, err: %v", err)
 	}
 	return nil
@@ -140,7 +140,7 @@ func (u *ScriptService) Delete(req dto.OperateByIDs) error {
 			return err
 		}
 	}
-	if err := xpack.MultiNodeProvider.Sync(constant.SyncScripts); err != nil {
+	if err := multinode.Provider.Sync(constant.SyncScripts); err != nil {
 		global.LOG.Errorf("sync scripts to node failed, err: %v", err)
 	}
 	return nil
@@ -160,7 +160,7 @@ func (u *ScriptService) Update(req dto.ScriptOperate) error {
 	if err := scriptRepo.Update(req.ID, updateMap); err != nil {
 		return err
 	}
-	if err := xpack.MultiNodeProvider.Sync(constant.SyncScripts); err != nil {
+	if err := multinode.Provider.Sync(constant.SyncScripts); err != nil {
 		global.LOG.Errorf("sync scripts to node failed, err: %v", err)
 	}
 	return nil
@@ -304,7 +304,7 @@ func (u *ScriptService) sync(req dto.OperateByTaskID, versionRes []byte) error {
 		if err := settingRepo.Update("ScriptVersion", string(versionRes)); err != nil {
 			return fmt.Errorf("update script version in db failed, err: %v", err)
 		}
-		if err := xpack.MultiNodeProvider.Sync(constant.SyncScripts); err != nil {
+		if err := multinode.Provider.Sync(constant.SyncScripts); err != nil {
 			global.LOG.Errorf("sync scripts to node failed, err: %v", err)
 		}
 		return nil

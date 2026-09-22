@@ -13,7 +13,7 @@ import (
 	"github.com/3panel-dev/3panel/core/global"
 	psessionUtils "github.com/3panel-dev/3panel/core/init/session/psession"
 	"github.com/3panel-dev/3panel/core/utils/common"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -77,7 +77,7 @@ func PasswordExpired() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		shouldCheck, err := xpack.AuthProvider.ShouldCheckPasswordExpiration(c)
+		shouldCheck, err := coreauth.Provider.ShouldCheckPasswordExpiration(c)
 		if err != nil {
 			helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrPasswordExpired", err)
 			return
@@ -86,7 +86,7 @@ func PasswordExpired() gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		expirationTime, err := xpack.AuthProvider.LoadPasswordExpirationTime(c)
+		expirationTime, err := coreauth.Provider.LoadPasswordExpirationTime(c)
 		if err != nil {
 			helper.ErrorWithDetail(c, http.StatusInternalServerError, "ErrPasswordExpired", err)
 			return

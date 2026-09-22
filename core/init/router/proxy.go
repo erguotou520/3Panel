@@ -17,7 +17,7 @@ import (
 	psessionUtils "github.com/3panel-dev/3panel/core/init/session/psession"
 	"github.com/3panel-dev/3panel/core/middleware"
 	terminalsession "github.com/3panel-dev/3panel/core/utils/terminal_session"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 	"github.com/gin-gonic/gin"
 )
 
@@ -75,7 +75,7 @@ func Proxy() gin.HandlerFunc {
 			proxyLocalAgent(c)
 			return
 		}
-		xpack.MultiNodeProvider.Proxy(c, currentNode)
+		multinode.Provider.Proxy(c, currentNode)
 		c.Abort()
 	}
 }

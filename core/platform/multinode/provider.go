@@ -1,4 +1,4 @@
-package providers
+package multinode
 
 import (
 	"net/http"
@@ -7,7 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type MultiNodeProvider interface {
+type IProvider interface {
 	Proxy(c *gin.Context, currentNode string)
 	ProxyDocker(proxyURL string) error
 	UpdateGroup(name string, group, newGroup uint) error

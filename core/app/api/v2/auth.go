@@ -16,7 +16,7 @@ import (
 	initauth "github.com/3panel-dev/3panel/core/init/auth"
 	"github.com/3panel-dev/3panel/core/utils/captcha"
 	"github.com/3panel-dev/3panel/core/utils/common"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
 	"github.com/gin-gonic/gin"
 )
 
@@ -60,7 +60,7 @@ func (b *BaseApi) Login(c *gin.Context) {
 		}
 	}
 
-	user, msgKey, err := xpack.AuthProvider.Login(c, req, string(entrance))
+	user, msgKey, err := coreauth.Provider.Login(c, req, string(entrance))
 	if user == nil || user.MfaStatus != constant.StatusEnable {
 		go saveLoginLogs(c, req.Name, wrapLoginErr(msgKey, err))
 	}
@@ -108,7 +108,7 @@ func (b *BaseApi) MFALogin(c *gin.Context) {
 		entrance, _ = base64.StdEncoding.DecodeString(entranceItem)
 	}
 
-	user, msgKey, err := xpack.AuthProvider.MFALogin(c, req, string(entrance))
+	user, msgKey, err := coreauth.Provider.MFALogin(c, req, string(entrance))
 	go saveLoginLogs(c, loginLogUserName(user, req.SessionID), wrapLoginErr(msgKey, err))
 	if msgKey == "ErrNoneNode" {
 		helper.BadAuth(c, msgKey, err)
@@ -140,7 +140,7 @@ func (b *BaseApi) MFALogin(c *gin.Context) {
 // @Router /core/auth/passkey/begin [post]
 func (b *BaseApi) PasskeyBeginLogin(c *gin.Context) {
 	entrance := loadEntranceFromRequest(c)
-	res, msgKey, err := xpack.AuthProvider.PasskeyBeginLogin(c, entrance)
+	res, msgKey, err := coreauth.Provider.PasskeyBeginLogin(c, entrance)
 	if msgKey != "" {
 		if msgKey == "ErrEntrance" {
 			helper.BadAuth(c, msgKey, err)
@@ -167,7 +167,7 @@ func (b *BaseApi) PasskeyBeginLogin(c *gin.Context) {
 func (b *BaseApi) PasskeyFinishLogin(c *gin.Context) {
 	sessionID := c.GetHeader("Passkey-Session")
 	entrance := loadEntranceFromRequest(c)
-	user, msgKey, err := xpack.AuthProvider.PasskeyFinishLogin(c, sessionID, entrance)
+	user, msgKey, err := coreauth.Provider.PasskeyFinishLogin(c, sessionID, entrance)
 	go saveLoginLogs(c, loginLogUserName(user, ""), wrapLoginErr(msgKey, err))
 	if msgKey == "ErrAuth" || msgKey == "ErrEntrance" || msgKey == "ErrNoneNode" {
 		if msgKey == "ErrAuth" {
@@ -196,7 +196,7 @@ func (b *BaseApi) PasskeyFinishLogin(c *gin.Context) {
 // @Security Timestamp
 // @Router /core/auth/logout [post]
 func (b *BaseApi) LogOut(c *gin.Context) {
-	result, prepareErr := xpack.AuthProvider.PrepareLogout(c)
+	result, prepareErr := coreauth.Provider.PrepareLogout(c)
 	if err := authService.LogOut(c); err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -269,7 +269,7 @@ func (b *BaseApi) GetLoginSetting(c *gin.Context) {
 		Theme:         settingInfo.Theme,
 		NeedCaptcha:   needCaptcha,
 	}
-	res.PasskeySetting = xpack.AuthProvider.PasskeyStatus(c)
+	res.PasskeySetting = coreauth.Provider.PasskeyStatus(c)
 	helper.SuccessWithData(c, res)
 }
 
@@ -286,7 +286,7 @@ func (b *BaseApi) PasskeyRegisterBegin(c *gin.Context) {
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}
-	res, msgKey, err := xpack.AuthProvider.PasskeyBeginRegister(c, req.Name)
+	res, msgKey, err := coreauth.Provider.PasskeyBeginRegister(c, req.Name)
 	if msgKey != "" {
 		helper.ErrorWithDetail(c, http.StatusBadRequest, msgKey, err)
 		return
@@ -307,7 +307,7 @@ func (b *BaseApi) PasskeyRegisterBegin(c *gin.Context) {
 // @Router /core/auth/passkey/register/finish [post]
 func (b *BaseApi) PasskeyRegisterFinish(c *gin.Context) {
 	sessionID := c.GetHeader("Passkey-Session")
-	msgKey, err := xpack.AuthProvider.PasskeyFinishRegister(c, sessionID)
+	msgKey, err := coreauth.Provider.PasskeyFinishRegister(c, sessionID)
 	if msgKey != "" {
 		helper.ErrorWithDetail(c, http.StatusBadRequest, msgKey, err)
 		return
@@ -326,7 +326,7 @@ func (b *BaseApi) PasskeyRegisterFinish(c *gin.Context) {
 // @Security Timestamp
 // @Router /core/auth/passkey/list [get]
 func (b *BaseApi) PasskeyList(c *gin.Context) {
-	list, err := xpack.AuthProvider.PasskeyList(c)
+	list, err := coreauth.Provider.PasskeyList(c)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -345,7 +345,7 @@ func (b *BaseApi) PasskeyDelete(c *gin.Context) {
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}
-	if err := xpack.AuthProvider.PasskeyDelete(c, req.ID); err != nil {
+	if err := coreauth.Provider.PasskeyDelete(c, req.ID); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
@@ -365,7 +365,7 @@ func (b *BaseApi) LoadMFA(c *gin.Context) {
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}
-	otp, err := xpack.AuthProvider.LoadMFA(c, req)
+	otp, err := coreauth.Provider.LoadMFA(c, req)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -389,7 +389,7 @@ func (b *BaseApi) MFABind(c *gin.Context) {
 		return
 	}
 
-	if err := xpack.AuthProvider.MFABind(c, req); err != nil {
+	if err := coreauth.Provider.MFABind(c, req); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
@@ -406,7 +406,7 @@ func (b *BaseApi) MFABind(c *gin.Context) {
 // @Router /core/auth/mfa/close [post]
 // @x-panel-log {"bodyKeys":[],"paramKeys":[],"BeforeFunctions":[],"formatZH":"mfa 关闭","formatEN":"close mfa"}
 func (b *BaseApi) MFAClose(c *gin.Context) {
-	if err := xpack.AuthProvider.MFAClose(c); err != nil {
+	if err := coreauth.Provider.MFAClose(c); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
@@ -428,7 +428,7 @@ func (b *BaseApi) GenerateApiKey(c *gin.Context) {
 		helper.BadAuth(c, "ErrApiConfigDisable", nil)
 		return
 	}
-	apiKey, err := xpack.AuthProvider.GenerateApiKey(c)
+	apiKey, err := coreauth.Provider.GenerateApiKey(c)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -462,7 +462,7 @@ func (b *BaseApi) UpdateApiConfig(c *gin.Context) {
 	}
 	req.ApiTrustedProxies = trustedProxies
 
-	if err := xpack.AuthProvider.UpdateApiConfig(c, req); err != nil {
+	if err := coreauth.Provider.UpdateApiConfig(c, req); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
@@ -476,7 +476,7 @@ func (b *BaseApi) UpdateApiConfig(c *gin.Context) {
 // @Security Timestamp
 // @Router /core/auth/current [get]
 func (b *BaseApi) GetCurrentUser(c *gin.Context) {
-	userInfo, err := xpack.AuthProvider.GetCurrentUserInfo(c)
+	userInfo, err := coreauth.Provider.GetCurrentUserInfo(c)
 	if err != nil {
 		helper.InternalServer(c, err)
 		return
@@ -497,7 +497,7 @@ func (b *BaseApi) UpdateCurrentUser(c *gin.Context) {
 	if err := helper.CheckBindAndValidate(&req, c); err != nil {
 		return
 	}
-	if err := xpack.AuthProvider.UpdateCurrentUserInfo(c, req); err != nil {
+	if err := coreauth.Provider.UpdateCurrentUserInfo(c, req); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}
@@ -519,7 +519,7 @@ func (b *BaseApi) ResetPassword(c *gin.Context) {
 		return
 	}
 
-	if err := xpack.AuthProvider.HandlePasswordExpired(c, req.OldPassword, req.NewPassword); err != nil {
+	if err := coreauth.Provider.HandlePasswordExpired(c, req.OldPassword, req.NewPassword); err != nil {
 		helper.InternalServer(c, err)
 		return
 	}

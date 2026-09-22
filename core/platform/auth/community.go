@@ -1,4 +1,4 @@
-package helper
+package auth
 
 import (
 	"bytes"
@@ -15,13 +15,13 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/mfa"
 	"github.com/3panel-dev/3panel/core/utils/req_helper/proxy_local"
 	terminalsession "github.com/3panel-dev/3panel/core/utils/terminal_session"
-	"github.com/3panel-dev/3panel/core/utils/xpack/providers"
+	
 	"github.com/gin-gonic/gin"
 )
 
 type authHelper struct{}
 
-func NewIAuthProvider() providers.AuthProvider {
+func NewProvider() IProvider {
 	return &authHelper{}
 }
 

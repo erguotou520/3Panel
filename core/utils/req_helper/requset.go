@@ -11,7 +11,7 @@ import (
 
 	"github.com/3panel-dev/3panel/core/buserr"
 	"github.com/3panel-dev/3panel/core/global"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 )
 
 func HandleRequest(url, method string, timeout int) (int, []byte, error) {
@@ -28,7 +28,7 @@ func HandleRequest(url, method string, timeout int) (int, []byte, error) {
 }
 
 func HandleRequestWithProxy(url, method string, timeout int) (int, []byte, error) {
-	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	transport := multinode.Provider.LoadRequestTransport()
 	return handleRequestWithTransport(url, method, transport, timeout)
 }
 
@@ -75,7 +75,7 @@ func HandleGet(url string) (*http.Response, error) {
 }
 
 func HandleGetWithProxy(url string) (*http.Response, error) {
-	transport := xpack.MultiNodeProvider.LoadRequestTransport()
+	transport := multinode.Provider.LoadRequestTransport()
 	return handleGetWithTransport(url, transport)
 }
 

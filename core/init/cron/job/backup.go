@@ -8,7 +8,7 @@ import (
 	"github.com/3panel-dev/3panel/core/constant"
 	"github.com/3panel-dev/3panel/core/global"
 	"github.com/3panel-dev/3panel/core/utils/cloud_storage"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 )
 
 type backup struct{}
@@ -56,7 +56,7 @@ func (b *backup) Run() {
 		varsItem, _ := json.Marshal(varMap)
 		_ = global.DB.Model(&model.BackupAccount{}).Where("id = ?", backupItem.ID).Updates(map[string]interface{}{"vars": string(varsItem)}).Error
 		global.LOG.Infof("Refresh %s-%s access_token successful!", backupItem.Type, backupItem.Name)
-		if err := xpack.MultiNodeProvider.Sync(constant.SyncBackupAccounts); err != nil {
+		if err := multinode.Provider.Sync(constant.SyncBackupAccounts); err != nil {
 			global.LOG.Errorf("sync backup account to node failed, err: %v", err)
 		}
 	}

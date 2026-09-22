@@ -1,4 +1,4 @@
-package providers
+package auth
 
 import (
 	"github.com/3panel-dev/3panel/core/app/dto"
@@ -6,7 +6,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-type AuthProvider interface {
+type IProvider interface {
 	Login(c *gin.Context, info dto.Login, entrance string) (*dto.UserLoginInfo, string, error)
 	MFALogin(c *gin.Context, info dto.MFALogin, entrance string) (*dto.UserLoginInfo, string, error)
 	PrepareLogout(c *gin.Context) (*dto.LogoutResult, error)

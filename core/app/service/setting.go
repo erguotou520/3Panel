@@ -36,7 +36,8 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/menutree"
 	"github.com/3panel-dev/3panel/core/utils/passkey"
 	"github.com/3panel-dev/3panel/core/utils/req_helper/proxy_local"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/proxy"
 	"gorm.io/gorm"
@@ -271,7 +272,7 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 		return err
 	}
 	if key == "ExpirationDays" {
-		if err := xpack.AuthProvider.SyncPasswordExpirationTime(value); err != nil {
+		if err := coreauth.Provider.SyncPasswordExpirationTime(value); err != nil {
 			return err
 		}
 	}
@@ -290,7 +291,7 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 		}
 	case "Language":
 		i18n.SetCachedDBLanguage(value)
-		if err := xpack.MultiNodeProvider.Sync(constant.SyncLanguage); err != nil {
+		if err := multinode.Provider.Sync(constant.SyncLanguage); err != nil {
 			global.LOG.Errorf("sync language to node failed, err: %v", err)
 		}
 	case "UpgradeBackupCopies":
@@ -303,7 +304,7 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 		}
 	case "Edition":
 		global.CONF.Base.Edition = value
-		if err := xpack.MultiNodeProvider.Sync(constant.SyncEdition); err != nil {
+		if err := multinode.Provider.Sync(constant.SyncEdition); err != nil {
 			global.LOG.Errorf("sync edition to node failed, err: %v", err)
 		}
 	}
@@ -370,14 +371,14 @@ func (u *SettingService) UpdateProxy(req dto.ProxyUpdate) error {
 	if err := settingRepo.Update("ProxyPasswdKeep", req.ProxyPasswdKeep); err != nil {
 		return err
 	}
-	if err := xpack.MultiNodeProvider.ProxyDocker(loadDockerProxy(req)); err != nil {
+	if err := multinode.Provider.ProxyDocker(loadDockerProxy(req)); err != nil {
 		return err
 	}
 	syncScope := constant.SyncSystemProxy
 	if req.WithDockerRestart {
 		syncScope = constant.SyncSystemProxyWithRestartDocker
 	}
-	if err := xpack.MultiNodeProvider.Sync(syncScope); err != nil {
+	if err := multinode.Provider.Sync(syncScope); err != nil {
 		global.LOG.Errorf("sync proxy to node failed, err: %v", err)
 	}
 	return nil
@@ -652,7 +653,7 @@ func (u *SettingService) clearPasskeySettings() error {
 	if err := settingRepo.Update(passkey.PasskeyCredentialSettingKey, ""); err != nil {
 		return err
 	}
-	return xpack.AuthProvider.ClearPasskeys()
+	return coreauth.Provider.ClearPasskeys()
 }
 
 func (u *SettingService) UpdateSystemSSL() error {

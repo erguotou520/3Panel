@@ -19,7 +19,7 @@ import (
 	"github.com/3panel-dev/3panel/core/middleware"
 	rou "github.com/3panel-dev/3panel/core/router"
 	"github.com/3panel-dev/3panel/core/utils/security"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
 	"github.com/gin-contrib/gzip"
 	"github.com/gin-gonic/gin"
 )
@@ -89,10 +89,10 @@ func Routers() *gin.Engine {
 	Router.Use(middleware.FrontendFallback())
 	Router.Use(middleware.OperationLog())
 	Router.Use(middleware.GlobalLoading())
-	Router.Use(xpack.AuthProvider.CoreAPIAuthMiddleware())
+	Router.Use(coreauth.Provider.CoreAPIAuthMiddleware())
 	Router.Use(middleware.PasswordExpired())
 	Router.Use(middleware.CSRFTokenGuard())
-	Router.Use(xpack.AuthProvider.CoreRBACMiddlewares()...)
+	Router.Use(coreauth.Provider.CoreRBACMiddlewares()...)
 	Router.Use(Proxy())
 
 	PrivateGroup := Router.Group("/api/v2/core")

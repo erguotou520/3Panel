@@ -24,7 +24,7 @@ import (
 	"github.com/3panel-dev/3panel/core/utils/files"
 	"github.com/3panel-dev/3panel/core/utils/req_helper"
 	upgradeUtil "github.com/3panel-dev/3panel/core/utils/upgrade"
-	"github.com/3panel-dev/3panel/core/utils/xpack"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 )
 
 type serviceInfo struct {
@@ -268,7 +268,7 @@ func (u *UpgradeService) Upgrade(req dto.Upgrade) error {
 
 		global.LOG.Info("upgrade successful!")
 		dropBackupCopies()
-		xpack.MultiNodeProvider.AutoUpgradeWithMaster()
+		multinode.Provider.AutoUpgradeWithMaster()
 		_ = settingRepo.Update("SystemVersion", req.Version)
 		_ = global.AgentDB.Model(&model.Setting{}).Where("key = ?", "SystemVersion").Updates(map[string]interface{}{"value": req.Version}).Error
 		global.CONF.Base.Version = req.Version

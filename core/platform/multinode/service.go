@@ -1,4 +1,4 @@
-package helper
+package multinode
 
 import (
 	"fmt"
@@ -31,7 +31,7 @@ const (
 
 type multiNodeHelper struct{}
 
-func NewIMultiNodeProvider() *multiNodeHelper {
+func NewProvider() IProvider {
 	return &multiNodeHelper{}
 }
 
