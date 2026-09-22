@@ -11,9 +11,6 @@ type GlobalGetterKey =
     | 'docsUrl'
     | 'isMaster'
     | 'isMobile'
-    | 'isXpackOrEE'
-    | 'isEE'
-    | 'isMasterPro'
     | 'isMultiNode';
 
 type GlobalGetterRefs = Record<GlobalGetterKey, ComputedRef<any>>;

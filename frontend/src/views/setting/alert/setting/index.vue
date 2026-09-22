@@ -3,7 +3,7 @@
         <LayoutContent :title="$t('commons.button.set')" v-loading="loading" :divider="true">
             <template #title>
                 <div class="flex items-center justify-between">
-                    <span>{{ $t('xpack.alert.commonConfig') }}</span>
+                    <span>{{ $t('alert.commonConfig') }}</span>
                     <el-button v-permission plain round size="default" @click="onChangeCommon(commonConfig.id)">
                         {{ $t('commons.button.edit') }}
                     </el-button>
@@ -18,11 +18,11 @@
                 >
                     <el-row>
                         <el-col>
-                            <el-form-item :label="$t('xpack.alert.sendTimeRange')" prop="sendTimeRange">
+                            <el-form-item :label="$t('alert.sendTimeRange')" prop="sendTimeRange">
                                 {{ sendTimeRange }}
                             </el-form-item>
                             <div v-if="!isMaster">
-                                <el-form-item :label="$t('xpack.alert.offline')" prop="isOffline">
+                                <el-form-item :label="$t('alert.offline')" prop="isOffline">
                                     <el-switch
                                         v-permission
                                         @change="onChangeOffline"
@@ -30,7 +30,7 @@
                                         active-value="Enable"
                                         inactive-value="Disable"
                                     ></el-switch>
-                                    <span class="input-help">{{ $t('xpack.alert.offlineHelper') }}</span>
+                                    <span class="input-help">{{ $t('alert.offlineHelper') }}</span>
                                 </el-form-item>
                             </div>
                         </el-col>
@@ -38,17 +38,17 @@
                 </el-form>
             </template>
         </LayoutContent>
-        <LayoutContent :title="$t('xpack.alert.methodConfig')" v-loading="loading" :divider="true">
+        <LayoutContent :title="$t('alert.methodConfig')" v-loading="loading" :divider="true">
             <template #leftToolBar>
                 <el-button v-permission type="primary" @click="onCreate">
-                    {{ $t('xpack.alert.createMethod') }}
+                    {{ $t('alert.createMethod') }}
                 </el-button>
             </template>
             <template #main>
                 <el-alert type="info" :closable="false">
                     <template #title>
                         <div class="flex items-center justify-start">
-                            {{ $t('xpack.alert.alertConfigHelper') }}
+                            {{ $t('alert.alertConfigHelper') }}
                             <el-link
                                 class="ml-1 text-xs"
                                 type="primary"
@@ -74,17 +74,17 @@
                                     <component :is="getTypeIcon(row.type)" />
                                 </el-icon>
                                 <el-tag :type="getTypeTagType(row.type)" effect="plain" round>
-                                    {{ $t('xpack.alert.' + row.type) }}
+                                    {{ $t('alert.' + row.type) }}
                                 </el-tag>
                             </div>
                         </template>
                     </el-table-column>
-                    <el-table-column :label="$t('xpack.alert.displayName')" min-width="120" prop="displayName">
+                    <el-table-column :label="$t('alert.displayName')" min-width="120" prop="displayName">
                         <template #default="{ row }">
                             <span>{{ getDisplayName(row) || '-' }}</span>
                         </template>
                     </el-table-column>
-                    <el-table-column :label="$t('xpack.alert.configDetail')" min-width="240" prop="details">
+                    <el-table-column :label="$t('alert.configDetail')" min-width="240" prop="details">
                         <template #default="{ row }">
                             <div class="config-detail text-sm">
                                 <span class="config-detail__value">
@@ -116,17 +116,6 @@
                                 :disabled="isStatusChangeDisabled(row)"
                                 @change="onStatusChange(row)"
                             />
-                        </template>
-                    </el-table-column>
-                    <el-table-column
-                        v-if="isEE"
-                        :label="$t('commons.table.creator')"
-                        width="100px"
-                        prop="createUser"
-                        show-overflow-tooltip
-                    >
-                        <template #default="{ row }">
-                            <span>{{ row.createUser || '-' }}</span>
                         </template>
                     </el-table-column>
                     <fu-table-operations
@@ -165,7 +154,7 @@ import { Alert } from '@/api/interface/alert';
 import { formatCustomWebhookDetails, formatCustomWebhookSafeSummary } from './drawer/custom-webhook';
 import { getAlertConfigDisplayName, rawSecretValue } from './drawer/secret-field';
 
-const { docsUrl, isMaster, isMobile, isProductPro, isEE, isIntl } = useGlobalStore();
+const { docsUrl, isMaster, isMobile } = useGlobalStore();
 
 const loading = ref(false);
 const alertDrawerRef = ref();
@@ -189,15 +178,15 @@ const toggleDetail = (id: number) => {
 const defaultCommonConfig: Alert.CommonAlertConfig = {
     id: undefined,
     type: 'common',
-    title: 'xpack.alert.commonConfig',
+    title: 'alert.commonConfig',
     status: 'Enable',
     config: {
         alertSendTimeRange:
-            i18n.global.t('xpack.alert.noticeAlert') +
+            i18n.global.t('alert.noticeAlert') +
             ': ' +
             '08:00:00 - 23:59:59' +
             ' | ' +
-            i18n.global.t('xpack.alert.resourceAlert') +
+            i18n.global.t('alert.resourceAlert') +
             ': ' +
             '00:00:00 - 23:59:59',
         isOffline: 'Disable',
@@ -246,10 +235,10 @@ function getConfigDetails(row: Alert.AlertConfigInfo): string {
         if (row.type === 'email') {
             const recipients =
                 cfg.recipients && cfg.recipients.length > 0 ? cfg.recipients.join(', ') : cfg.recipient || '';
-            return `${cfg.sender || ''} → ${cfg.host || ''}:${cfg.port || ''} | ${i18n.global.t('xpack.alert.recipient')}: ${recipients}`;
+            return `${cfg.sender || ''} → ${cfg.host || ''}:${cfg.port || ''} | ${i18n.global.t('alert.recipient')}: ${recipients}`;
         }
         if (row.type === 'sms') {
-            return `${i18n.global.t('xpack.alert.phone')}: ${rawSecretValue(cfg.phone)}`;
+            return `${i18n.global.t('alert.phone')}: ${rawSecretValue(cfg.phone)}`;
         }
         if (row.type === 'custom') {
             return formatCustomWebhookDetails(cfg, i18n.global.t('commons.msg.noneData'));
@@ -285,10 +274,10 @@ function getConfigSummary(row: Alert.AlertConfigInfo): string {
         if (row.type === 'email') {
             const recipientCount =
                 cfg.recipients && cfg.recipients.length > 0 ? cfg.recipients.length : cfg.recipient ? 1 : 0;
-            return `${maskString(cfg.sender || '')} → ${cfg.host || ''}:${cfg.port || ''} | ${i18n.global.t('xpack.alert.recipient')}: ${recipientCount}`;
+            return `${maskString(cfg.sender || '')} → ${cfg.host || ''}:${cfg.port || ''} | ${i18n.global.t('alert.recipient')}: ${recipientCount}`;
         }
         if (row.type === 'sms') {
-            return `${i18n.global.t('xpack.alert.phone')}: ${maskString(rawSecretValue(cfg.phone), 4)}`;
+            return `${i18n.global.t('alert.phone')}: ${maskString(rawSecretValue(cfg.phone), 4)}`;
         }
         if (row.type === 'custom') {
             return formatCustomWebhookSafeSummary(cfg, { includeUrl: false });
@@ -363,11 +352,11 @@ const searchConfigs = async () => {
             const noticeTimeRange = sendTimeRangeValue.value.noticeAlert?.sendTimeRange || '08:00:00 - 23:59:59';
             const resourceTimeRange = sendTimeRangeValue.value.resourceAlert?.sendTimeRange || '00:00:00 - 23:59:59';
             sendTimeRange.value =
-                i18n.global.t('xpack.alert.noticeAlert') +
+                i18n.global.t('alert.noticeAlert') +
                 ': ' +
                 noticeTimeRange +
                 ' | ' +
-                i18n.global.t('xpack.alert.resourceAlert') +
+                i18n.global.t('alert.resourceAlert') +
                 ': ' +
                 resourceTimeRange;
         } else {
@@ -408,12 +397,12 @@ const onChangeOffline = async () => {
     if (!isMaster.value && commonConfig.value.config.isOffline != '') {
         const title =
             commonConfig.value.config.isOffline == 'Enable'
-                ? i18n.global.t('xpack.alert.offlineOff')
-                : i18n.global.t('xpack.alert.offlineClose');
+                ? i18n.global.t('alert.offlineOff')
+                : i18n.global.t('alert.offlineClose');
         const content =
             commonConfig.value.config.isOffline == 'Enable'
-                ? i18n.global.t('xpack.alert.offlineOffHelper')
-                : i18n.global.t('xpack.alert.offlineCloseHelper');
+                ? i18n.global.t('alert.offlineOffHelper')
+                : i18n.global.t('alert.offlineCloseHelper');
         ElMessageBox.confirm(content, title, {
             confirmButtonText: i18n.global.t('commons.button.confirm'),
             cancelButtonText: i18n.global.t('commons.button.cancel'),
@@ -423,10 +412,10 @@ const onChangeOffline = async () => {
                 try {
                     config.value.id = commonConfig.value.id!;
                     config.value.type = 'common';
-                    config.value.title = 'xpack.alert.commonConfig';
+                    config.value.title = 'alert.commonConfig';
                     config.value.status = 'Enable';
                     config.value.config = JSON.stringify(commonConfig.value.config);
-                    config.value.displayName = i18n.global.t('xpack.alert.commonConfig');
+                    config.value.displayName = i18n.global.t('alert.commonConfig');
                     await UpdateAlertConfig(config.value);
                     loading.value = false;
                     await searchConfigs();
@@ -456,11 +445,11 @@ const onStatusChange = async (row: Alert.AlertConfigInfo) => {
 };
 
 const isStatusChangeDisabled = (row: Alert.AlertConfigInfo): boolean => {
-    return !isProductPro.value && ['weCom', 'dingTalk', 'feiShu', 'sms'].includes(row.type);
+    return ['weCom', 'dingTalk', 'feiShu', 'sms'].includes(row.type);
 };
 
 const onDelete = (id: number) => {
-    ElMessageBox.confirm(i18n.global.t('xpack.alert.deleteConfigMsg'), i18n.global.t('xpack.alert.deleteConfigTitle'), {
+    ElMessageBox.confirm(i18n.global.t('alert.deleteConfigMsg'), i18n.global.t('alert.deleteConfigTitle'), {
         confirmButtonText: i18n.global.t('commons.button.confirm'),
         cancelButtonText: i18n.global.t('commons.button.cancel'),
     }).then(async () => {
@@ -476,7 +465,7 @@ const onCreate = () => {
 
 const openEditDrawer = (row: Alert.AlertConfigInfo) => {
     if (!row.updatedAt) {
-        MsgError(i18n.global.t('xpack.alert.alertConfigChanged'));
+        MsgError(i18n.global.t('alert.alertConfigChanged'));
         return;
     }
     let configData: Record<string, any> = {};
@@ -501,8 +490,7 @@ const buttons = computed(() => [
             openEditDrawer(row);
         },
         disabled: (row: Alert.AlertConfigInfo) =>
-            !row.updatedAt ||
-            ((isIntl.value || !isProductPro.value) && ['weCom', 'dingTalk', 'feiShu', 'sms'].includes(row.type)),
+            !row.updatedAt || ['weCom', 'dingTalk', 'feiShu', 'sms'].includes(row.type),
     },
     {
         label: i18n.global.t('commons.button.delete'),

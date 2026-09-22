@@ -48,7 +48,7 @@
             v-if="isAppendOnly"
             class="mt-4"
             type="warning"
-            :title="$t('xpack.tamper.tamperCreateHint')"
+            :title="$t('tamper.tamperCreateHint')"
             :closable="false"
         />
         <template #footer>

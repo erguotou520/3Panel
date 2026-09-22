@@ -1,5 +1,5 @@
 <template>
-    <el-form-item  ref="appFormItem"  :label="$t('app.app')" prop="appDetailID" :rules="Rules.requiredSelect">
+    <el-form-item ref="appFormItem" :label="$t('app.app')" prop="appDetailID" :rules="Rules.requiredSelect">
         <el-row :gutter="20" class="w-[calc(100%+20px)] gap-y-3 lg:w-auto lg:gap-y-0">
             <el-col :span="12" :xs="24" :sm="24" :md="12" class="min-w-0">
                 <el-select
@@ -41,7 +41,7 @@ import { useGlobalStore } from '@/composables/useGlobalStore';
 import { resolveRuntimeAppResource } from '@/utils/runtime-app-resource';
 import { Rules } from '@/global/form-rules';
 import type { FormItemInstance } from 'element-plus';
-const { isOffline, isXpackOrEE } = useGlobalStore();
+const { isOffline } = useGlobalStore();
 
 const props = defineProps({
     mode: {
@@ -108,9 +108,6 @@ const getApp = async (appkey: string, mode: string) => {
 const loadRuntimeAppResource = async () => {
     if (isOffline.value) {
         return 'custom';
-    }
-    if (!isXpackOrEE.value) {
-        return 'remote';
     }
     try {
         const res = await getCurrentNodeCustomAppConfig();

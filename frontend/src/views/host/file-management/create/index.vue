@@ -3,7 +3,7 @@
         <el-alert
             v-if="addForm.isAppendOnly"
             type="warning"
-            :title="$t('xpack.tamper.tamperCreateHint')"
+            :title="$t('tamper.tamperCreateHint')"
             :closable="false"
         />
         <el-form

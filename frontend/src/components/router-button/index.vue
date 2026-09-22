@@ -24,7 +24,7 @@
         <div v-if="currentNodeVersionMismatch" class="mt-3 version-mismatch-alert">
             <el-alert type="warning" :closable="false" show-icon :title="$t('setting.currentNodeVersionNotSame')" />
             <el-button v-if="isAdmin" type="warning" plain @click="goToNodeManagement">
-                {{ $t('xpack.node.upgradeNode') }}
+                {{ $t('node.upgradeNode') }}
             </el-button>
         </div>
     </div>
@@ -89,7 +89,7 @@ watch(
     },
 );
 
-// 多节点的版本一致性告警对所有部署都生效，不再要求已授权（原实现挂在 isXpackOrEE 上）。
+// 多节点的版本一致性告警对所有部署都生效。
 watch([currentNode], checkCurrentNodeVersion, { immediate: true });
 
 async function checkCurrentNodeVersion() {

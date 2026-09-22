@@ -1,16 +1,16 @@
 <template>
     <div v-loading="loading">
-        <LayoutContent :title="$t('xpack.alert.list')" v-loading="loading">
+        <LayoutContent :title="$t('alert.list')" v-loading="loading">
             <template #prompt>
                 <el-alert type="info" :closable="false" class="!mt-2">
                     <template #title>
-                        {{ $t('xpack.alert.agentOfflineAlertHelper') }}
+                        {{ $t('alert.agentOfflineAlertHelper') }}
                     </template>
                 </el-alert>
             </template>
             <template #leftToolBar>
                 <el-button v-permission type="primary" @click="openView('create')">
-                    {{ $t('xpack.alert.addTask') }}
+                    {{ $t('alert.addTask') }}
                 </el-button>
             </template>
             <template #rightToolBar>
@@ -18,37 +18,33 @@
                     <el-select filterable clearable v-model="req.type" @change="search()" class="!w-52 dropdown">
                         <template #prefix>{{ $t('commons.table.type') }}</template>
                         <template v-if="isMaster">
-                            <el-option
-                                v-if="!isEE"
-                                value="panelPwdEndTime"
-                                :label="$t('xpack.alert.panelPwdEndTime')"
-                            />
-                            <el-option value="panelLogin" :label="$t('xpack.alert.panelLogin')" />
-                            <el-option value="nodeException" :label="$t('xpack.alert.nodeException')" />
-                            <el-option v-if="!isEE" value="panelUpdate" :label="$t('xpack.alert.panelUpdate')" />
+                            <el-option value="panelPwdEndTime" :label="$t('alert.panelPwdEndTime')" />
+                            <el-option value="panelLogin" :label="$t('alert.panelLogin')" />
+                            <el-option value="nodeException" :label="$t('alert.nodeException')" />
+                            <el-option value="panelUpdate" :label="$t('alert.panelUpdate')" />
                         </template>
-                        <el-option value="sshLogin" :label="$t('xpack.alert.sshLogin')" />
-                        <el-option value="ssl" :label="$t('xpack.alert.ssl')" />
-                        <el-option value="siteEndTime" :label="$t('xpack.alert.siteEndTime')" />
-                        <el-option value="cpu" :label="$t('xpack.alert.cpu')" />
-                        <el-option value="memory" :label="$t('xpack.alert.memory')" />
-                        <el-option value="disk" :label="$t('xpack.alert.disk')" />
-                        <el-option value="load" :label="$t('xpack.alert.load')" />
-                        <el-option value="clams" :label="$t('xpack.alert.clams')" />
-                        <el-option value="shell" :label="$t('xpack.alert.cronjob', [$t('cronjob.shell')])" />
-                        <el-option value="app" :label="$t('xpack.alert.cronjob', [$t('cronjob.app')])" />
-                        <el-option value="website" :label="$t('xpack.alert.cronjob', [$t('cronjob.website')])" />
-                        <el-option value="database" :label="$t('xpack.alert.cronjob', [$t('cronjob.database')])" />
-                        <el-option value="directory" :label="$t('xpack.alert.cronjob', [$t('cronjob.directory')])" />
-                        <el-option value="log" :label="$t('xpack.alert.cronjob', [$t('cronjob.log')])" />
-                        <el-option value="snapshot" :label="$t('xpack.alert.cronjob', [$t('cronjob.snapshot')])" />
-                        <el-option value="curl" :label="$t('xpack.alert.cronjob', [$t('cronjob.curl')])" />
+                        <el-option value="sshLogin" :label="$t('alert.sshLogin')" />
+                        <el-option value="ssl" :label="$t('alert.ssl')" />
+                        <el-option value="siteEndTime" :label="$t('alert.siteEndTime')" />
+                        <el-option value="cpu" :label="$t('alert.cpu')" />
+                        <el-option value="memory" :label="$t('alert.memory')" />
+                        <el-option value="disk" :label="$t('alert.disk')" />
+                        <el-option value="load" :label="$t('alert.load')" />
+                        <el-option value="clams" :label="$t('alert.clams')" />
+                        <el-option value="shell" :label="$t('alert.cronjob', [$t('cronjob.shell')])" />
+                        <el-option value="app" :label="$t('alert.cronjob', [$t('cronjob.app')])" />
+                        <el-option value="website" :label="$t('alert.cronjob', [$t('cronjob.website')])" />
+                        <el-option value="database" :label="$t('alert.cronjob', [$t('cronjob.database')])" />
+                        <el-option value="directory" :label="$t('alert.cronjob', [$t('cronjob.directory')])" />
+                        <el-option value="log" :label="$t('alert.cronjob', [$t('cronjob.log')])" />
+                        <el-option value="snapshot" :label="$t('alert.cronjob', [$t('cronjob.snapshot')])" />
+                        <el-option value="curl" :label="$t('alert.cronjob', [$t('cronjob.curl')])" />
                         <el-option
                             value="cutWebsiteLog"
-                            :label="$t('xpack.alert.cronjob', [$t('cronjob.cutWebsiteLog')])"
+                            :label="$t('alert.cronjob', [$t('cronjob.cutWebsiteLog')])"
                         />
-                        <el-option value="clean" :label="$t('xpack.alert.cronjob', [$t('cronjob.clean')])" />
-                        <el-option value="ntp" :label="$t('xpack.alert.cronjob', [$t('cronjob.ntp')])" />
+                        <el-option value="clean" :label="$t('alert.cronjob', [$t('cronjob.clean')])" />
+                        <el-option value="ntp" :label="$t('alert.cronjob', [$t('cronjob.ntp')])" />
                     </el-select>
                     <el-select
                         clearable
@@ -103,7 +99,7 @@
                         </template>
                     </el-table-column>
                     <el-table-column
-                        :label="$t('xpack.alert.alertMethod')"
+                        :label="$t('alert.alertMethod')"
                         prop="method"
                         width="200px"
                         show-overflow-tooltip
@@ -113,24 +109,13 @@
                         </template>
                     </el-table-column>
                     <el-table-column
-                        :label="$t('xpack.alert.alertRule')"
+                        :label="$t('alert.alertRule')"
                         prop="rule"
                         min-width="300px"
                         show-overflow-tooltip
                     >
                         <template #default="{ row }">
                             {{ formatRule(row) }}
-                        </template>
-                    </el-table-column>
-                    <el-table-column
-                        v-if="isEE"
-                        :label="$t('commons.table.creator')"
-                        prop="createUser"
-                        width="100px"
-                        show-overflow-tooltip
-                    >
-                        <template #default="{ row }">
-                            {{ row.createUser || '-' }}
                         </template>
                     </el-table-column>
                     <fu-table-operations
@@ -159,7 +144,7 @@ import AddTask from '@/views/setting/alert/dash/task/index.vue';
 import { Alert } from '@/api/interface/alert';
 import { UpdateAlertStatus, SearchAlerts, DeleteAlert, PageAlertConfigs } from '@/api/modules/alert';
 
-const { isMobile, isMaster, isEE } = useGlobalStore();
+const { isMobile, isMaster } = useGlobalStore();
 
 const { t } = i18n.global;
 const loading = ref(false);
@@ -204,12 +189,12 @@ const buttons = [
 const openView = async (
     title: string,
     rowData: Partial<Alert.AlertInfo> = {
-        type: isMaster.value && !isEE.value ? 'panelPwdEndTime' : 'sshLogin',
-        cycle: isMaster.value && !isEE.value ? 15 : 30,
-        count: isMaster.value && !isEE.value ? 0 : 3,
+        type: isMaster.value ? 'panelPwdEndTime' : 'sshLogin',
+        cycle: isMaster.value ? 15 : 30,
+        count: isMaster.value ? 0 : 3,
         sendCount: 3,
         method: '',
-        project: isMaster.value && !isEE.value ? '' : 'all',
+        project: isMaster.value ? '' : 'all',
         status: 'Enable',
         title: '',
     },
@@ -231,34 +216,34 @@ const changeSort = ({ prop, order }) => {
 
 const formatRule = (row: Alert.AlertInfo) => {
     const ruleTemplates = {
-        ssl: () => t('xpack.alert.timeRule', [row.cycle, row.sendCount]),
-        siteEndTime: () => t('xpack.alert.timeRule', [row.cycle, row.sendCount]),
-        panelPwdEndTime: () => t('xpack.alert.timeRule', [row.cycle, row.sendCount]),
-        panelUpdate: () => t('xpack.alert.panelUpdateRule', [row.cycle, row.sendCount]),
-        cpu: () => t('xpack.alert.avgRule', [row.cycle, t(`xpack.alert.${row.type}Name`), row.count, row.sendCount]),
-        memory: () => t('xpack.alert.avgRule', [row.cycle, t(`xpack.alert.${row.type}Name`), row.count, row.sendCount]),
-        load: () => t('xpack.alert.avgRule', [row.cycle, t(`xpack.alert.${row.type}Name`), row.count, row.sendCount]),
+        ssl: () => t('alert.timeRule', [row.cycle, row.sendCount]),
+        siteEndTime: () => t('alert.timeRule', [row.cycle, row.sendCount]),
+        panelPwdEndTime: () => t('alert.timeRule', [row.cycle, row.sendCount]),
+        panelUpdate: () => t('alert.panelUpdateRule', [row.cycle, row.sendCount]),
+        cpu: () => t('alert.avgRule', [row.cycle, t(`alert.${row.type}Name`), row.count, row.sendCount]),
+        memory: () => t('alert.avgRule', [row.cycle, t(`alert.${row.type}Name`), row.count, row.sendCount]),
+        load: () => t('alert.avgRule', [row.cycle, t(`alert.${row.type}Name`), row.count, row.sendCount]),
         disk: () => {
             return row.project === 'all'
-                ? t('xpack.alert.allDiskRule', [row.count, row.cycle === 1 ? 'G' : '%', row.sendCount])
-                : t('xpack.alert.diskRule', [row.project, row.count, row.cycle === 1 ? 'G' : '%', row.sendCount]);
+                ? t('alert.allDiskRule', [row.count, row.cycle === 1 ? 'G' : '%', row.sendCount])
+                : t('alert.diskRule', [row.project, row.count, row.cycle === 1 ? 'G' : '%', row.sendCount]);
         },
-        clams: () => t('xpack.alert.clamsRule', [row.sendCount]),
-        app: () => t('xpack.alert.cronJobAppRule', [row.sendCount]),
-        website: () => t('xpack.alert.cronJobWebsiteRule', [row.sendCount]),
-        database: () => t('xpack.alert.cronJobDatabaseRule', [row.sendCount]),
-        directory: () => t('xpack.alert.cronJobDirectoryRule', [row.sendCount]),
-        log: () => t('xpack.alert.cronJobLogRule', [row.sendCount]),
-        snapshot: () => t('xpack.alert.cronJobSnapshotRule', [row.sendCount]),
-        shell: () => t('xpack.alert.cronJobShellRule', [row.sendCount]),
-        curl: () => t('xpack.alert.cronJobCurlRule', [row.sendCount]),
-        cutWebsiteLog: () => t('xpack.alert.cronJobCutWebsiteLogRule', [row.sendCount]),
-        clean: () => t('xpack.alert.cronJobCleanRule', [row.sendCount]),
-        ntp: () => t('xpack.alert.cronJobNtpRule', [row.sendCount]),
-        nodeException: () => t('xpack.alert.nodeExceptionRule', [row.sendCount]),
-        licenseException: () => t('xpack.alert.licenseExceptionRule', [row.sendCount]),
-        panelLogin: () => t('xpack.alert.panelLoginRule', [row.sendCount]),
-        sshLogin: () => t('xpack.alert.sshLoginRule', [row.sendCount]),
+        clams: () => t('alert.clamsRule', [row.sendCount]),
+        app: () => t('alert.cronJobAppRule', [row.sendCount]),
+        website: () => t('alert.cronJobWebsiteRule', [row.sendCount]),
+        database: () => t('alert.cronJobDatabaseRule', [row.sendCount]),
+        directory: () => t('alert.cronJobDirectoryRule', [row.sendCount]),
+        log: () => t('alert.cronJobLogRule', [row.sendCount]),
+        snapshot: () => t('alert.cronJobSnapshotRule', [row.sendCount]),
+        shell: () => t('alert.cronJobShellRule', [row.sendCount]),
+        curl: () => t('alert.cronJobCurlRule', [row.sendCount]),
+        cutWebsiteLog: () => t('alert.cronJobCutWebsiteLogRule', [row.sendCount]),
+        clean: () => t('alert.cronJobCleanRule', [row.sendCount]),
+        ntp: () => t('alert.cronJobNtpRule', [row.sendCount]),
+        nodeException: () => t('alert.nodeExceptionRule', [row.sendCount]),
+        licenseException: () => t('alert.licenseExceptionRule', [row.sendCount]),
+        panelLogin: () => t('alert.panelLoginRule', [row.sendCount]),
+        sshLogin: () => t('alert.sshLoginRule', [row.sendCount]),
     };
 
     return ruleTemplates[row.type] ? ruleTemplates[row.type]() : '';
@@ -283,7 +268,7 @@ const formatMethod = (row: Alert.AlertInfo) => {
     const resolveMethodLabel = (method: string) => {
         const config = configMap.value.get(method);
         if (config) {
-            const typeLabel = i18n.global.t(`xpack.alert.${config.type === 'email' ? 'mail' : config.type}`);
+            const typeLabel = i18n.global.t(`alert.${config.type === 'email' ? 'mail' : config.type}`);
             try {
                 const cfg = JSON.parse(config.config || '{}') as Record<string, unknown>;
                 const name = getAlertConfigDisplayName(config.type, cfg);
@@ -293,10 +278,10 @@ const formatMethod = (row: Alert.AlertInfo) => {
             }
         }
         const invalidLabel = /^\d+$/.test(method)
-            ? i18n.global.t('xpack.alert.methodInvalid', [`#${method}`])
-            : i18n.global.t('xpack.alert.methodInvalid', [method]);
-        const oldLabel = i18n.global.t(`xpack.alert.${method}`);
-        if (!oldLabel || oldLabel === `xpack.alert.${method}` || oldLabel.includes('.')) {
+            ? i18n.global.t('alert.methodInvalid', [`#${method}`])
+            : i18n.global.t('alert.methodInvalid', [method]);
+        const oldLabel = i18n.global.t(`alert.${method}`);
+        if (!oldLabel || oldLabel === `alert.${method}` || oldLabel.includes('.')) {
             return invalidLabel;
         }
         return oldLabel;
@@ -335,7 +320,7 @@ const search = async () => {
 };
 
 const onDelete = (row: Alert.AlertInfo) => {
-    ElMessageBox.confirm(i18n.global.t('xpack.alert.deleteMsg'), i18n.global.t('xpack.alert.deleteTitle'), {
+    ElMessageBox.confirm(i18n.global.t('alert.deleteMsg'), i18n.global.t('alert.deleteTitle'), {
         confirmButtonText: i18n.global.t('commons.button.confirm'),
         cancelButtonText: i18n.global.t('commons.button.cancel'),
     }).then(async () => {
@@ -346,7 +331,7 @@ const onDelete = (row: Alert.AlertInfo) => {
 };
 
 const updateAlertStatus = (status: string, id: number) => {
-    ElMessageBox.confirm(i18n.global.t('xpack.alert.' + status + 'Msg'), i18n.global.t('xpack.alert.changeStatus'), {
+    ElMessageBox.confirm(i18n.global.t('alert.' + status + 'Msg'), i18n.global.t('alert.changeStatus'), {
         confirmButtonText: i18n.global.t('commons.button.confirm'),
         cancelButtonText: i18n.global.t('commons.button.cancel'),
     }).then(async () => {

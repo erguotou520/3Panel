@@ -1,28 +1,25 @@
 <template>
     <div>
-        <LayoutContent :title="$t('xpack.alert.logs')" v-loading="loading">
+        <LayoutContent :title="$t('alert.logs')" v-loading="loading">
             <template #toolbar>
                 <div class="flex justify-between gap-2 flex-wrap sm:flex-row">
                     <div class="flex flex-wrap gap-3">
-                        <el-button v-permission type="primary" @click="syncAll" v-if="isProductPro && !isIntl">
-                            {{ $t('commons.button.sync') }}
-                        </el-button>
                         <el-button v-permission type="primary" plain @click="onClean">
-                            {{ $t('xpack.alert.cleanLog') }}
+                            {{ $t('alert.cleanLog') }}
                         </el-button>
                     </div>
                 </div>
             </template>
             <template #main>
                 <ComplexTable :pagination-config="paginationConfig" :data="data" @search="search()">
-                    <el-table-column :label="$t('xpack.alert.alertMsg')" prop="message" show-overflow-tooltip>
+                    <el-table-column :label="$t('alert.alertMsg')" prop="message" show-overflow-tooltip>
                         <template #default="{ row }">
                             {{ formatMessage(row.alertDetail) }}
                         </template>
                     </el-table-column>
 
                     <el-table-column
-                        :label="$t('xpack.alert.alertMethod')"
+                        :label="$t('alert.alertMethod')"
                         prop="method"
                         width="200px"
                         show-overflow-tooltip
@@ -61,20 +58,11 @@
                         width="180px"
                     ></el-table-column>
 
-                    <el-table-column :label="$t('xpack.alert.sendCount')" prop="count" width="150px">
+                    <el-table-column :label="$t('alert.sendCount')" prop="count" width="150px">
                         <template #default="{ row }">
                             {{ formatCount(row) }}
                         </template>
                     </el-table-column>
-                    <fu-table-operations
-                        v-if="isProductPro && !isIntl"
-                        :ellipsis="2"
-                        width="130px"
-                        :buttons="buttons"
-                        :label="$t('commons.table.operate')"
-                        :fixed="isMobile ? false : 'right'"
-                        fix
-                    />
                 </ComplexTable>
             </template>
         </LayoutContent>
@@ -87,24 +75,13 @@ import { dateFormat } from '@/utils/date';
 import { MsgSuccess } from '@/utils/message';
 import i18n from '@/lang';
 import { Alert } from '@/api/interface/alert';
-import {
-    SearchAlertLogs,
-    SyncAlertInfo,
-    CleanAlertLogs,
-    SyncAlertAll,
-    SyncOfflineAlert,
-    ListAlertConfigs,
-    PageAlertConfigs,
-} from '@/api/modules/alert';
+import { SearchAlertLogs, CleanAlertLogs, PageAlertConfigs } from '@/api/modules/alert';
 import { ElMessageBox } from 'element-plus';
-import { useGlobalStore } from '@/composables/useGlobalStore';
 import { getAlertConfigDisplayName } from '@/views/setting/alert/setting/drawer/secret-field';
 
-const { isMobile, isProductPro, isIntl, isMaster } = useGlobalStore();
 const { t } = i18n.global;
 const loading = ref(false);
 const data = ref();
-const isOffline = ref('Disable');
 const configMap = ref<Map<string, Alert.AlertConfigInfo>>(new Map());
 
 const loadConfigMap = async () => {
@@ -145,90 +122,55 @@ const req = reactive({
     status: '',
 });
 
-const buttons = [
-    {
-        label: i18n.global.t('commons.button.sync'),
-        permission: true,
-        click: function (row: Alert.AlertLog) {
-            syncAlert(row);
-        },
-        disabled: (row: Alert.AlertLog) => {
-            const isSms = row.method
-                .split(',')
-                .filter(Boolean)
-                .some((item) => {
-                    const config = configMap.value.get(item.trim());
-                    return config ? config.type === 'sms' : item.trim() === 'sms';
-                });
-            return (!isSms && row.status != 'PushSuccess' && row.status != 'SyncError') || row.status == 'Success';
-        },
-    },
-];
-
 const statusMap = {
-    PushSuccess: { type: 'success', text: 'xpack.alert.pushSuccess' },
-    Pushing: { type: 'warning', text: 'xpack.alert.pushing' },
-    Success: { type: 'success', text: 'xpack.alert.success' },
-    Error: { type: 'danger', text: 'xpack.alert.error' },
-    SyncError: { type: 'danger', text: 'xpack.alert.syncError', link: true },
-    default: { type: 'danger', text: 'xpack.alert.pushError', link: true },
+    PushSuccess: { type: 'success', text: 'alert.pushSuccess' },
+    Pushing: { type: 'warning', text: 'alert.pushing' },
+    Success: { type: 'success', text: 'alert.success' },
+    Error: { type: 'danger', text: 'alert.error' },
+    SyncError: { type: 'danger', text: 'alert.syncError', link: true },
+    default: { type: 'danger', text: 'alert.pushError', link: true },
 };
 
 const statusConfig = (row) => {
     return statusMap[row.status] || statusMap['default'];
 };
 
-const syncAlert = (row: Alert.AlertLog) => {
-    ElMessageBox.confirm(t('xpack.alert.syncAlertInfoMsg'), t('xpack.alert.syncAlertInfo'), {
-        confirmButtonText: t('commons.button.confirm'),
-        cancelButtonText: t('commons.button.cancel'),
-    }).then(async () => {
-        if (!isMaster.value && isOffline.value == 'Enable') {
-            await SyncOfflineAlert();
-        } else {
-            await SyncAlertInfo({ id: row.id });
-        }
-        MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-        await search();
-    });
-};
-
 const formatMessage = (row: Alert.AlertInfo) => {
     const messageTemplates = {
         ssl: () => {
-            return row.project === 'all' ? t('xpack.alert.allSslTitle') : t('xpack.alert.sslTitle', [row.project]);
+            return row.project === 'all' ? t('alert.allSslTitle') : t('alert.sslTitle', [row.project]);
         },
         siteEndTime: () => {
             return row.project === 'all'
-                ? t('xpack.alert.allSiteEndTimeTitle')
-                : t('xpack.alert.siteEndTimeTitle', [row.project]);
+                ? t('alert.allSiteEndTimeTitle')
+                : t('alert.siteEndTimeTitle', [row.project]);
         },
-        panelPwdEndTime: () => t('xpack.alert.panelPwdEndTimeTitle'),
-        panelUpdate: () => t('xpack.alert.panelUpdateTitle'),
-        cpu: () => t('xpack.alert.cpuTitle'),
-        memory: () => t('xpack.alert.memoryTitle'),
-        load: () => t('xpack.alert.loadTitle'),
+        panelPwdEndTime: () => t('alert.panelPwdEndTimeTitle'),
+        panelUpdate: () => t('alert.panelUpdateTitle'),
+        cpu: () => t('alert.cpuTitle'),
+        memory: () => t('alert.memoryTitle'),
+        load: () => t('alert.loadTitle'),
         disk: () => {
-            return row.project === 'all' ? t('xpack.alert.allDiskTitle') : t('xpack.alert.diskTitle', [row.project]);
+            return row.project === 'all' ? t('alert.allDiskTitle') : t('alert.diskTitle', [row.project]);
         },
-        clams: () => t('xpack.alert.clamsTitle', [row.project]),
-        app: () => t('xpack.alert.cronJobAppTitle', [row.project]),
-        website: () => t('xpack.alert.cronJobWebsiteTitle', [row.project]),
-        database: () => t('xpack.alert.cronJobDatabaseTitle', [row.project]),
-        directory: () => t('xpack.alert.cronJobDirectoryTitle', [row.project]),
-        log: () => t('xpack.alert.cronJobLogTitle', [row.project]),
-        snapshot: () => t('xpack.alert.cronJobSnapshotTitle', [row.project]),
-        shell: () => t('xpack.alert.cronJobShellTitle', [row.project]),
-        curl: () => t('xpack.alert.cronJobCurlTitle', [row.project]),
-        cutWebsiteLog: () => t('xpack.alert.cronJobCutWebsiteLogTitle', [row.project]),
-        clean: () => t('xpack.alert.cronJobCleanTitle', [row.project]),
-        ntp: () => t('xpack.alert.cronJobNtpTitle', [row.project]),
-        nodeException: () => t('xpack.alert.nodeException'),
-        licenseException: () => t('xpack.alert.licenseException'),
-        panelLogin: () => t('xpack.alert.panelLogin'),
-        sshLogin: () => t('xpack.alert.sshLogin'),
-        panelIpLogin: () => t('xpack.alert.panelIpLogin'),
-        sshIpLogin: () => t('xpack.alert.sshIpLogin'),
+        clams: () => t('alert.clamsTitle', [row.project]),
+        app: () => t('alert.cronJobAppTitle', [row.project]),
+        website: () => t('alert.cronJobWebsiteTitle', [row.project]),
+        database: () => t('alert.cronJobDatabaseTitle', [row.project]),
+        directory: () => t('alert.cronJobDirectoryTitle', [row.project]),
+        log: () => t('alert.cronJobLogTitle', [row.project]),
+        snapshot: () => t('alert.cronJobSnapshotTitle', [row.project]),
+        shell: () => t('alert.cronJobShellTitle', [row.project]),
+        curl: () => t('alert.cronJobCurlTitle', [row.project]),
+        cutWebsiteLog: () => t('alert.cronJobCutWebsiteLogTitle', [row.project]),
+        clean: () => t('alert.cronJobCleanTitle', [row.project]),
+        ntp: () => t('alert.cronJobNtpTitle', [row.project]),
+        nodeException: () => t('alert.nodeException'),
+        licenseException: () => t('alert.licenseException'),
+        panelLogin: () => t('alert.panelLogin'),
+        sshLogin: () => t('alert.sshLogin'),
+        panelIpLogin: () => t('alert.panelIpLogin'),
+        sshIpLogin: () => t('alert.sshIpLogin'),
     };
     let type = row.type === 'cronJob' ? row.subType : row.type;
     return messageTemplates[type] ? messageTemplates[type]() : '';
@@ -241,7 +183,7 @@ const formatMethod = (row: Alert.AlertLog) => {
         const config = configMap.value.get(method);
         if (config) {
             const typeKey = config.type === 'email' ? 'mail' : config.type;
-            const typeLabel = i18n.global.t('xpack.alert.' + typeKey);
+            const typeLabel = i18n.global.t('alert.' + typeKey);
             try {
                 const cfg = JSON.parse(config.config || '{}') as Record<string, unknown>;
                 const name = getAlertConfigDisplayName(config.type, cfg);
@@ -252,27 +194,27 @@ const formatMethod = (row: Alert.AlertLog) => {
         }
 
         const invalidLabel = /^\d+$/.test(method)
-            ? i18n.global.t('xpack.alert.methodInvalid', [`#${method}`])
-            : i18n.global.t('xpack.alert.methodInvalid', [method]);
+            ? i18n.global.t('alert.methodInvalid', [`#${method}`])
+            : i18n.global.t('alert.methodInvalid', [method]);
         switch (method) {
             case 'mail':
             case 'email':
-                return t('xpack.alert.mail');
+                return t('alert.mail');
             case 'dingTalk':
-                return t('xpack.alert.dingTalk');
+                return t('alert.dingTalk');
             case 'weCom':
-                return t('xpack.alert.weCom');
+                return t('alert.weCom');
             case 'feiShu':
-                return t('xpack.alert.feiShu');
+                return t('alert.feiShu');
             case 'wechat':
-                return t('xpack.alert.wechat');
+                return t('alert.wechat');
             case 'sms':
-                return t('xpack.alert.sms');
+                return t('alert.sms');
             case 'webhook':
             case 'custom':
-                return t('xpack.alert.custom');
+                return t('alert.custom');
             case 'bark':
-                return t('xpack.alert.bark');
+                return t('alert.bark');
             default:
                 return invalidLabel;
         }
@@ -287,8 +229,8 @@ const formatMethod = (row: Alert.AlertLog) => {
 
 const formatCount = (row: Alert.AlertInfo) => {
     return resourceTypes.includes(row.type) || row.type === 'cronJob' || row.type === 'clams'
-        ? t('xpack.alert.daily', [row.count])
-        : t('xpack.alert.cumulative', [row.count]);
+        ? t('alert.daily', [row.count])
+        : t('alert.cumulative', [row.count]);
 };
 
 const search = async () => {
@@ -312,27 +254,8 @@ const search = async () => {
     }
 };
 
-const syncAll = async () => {
-    ElMessageBox.confirm(t('xpack.alert.syncAlertInfoMsg'), t('xpack.alert.syncAlertInfo'), {
-        confirmButtonText: t('commons.button.confirm'),
-        cancelButtonText: t('commons.button.cancel'),
-    }).then(async () => {
-        await syncAllAlert();
-        await search();
-        MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    });
-};
-
-const syncAllAlert = async () => {
-    if (!isMaster.value && isOffline.value == 'Enable') {
-        await SyncOfflineAlert();
-    } else {
-        await SyncAlertAll();
-    }
-};
-
 const onClean = async () => {
-    ElMessageBox.confirm(i18n.global.t('commons.msg.clean'), i18n.global.t('xpack.alert.cleanAlertLogs'), {
+    ElMessageBox.confirm(i18n.global.t('commons.msg.clean'), i18n.global.t('alert.cleanAlertLogs'), {
         confirmButtonText: i18n.global.t('commons.button.confirm'),
         cancelButtonText: i18n.global.t('commons.button.cancel'),
         type: 'info',
@@ -350,26 +273,8 @@ const onClean = async () => {
     });
 };
 
-const searchAlertInfo = async () => {
-    if (!isMaster.value) {
-        loading.value = true;
-        try {
-            const res = await ListAlertConfigs();
-            const commonFound = res.data.find((s: any) => s.type === 'common');
-            const config: Alert.CommonConfig = JSON.parse(commonFound.config);
-            isOffline.value = config.isOffline;
-        } finally {
-            loading.value = false;
-        }
-    }
-};
-
 onMounted(async () => {
     await loadConfigMap();
-    await searchAlertInfo();
-    if (isProductPro.value && !isIntl.value) {
-        await syncAllAlert();
-    }
     await search();
 });
 </script>

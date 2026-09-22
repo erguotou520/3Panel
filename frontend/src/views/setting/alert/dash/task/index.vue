@@ -1,7 +1,7 @@
 <template>
     <DrawerPro
         v-model="visible"
-        :header="dialogData.title === 'create' ? $t('xpack.alert.addTask') : $t('xpack.alert.editTask')"
+        :header="dialogData.title === 'create' ? $t('alert.addTask') : $t('alert.editTask')"
         :resource="dialogData.title === 'create' ? dialogData.rowData?.title : ''"
         @close="handleClose"
         size="large"
@@ -9,7 +9,7 @@
         <el-form ref="formRef" label-position="top" :model="dialogData.rowData" :rules="rules">
             <el-row type="flex" justify="center">
                 <el-col :span="22">
-                    <el-form-item :label="$t('xpack.alert.taskType')" prop="type">
+                    <el-form-item :label="$t('alert.taskType')" prop="type">
                         <el-select
                             class="selectClass"
                             @change="changeType"
@@ -25,8 +25,8 @@
                                 />
                             </template>
                         </el-select>
-                        <span class="input-help" v-if="dialogData.rowData!.type === 'panelPwdEndTime' && !isEE">
-                            {{ $t('xpack.alert.panelPwdEndTimeRulesHelper') }}
+                        <span class="input-help" v-if="dialogData.rowData!.type === 'panelPwdEndTime'">
+                            {{ $t('alert.panelPwdEndTimeRulesHelper') }}
                             <el-link
                                 style="font-size: 12px; margin-left: 5px"
                                 icon="Position"
@@ -40,7 +40,7 @@
 
                     <el-form-item
                         v-if="dialogData.rowData!.type === 'cronJob'"
-                        :label="$t('xpack.alert.cronJobType')"
+                        :label="$t('alert.cronJobType')"
                         prop="subType"
                     >
                         <el-select
@@ -66,7 +66,7 @@
                     <!--                        网站/证书或磁盘-->
                     <el-form-item
                         v-if="dialogData.rowData!.type === 'ssl'"
-                        :label="$t('xpack.alert.certificate')"
+                        :label="$t('alert.certificate')"
                         prop="project"
                     >
                         <el-select class="selectClass" v-model="dialogData.rowData!.project">
@@ -83,12 +83,12 @@
                             >
                                 <span>{{ item.primaryDomain }}</span>
                                 <el-tag class="tagClass" v-if="item.autoRenew">
-                                    {{ $t('xpack.alert.autoRenew') }}
+                                    {{ $t('alert.autoRenew') }}
                                 </el-tag>
                             </el-option>
                         </el-select>
                         <span class="input-help">
-                            {{ $t('xpack.alert.autoRenewRulesHelper') }}
+                            {{ $t('alert.autoRenewRulesHelper') }}
                         </span>
                     </el-form-item>
 
@@ -118,13 +118,13 @@
                             </template>
                         </el-select>
                         <span class="input-help">
-                            {{ $t('xpack.alert.siteEndTimeRulesHelper') }}
+                            {{ $t('alert.siteEndTimeRulesHelper') }}
                         </span>
                     </el-form-item>
 
                     <el-form-item
                         v-if="diskTypes.includes(dialogData.rowData!.type)"
-                        :label="$t('xpack.alert.diskInfo')"
+                        :label="$t('alert.diskInfo')"
                         prop="project"
                     >
                         <el-select class="selectClass" v-model="dialogData.rowData!.project">
@@ -146,7 +146,7 @@
 
                     <el-form-item
                         v-if="dialogData.rowData!.type === 'clams'"
-                        :label="$t('xpack.alert.taskName')"
+                        :label="$t('alert.taskName')"
                         prop="project"
                     >
                         <el-select class="selectClass" default-first-option v-model="dialogData.rowData!.project">
@@ -168,7 +168,7 @@
                         v-if="
                             dialogData.rowData!.type === 'cronJob' && cronjobTypes.includes(dialogData.rowData!.subType)
                         "
-                        :label="$t('xpack.alert.taskName')"
+                        :label="$t('alert.taskName')"
                         prop="project"
                     >
                         <el-select class="selectClass" default-first-option v-model="dialogData.rowData!.project">
@@ -183,7 +183,7 @@
                         </el-select>
                     </el-form-item>
                     <span class="input-help" v-if="dialogData.rowData!.type === 'clams' && clamsOptions.length === 0">
-                        {{ $t('xpack.alert.clamsRulesHelper') }}
+                        {{ $t('alert.clamsRulesHelper') }}
                         <el-link
                             style="font-size: 12px; margin-left: 5px"
                             icon="Position"
@@ -197,7 +197,7 @@
                         class="input-help"
                         v-if="cronjobTypes.includes(dialogData.rowData!.type) && cronJobOptions.length === 0"
                     >
-                        {{ $t('xpack.alert.cronJobRulesHelper') }}
+                        {{ $t('alert.cronJobRulesHelper') }}
                         <el-link
                             style="font-size: 12px; margin-left: 5px"
                             icon="Position"
@@ -211,7 +211,7 @@
 
                     <el-form-item
                         v-if="timeTypes.includes(dialogData.rowData!.type)"
-                        :label="$t('xpack.alert.remainingDays')"
+                        :label="$t('alert.remainingDays')"
                         prop="cycle"
                     >
                         <el-input v-model.number="dialogData.rowData!.cycle" />
@@ -219,18 +219,18 @@
 
                     <el-form-item
                         v-if="diskTypes.includes(dialogData.rowData!.type)"
-                        :label="$t('xpack.alert.monitoringType')"
+                        :label="$t('alert.monitoringType')"
                         prop="cycle"
                     >
                         <el-radio-group @change="changeCycle" v-model="dialogData.rowData!.cycle">
-                            <el-radio-button :label="$t('xpack.alert.useDisk')" :value="1" />
-                            <el-radio-button :label="$t('xpack.alert.usePercentage')" :value="2" />
+                            <el-radio-button :label="$t('alert.useDisk')" :value="1" />
+                            <el-radio-button :label="$t('alert.usePercentage')" :value="2" />
                         </el-radio-group>
                     </el-form-item>
 
                     <el-form-item
                         v-if="avgTypes.includes(dialogData.rowData!.type)"
-                        :label="$t('xpack.alert.specifiedTime')"
+                        :label="$t('alert.specifiedTime')"
                         prop="cycle"
                     >
                         <el-select disabled class="selectClass" v-model.number="dialogData.rowData!.cycle">
@@ -242,7 +242,7 @@
 
                     <el-form-item
                         v-if="diskTypes.includes(dialogData.rowData!.type)"
-                        :label="$t('xpack.alert.useExceed')"
+                        :label="$t('alert.useExceed')"
                         prop="count"
                     >
                         <el-input v-model.number="dialogData.rowData!.count">
@@ -250,24 +250,24 @@
                                 {{ dialogData.rowData!.cycle === 1 ? 'GB' : ' % ' }}
                             </template>
                         </el-input>
-                        <span class="input-help">{{ $t('xpack.alert.useExceedRulesHelper') }}</span>
+                        <span class="input-help">{{ $t('alert.useExceedRulesHelper') }}</span>
                     </el-form-item>
 
                     <el-form-item
                         v-if="avgTypes.includes(dialogData.rowData!.type)"
-                        :label="$t('xpack.alert.' + dialogData.rowData!.type + 'UseExceedAvg')"
+                        :label="$t('alert.' + dialogData.rowData!.type + 'UseExceedAvg')"
                         prop="count"
                     >
                         <el-input v-model.number="dialogData.rowData!.count">
                             <template #append>%</template>
                         </el-input>
                         <span class="input-help">
-                            {{ $t('xpack.alert.' + dialogData.rowData!.type + 'UseExceedAvgHelper') }}
+                            {{ $t('alert.' + dialogData.rowData!.type + 'UseExceedAvgHelper') }}
                         </span>
                     </el-form-item>
 
                     <el-form-item
-                        :label="$t('xpack.alert.triggerCondition')"
+                        :label="$t('alert.triggerCondition')"
                         v-if="ipTypes.includes(dialogData.rowData!.type)"
                         prop="count"
                     >
@@ -281,7 +281,7 @@
                             </el-form-item>
 
                             <span class="whitespace-nowrap input-help !w-[5rem]">
-                                {{ $t('xpack.alert.loginFail') }}
+                                {{ $t('alert.loginFail') }}
                             </span>
                             <el-form-item prop="count" class="md:flex-1 sm:flex-1">
                                 <el-input v-model.number="dialogData.rowData!.count">
@@ -302,23 +302,23 @@
                             :rows="4"
                             v-model="dialogData.rowData!.advancedParams"
                         />
-                        <span class="input-help">{{ $t('xpack.alert.ipWhiteListHelper') }}</span>
+                        <span class="input-help">{{ $t('alert.ipWhiteListHelper') }}</span>
                     </el-form-item>
 
-                    <el-form-item :label="$t('xpack.alert.sendCount')" prop="sendCount">
+                    <el-form-item :label="$t('alert.sendCount')" prop="sendCount">
                         <el-input v-model.number="dialogData.rowData!.sendCount" />
                         <span class="input-help">
                             {{
                                 timeTypes.includes(dialogData.rowData!.type)
-                                    ? $t('xpack.alert.sendCountRulesHelper')
+                                    ? $t('alert.sendCountRulesHelper')
                                     : noParamTypes.includes(dialogData.rowData!.type)
-                                      ? $t('xpack.alert.panelUpdateRulesHelper')
-                                      : $t('xpack.alert.oneDaySendCountRulesHelper')
+                                      ? $t('alert.panelUpdateRulesHelper')
+                                      : $t('alert.oneDaySendCountRulesHelper')
                             }}
                         </span>
                     </el-form-item>
 
-                    <el-form-item :label="$t('xpack.alert.alertMethod')" prop="sendMethod">
+                    <el-form-item :label="$t('alert.alertMethod')" prop="sendMethod">
                         <el-select
                             class="selectClass"
                             popper-class="alert-config-method-dropdown"
@@ -357,14 +357,10 @@
                         <span class="input-help">
                             {{
                                 intervalTypes.includes(dialogData.rowData!.type)
-                                    ? $t('xpack.alert.resourceAlertRulesHelper')
+                                    ? $t('alert.resourceAlertRulesHelper')
                                     : ''
                             }}
                         </span>
-                    </el-form-item>
-
-                    <el-form-item v-if="dialogData.title === 'edit' && isEE" :label="$t('commons.table.updater')">
-                        <el-input :model-value="dialogData.rowData?.updateUser || '-'" readonly disabled />
                     </el-form-item>
                 </el-col>
             </el-row>
@@ -399,7 +395,7 @@ import { checkCidr, checkCidrV6, checkIpV4V6 } from '@/utils/validate';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import { getAlertConfigDisplayName } from '@/views/setting/alert/setting/drawer/secret-field';
 
-const { isMaster, isProductPro, isEE, isIntl } = useGlobalStore();
+const { isMaster } = useGlobalStore();
 
 const alertConfigs = ref<Alert.AlertConfigInfo[]>([]);
 const loadAlertConfigs = async () => {
@@ -422,9 +418,7 @@ const configOptions = computed(() => {
             label: getConfigOptionLabel(c),
             typeLabel: getConfigTypeLabel(c.type),
             type: c.type,
-            disabled:
-                c.status !== 'Enable' ||
-                ((isIntl.value || !isProductPro.value) && ['weCom', 'dingTalk', 'feiShu', 'sms'].includes(c.type)),
+            disabled: c.status !== 'Enable' || ['weCom', 'dingTalk', 'feiShu', 'sms'].includes(c.type),
         }))
         .sort((a, b) => Number(a.disabled) - Number(b.disabled));
 });
@@ -465,7 +459,7 @@ const isAllEnabledMethodsSelected = (methods: string[]) => {
 };
 
 const getConfigTypeLabel = (type: string): string => {
-    return i18n.global.t(`xpack.alert.${type}`);
+    return i18n.global.t(`alert.${type}`);
 };
 
 const getConfigOptionLabel = (c: Alert.AlertConfigInfo): string => {
@@ -572,23 +566,23 @@ const rules = reactive({
 });
 
 const allTaskOptions = [
-    { value: 'panelPwdEndTime', label: 'xpack.alert.panelPwdEndTime', show: isMaster.value && !isEE.value },
-    { value: 'sshLogin', label: 'xpack.alert.sshLogin', show: true },
-    { value: 'panelLogin', label: 'xpack.alert.panelLogin', show: isMaster.value },
-    { value: 'ssl', label: 'xpack.alert.ssl', show: true },
-    { value: 'siteEndTime', label: 'xpack.alert.siteEndTime', show: true },
+    { value: 'panelPwdEndTime', label: 'alert.panelPwdEndTime', show: isMaster.value },
+    { value: 'sshLogin', label: 'alert.sshLogin', show: true },
+    { value: 'panelLogin', label: 'alert.panelLogin', show: isMaster.value },
+    { value: 'ssl', label: 'alert.ssl', show: true },
+    { value: 'siteEndTime', label: 'alert.siteEndTime', show: true },
     {
         value: 'nodeException',
-        label: 'xpack.alert.nodeException',
+        label: 'alert.nodeException',
         show: isMaster.value,
     },
-    { value: 'cpu', label: 'xpack.alert.cpu', show: true },
-    { value: 'memory', label: 'xpack.alert.memory', show: true },
-    { value: 'disk', label: 'xpack.alert.disk', show: true },
-    { value: 'load', label: 'xpack.alert.load', show: true },
-    { value: 'cronJob', label: 'xpack.alert.cronjob', show: true },
-    { value: 'clams', label: 'xpack.alert.clams', show: true },
-    { value: 'panelUpdate', label: 'xpack.alert.panelUpdate', show: isMaster.value && !isEE.value },
+    { value: 'cpu', label: 'alert.cpu', show: true },
+    { value: 'memory', label: 'alert.memory', show: true },
+    { value: 'disk', label: 'alert.disk', show: true },
+    { value: 'load', label: 'alert.load', show: true },
+    { value: 'cronJob', label: 'alert.cronjob', show: true },
+    { value: 'clams', label: 'alert.clams', show: true },
+    { value: 'panelUpdate', label: 'alert.panelUpdate', show: isMaster.value },
 ];
 
 function checkRange(value: any, min: number, max: number, callback: any) {
@@ -843,38 +837,38 @@ const formatTitle = (row: Alert.AlertInfo) => {
     const titleTemplates = {
         ssl: () => {
             return row.project === 'all'
-                ? t('xpack.alert.allSslTitle')
-                : t('xpack.alert.sslTitle', [formatSSLName(Number(row.project))]);
+                ? t('alert.allSslTitle')
+                : t('alert.sslTitle', [formatSSLName(Number(row.project))]);
         },
         siteEndTime: () => {
             return row.project === 'all'
-                ? t('xpack.alert.allSiteEndTimeTitle')
-                : t('xpack.alert.siteEndTimeTitle', [formatWebsiteName(Number(row.project))]);
+                ? t('alert.allSiteEndTimeTitle')
+                : t('alert.siteEndTimeTitle', [formatWebsiteName(Number(row.project))]);
         },
-        panelPwdEndTime: () => t('xpack.alert.panelPwdEndTimeTitle'),
-        panelUpdate: () => t('xpack.alert.panelUpdateTitle'),
-        cpu: () => t('xpack.alert.cpuTitle'),
-        memory: () => t('xpack.alert.memoryTitle'),
-        load: () => t('xpack.alert.loadTitle'),
+        panelPwdEndTime: () => t('alert.panelPwdEndTimeTitle'),
+        panelUpdate: () => t('alert.panelUpdateTitle'),
+        cpu: () => t('alert.cpuTitle'),
+        memory: () => t('alert.memoryTitle'),
+        load: () => t('alert.loadTitle'),
         disk: () => {
-            return row.project === 'all' ? t('xpack.alert.allDiskTitle') : t('xpack.alert.diskTitle', [row.project]);
+            return row.project === 'all' ? t('alert.allDiskTitle') : t('alert.diskTitle', [row.project]);
         },
-        clams: () => t('xpack.alert.clamsTitle', [formatClamName(Number(row.project))]),
-        app: () => t('xpack.alert.cronJobAppTitle', [formatCronJobName(Number(row.project))]),
-        website: () => t('xpack.alert.cronJobWebsiteTitle', [formatCronJobName(Number(row.project))]),
-        database: () => t('xpack.alert.cronJobDatabaseTitle', [formatCronJobName(Number(row.project))]),
-        directory: () => t('xpack.alert.cronJobDirectoryTitle', [formatCronJobName(Number(row.project))]),
-        log: () => t('xpack.alert.cronJobLogTitle', [formatCronJobName(Number(row.project))]),
-        snapshot: () => t('xpack.alert.cronJobSnapshotTitle', [formatCronJobName(Number(row.project))]),
-        shell: () => t('xpack.alert.cronJobShellTitle', [formatCronJobName(Number(row.project))]),
-        curl: () => t('xpack.alert.cronJobCurlTitle', [formatCronJobName(Number(row.project))]),
-        cutWebsiteLog: () => t('xpack.alert.cronJobCutWebsiteLogTitle', [formatCronJobName(Number(row.project))]),
-        clean: () => t('xpack.alert.cronJobCleanTitle', [formatCronJobName(Number(row.project))]),
-        ntp: () => t('xpack.alert.cronJobNtpTitle', [formatCronJobName(Number(row.project))]),
-        nodeException: () => t('xpack.alert.nodeException'),
-        licenseException: () => t('xpack.alert.licenseException'),
-        panelLogin: () => t('xpack.alert.panelLogin'),
-        sshLogin: () => t('xpack.alert.sshLogin'),
+        clams: () => t('alert.clamsTitle', [formatClamName(Number(row.project))]),
+        app: () => t('alert.cronJobAppTitle', [formatCronJobName(Number(row.project))]),
+        website: () => t('alert.cronJobWebsiteTitle', [formatCronJobName(Number(row.project))]),
+        database: () => t('alert.cronJobDatabaseTitle', [formatCronJobName(Number(row.project))]),
+        directory: () => t('alert.cronJobDirectoryTitle', [formatCronJobName(Number(row.project))]),
+        log: () => t('alert.cronJobLogTitle', [formatCronJobName(Number(row.project))]),
+        snapshot: () => t('alert.cronJobSnapshotTitle', [formatCronJobName(Number(row.project))]),
+        shell: () => t('alert.cronJobShellTitle', [formatCronJobName(Number(row.project))]),
+        curl: () => t('alert.cronJobCurlTitle', [formatCronJobName(Number(row.project))]),
+        cutWebsiteLog: () => t('alert.cronJobCutWebsiteLogTitle', [formatCronJobName(Number(row.project))]),
+        clean: () => t('alert.cronJobCleanTitle', [formatCronJobName(Number(row.project))]),
+        ntp: () => t('alert.cronJobNtpTitle', [formatCronJobName(Number(row.project))]),
+        nodeException: () => t('alert.nodeException'),
+        licenseException: () => t('alert.licenseException'),
+        panelLogin: () => t('alert.panelLogin'),
+        sshLogin: () => t('alert.sshLogin'),
     };
 
     return titleTemplates[row.type] ? titleTemplates[row.type]() : '';

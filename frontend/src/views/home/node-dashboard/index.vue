@@ -1,18 +1,18 @@
 <template>
     <div>
-        <LayoutContent v-loading="loading" :title="$t('xpack.node.multiOverview')" back-name="Dashboard">
+        <LayoutContent v-loading="loading" :title="$t('node.multiOverview')" back-name="Dashboard">
             <template #rightToolBar>
                 <TableRefresh @search="search()" />
             </template>
             <template #main>
-                <el-empty v-if="!loading && items.length === 0" :description="$t('xpack.node.nodeManagement')" />
+                <el-empty v-if="!loading && items.length === 0" :description="$t('node.nodeManagement')" />
                 <el-row :gutter="16">
                     <el-col v-for="item in items" :key="item.name" :xs="24" :sm="12" :md="8" :lg="6">
                         <el-card class="node-card" shadow="hover">
                             <div class="card-header">
                                 <span class="node-name">{{ item.name }}</span>
                                 <el-tag :type="item.status === 'Online' ? 'success' : 'info'" size="small">
-                                    {{ item.status === 'Online' ? $t('xpack.node.statusOn') : $t('xpack.node.statusOff') }}
+                                    {{ item.status === 'Online' ? $t('node.statusOn') : $t('node.statusOff') }}
                                 </el-tag>
                             </div>
                             <div class="node-addr">{{ item.addr || '-' }}</div>

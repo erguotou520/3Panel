@@ -34,16 +34,6 @@
                                             </el-option>
                                         </el-select>
                                     </div>
-                                    <div>
-                                        <el-button
-                                            v-if="isXpackOrEE"
-                                            @click="onChangeThemeColor"
-                                            icon="Setting"
-                                            class="!h-[32px] sm:!h-[33.5px]"
-                                        >
-                                            <span>{{ $t('container.custom') }}</span>
-                                        </el-button>
-                                    </div>
                                 </div>
                             </el-form-item>
 
@@ -57,24 +47,6 @@
                                     </el-radio-button>
                                 </el-radio-group>
                                 <span class="input-help">{{ $t('setting.menuTabsHelper') }}</span>
-                            </el-form-item>
-
-                            <el-form-item :label="$t('setting.watermark')" v-if="isXpackOrEE" prop="watermark">
-                                <el-radio-group class="w-full" @change="onChangeWatermark" v-model="form.watermarkShow">
-                                    <el-radio-button value="Enable">
-                                        <span>{{ $t('commons.button.enable') }}</span>
-                                    </el-radio-button>
-                                    <el-radio-button value="Disable">
-                                        <span>{{ $t('commons.button.disable') }}</span>
-                                    </el-radio-button>
-                                </el-radio-group>
-                                <div v-if="form.watermarkShow === 'Enable'">
-                                    <div>
-                                        <el-button link type="primary" @click="onChangeWatermark">
-                                            {{ $t('commons.button.view') }}
-                                        </el-button>
-                                    </div>
-                                </div>
                             </el-form-item>
 
                             <el-form-item :label="$t('setting.title')" prop="panelName">
@@ -186,66 +158,36 @@
         <Proxy ref="proxyRef" @search="search()" />
         <Timeout ref="timeoutRef" @search="search()" />
         <HideMenu ref="hideMenuRef" @search="search()" />
-        <ThemeColor ref="themeColorRef" />
-        <Watermark ref="watermarkRef" @search="search()" />
         <Edition ref="editionRef" @search="search()" />
     </div>
 </template>
 
 <script lang="ts" setup>
 import { ref, reactive, onMounted } from 'vue';
-import { ElForm, ElMessageBox } from 'element-plus';
+import { ElForm } from 'element-plus';
 import { getSettingInfo, updateSetting, getSystemAvailable, getAgentSettingInfo } from '@/api/modules/setting';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import { useTheme } from '@/global/use-theme';
 import { MsgSuccess } from '@/utils/message';
-import ThemeColor from '@/views/setting/panel/theme-color/index.vue';
-import Watermark from '@/views/setting/panel/watermark/index.vue';
 import Edition from '@/views/setting/panel/edition/index.vue';
 import Timeout from '@/views/setting/panel/timeout/index.vue';
 import PanelName from '@/views/setting/panel/name/index.vue';
 import SystemIP from '@/views/setting/panel/systemip/index.vue';
 import Proxy from '@/views/setting/panel/proxy/index.vue';
 import HideMenu from '@/views/setting/panel/hidemenu/index.vue';
-import { getXpackProxyDocker } from '@/extensions/xpack';
-import { getXpackSetting, updateXpackSettingByKey } from '@/utils/xpack';
-import { setPrimaryColor } from '@/utils/theme';
 import { codeEditorThemeStorageKey } from '@/utils/code-editor-theme';
 import i18n from '@/lang';
 
-const {
-    docWithRegion,
-    globalStore,
-    isEnterprise,
-    isIntl,
-    isMobile,
-    isXpackOrEE,
-    menuAccordion,
-    openMenuTabs,
-    themeConfig,
-    watermark,
-    watermarkShow,
-} = useGlobalStore();
+const { docWithRegion, globalStore, isEnterprise, isIntl, isMobile, menuAccordion, openMenuTabs, themeConfig } =
+    useGlobalStore();
 
 const loading = ref(false);
 
 const { switchTheme } = useTheme();
 
-interface ThemeColor {
-    light: string;
-    dark: string;
-    themePredefineColors: {
-        light: string[];
-        dark: string[];
-    };
-}
-
 const form = reactive({
     panelName: '',
     theme: '',
-    watermark: '',
-    watermarkShow: '',
-    themeColor: {} as ThemeColor,
     menuTabs: '',
     menuAccordion: '',
     language: '',
@@ -274,8 +216,6 @@ const systemIPRef = ref();
 const proxyRef = ref();
 const timeoutRef = ref();
 const hideMenuRef = ref();
-const watermarkRef = ref();
-const themeColorRef = ref();
 const editionRef = ref();
 const unset = ref(i18n.global.t('setting.unSetting'));
 
@@ -326,30 +266,7 @@ const search = async () => {
     form.developerMode = res.data.developerMode;
     form.hideMenu = res.data.hideMenu;
 
-    if (isXpackOrEE.value) {
-        const [xpackRes, proxyDockerRes] = await Promise.all([
-            getXpackSetting(),
-            getXpackProxyDocker().catch(() => null),
-        ]);
-        if (xpackRes) {
-            form.theme = xpackRes.data.theme || themeConfig.value.theme || 'light';
-            form.themeColor = JSON.parse(xpackRes.data.themeColor || '{"light":"#005eeb","dark":"#F0BE96"}');
-            themeConfig.value.themeColor = xpackRes.data.themeColor
-                ? xpackRes.data.themeColor
-                : '{"light":"#005eeb","dark":"#F0BE96"}';
-            themeConfig.value.theme = form.theme;
-            form.watermark = xpackRes.data.watermark;
-            form.watermarkShow = xpackRes.data.watermarkShow;
-            try {
-                watermark.value = JSON.parse(xpackRes.data.watermark);
-            } catch {
-                watermark.value = null;
-            }
-        }
-        form.proxyDocker = proxyDockerRes?.data?.proxyDocker || '';
-    } else {
-        themeConfig.value.theme = form.theme;
-    }
+    themeConfig.value.theme = form.theme;
 };
 
 const onChangeTitle = () => {
@@ -390,56 +307,10 @@ const runtimeEnvLabel = () => {
     return `${editionLabel} / ${docSourceLabel}`;
 };
 
-const onChangeThemeColor = () => {
-    const themeColor: ThemeColor = JSON.parse(themeConfig.value.themeColor);
-    themeColorRef.value.acceptParams({ themeColor: themeColor, theme: themeConfig.value.theme });
-};
-
-const onChangeWatermark = async () => {
-    if (form.watermarkShow === 'Enable') {
-        watermarkRef.value.acceptParams(form.watermark);
-        return;
-    }
-    ElMessageBox.confirm(i18n.global.t('setting.watermarkCloseHelper'), i18n.global.t('setting.watermark'), {
-        confirmButtonText: i18n.global.t('commons.button.confirm'),
-        cancelButtonText: i18n.global.t('commons.button.cancel'),
-    })
-        .then(async () => {
-            loading.value = true;
-            await updateXpackSettingByKey('WatermarkShow', 'Disable')
-                .then(() => {
-                    loading.value = false;
-                    watermark.value = null;
-                    watermarkShow.value = false;
-                    search();
-                    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-                })
-                .catch(() => {
-                    loading.value = false;
-                });
-        })
-        .catch(() => {
-            form.watermarkShow = 'Enable';
-        });
-};
-
 const handleThemeChange = async (val: string) => {
     localStorage.removeItem(codeEditorThemeStorageKey);
     themeConfig.value.theme = val;
     switchTheme();
-    if (isXpackOrEE.value) {
-        await updateXpackSettingByKey('Theme', val);
-        let color: string;
-        const themeColor: ThemeColor = JSON.parse(themeConfig.value.themeColor);
-        if (val === 'auto') {
-            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)');
-            color = prefersDark.matches ? themeColor.dark : themeColor.light;
-        } else {
-            color = val === 'dark' ? themeColor.dark : themeColor.light;
-        }
-        themeConfig.value.primary = color;
-        setPrimaryColor(color);
-    }
 };
 const onSave = async (key: string, val: any) => {
     loading.value = true;

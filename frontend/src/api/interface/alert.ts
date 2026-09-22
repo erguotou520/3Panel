@@ -97,10 +97,6 @@ export namespace Alert {
         count: number;
     }
 
-    export interface AlertLogId {
-        id: number;
-    }
-
     export interface ClamsDTO {
         id: number;
         name: string;

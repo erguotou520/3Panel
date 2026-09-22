@@ -7,7 +7,6 @@
                 <el-button v-permission type="primary" @click="openCreate" :disabled="noApp">
                     {{ $t('commons.button.create') }}
                 </el-button>
-                <EnterpriseBatchInstall @success="search" @task="openTaskLog" />
             </template>
             <template #rightToolBar>
                 <TableViewSwitch v-model="viewMode" storage-key="ai-agent" />
@@ -272,7 +271,7 @@
 </template>
 
 <script setup lang="ts">
-import { defineAsyncComponent, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { deleteAgentCheck, pageAgents, resetAgentToken, unbindAgentWebsite, updateAgentRemark } from '@/api/modules/ai';
 import { checkAppInstalled, installedOp, searchApp, searchAppInstalled } from '@/api/modules/app';
@@ -312,12 +311,7 @@ import openclawIcon from '@/assets/images/ai-agent-openclaw.svg';
 import copawIcon from '@/assets/images/ai-agent-copaw.svg';
 import hermesIcon from '@/assets/images/ai-agent-hermes-agent.svg';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-import { loadOptionalComponent } from '@/extensions/optional';
 import { useOperateNodeContext } from '@/composables/useOperateNodeContext';
-
-const EnterpriseBatchInstall = defineAsyncComponent(() =>
-    loadOptionalComponent('/src/enterprise/views/ai/agents/batch-install/index.vue'),
-);
 
 const items = ref<AI.AgentItem[]>([]);
 const loading = ref(false);

@@ -58,7 +58,7 @@ const settingRouter = {
                     hidden: true,
                     meta: {
                         parent: 'menu.settings',
-                        title: 'xpack.alert.alertNotice',
+                        title: 'alert.alertNotice',
                         activeMenu: '/settings',
                         permission: 'alert_view',
                     },
@@ -120,7 +120,7 @@ const settingRouter = {
                     component: () => import('@/views/setting/node/index.vue'),
                     meta: {
                         parent: 'menu.settings',
-                        title: 'xpack.node.nodeManagement',
+                        title: 'node.nodeManagement',
                         activeMenu: '/settings',
                         adminOnly: true,
                         masterOnly: true,

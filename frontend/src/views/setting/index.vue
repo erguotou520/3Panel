@@ -32,7 +32,7 @@ const buttons = computed<RouterButton[]>(() => {
         ...(globalStore.hasPermission('alert_view')
             ? [
                   {
-                      label: i18n.global.t('xpack.alert.alertNotice'),
+                      label: i18n.global.t('alert.alertNotice'),
                       path: '/settings/alert',
                       permission: 'alert_view',
                   },
@@ -56,7 +56,7 @@ const buttons = computed<RouterButton[]>(() => {
                   ...(isMaster.value
                       ? [
                             {
-                                label: i18n.global.t('xpack.node.nodeManagement'),
+                                label: i18n.global.t('node.nodeManagement'),
                                 path: '/settings/node',
                             },
                         ]

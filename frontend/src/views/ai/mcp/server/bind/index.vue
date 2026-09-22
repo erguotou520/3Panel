@@ -24,13 +24,13 @@
                     </span>
                     <el-text type="danger">{{ $t('aiTools.mcp.bindDomainHelper') }}</el-text>
                 </el-form-item>
-                <el-form-item :label="$t('xpack.waf.whiteList') + ' IP'" prop="ipList">
+                <el-form-item :label="$t('waf.whiteList') + ' IP'" prop="ipList">
                     <el-input
                         :rows="3"
                         type="textarea"
                         clearable
                         v-model="req.ipList"
-                        :placeholder="$t('xpack.waf.ipGroupHelper')"
+                        :placeholder="$t('waf.ipGroupHelper')"
                     />
                     <span class="input-help">
                         {{ $t('aiTools.proxy.whiteListHelper') }}

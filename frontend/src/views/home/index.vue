@@ -386,7 +386,7 @@
                     <el-carousel-item key="simpleNode" v-if="showSimpleNode()">
                         <CardWithHeader :header="$t('setting.panel')">
                             <template #header-r>
-                                <el-tooltip :content="$t('xpack.node.panelItem')" placement="top">
+                                <el-tooltip :content="$t('node.panelItem')" placement="top">
                                     <el-button
                                         class="h-button-setting"
                                         @click="routerToNameWithQuery('SimpleNode', { uncached: 'true' })"

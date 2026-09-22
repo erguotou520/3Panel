@@ -65,10 +65,6 @@ export interface GlobalState {
     docWithRegion: boolean;
     isFxplay: boolean;
     isOffline: boolean;
-    // license
-    isProductPro: boolean;
-    productProExpires: number;
-    isMasterProductPro: boolean;
     // multi-node
     masterAlias: string;
     currentNode: string;

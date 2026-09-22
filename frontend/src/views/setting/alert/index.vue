@@ -33,8 +33,8 @@ const ALERT_NOTICE_TAB = {
     config: '2',
 } as const;
 const alertTabs = [
-    { key: 'tasks', value: ALERT_NOTICE_TAB.tasks, label: 'xpack.alert.list' },
-    { key: 'logs', value: ALERT_NOTICE_TAB.logs, label: 'xpack.alert.logs' },
+    { key: 'tasks', value: ALERT_NOTICE_TAB.tasks, label: 'alert.list' },
+    { key: 'logs', value: ALERT_NOTICE_TAB.logs, label: 'alert.logs' },
     { key: 'config', value: ALERT_NOTICE_TAB.config, label: 'commons.button.set' },
 ];
 type AlertNoticeTabValue = (typeof ALERT_NOTICE_TAB)[keyof typeof ALERT_NOTICE_TAB];

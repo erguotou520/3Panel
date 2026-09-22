@@ -1,18 +1,11 @@
 import http from '@/api';
 import { deepCopy } from '@/utils/misc';
 import { encodeBase64Fields } from '@/utils/base64';
-import { ResPage, SearchWithPage, DescriptionUpdate, ReqPage } from '../interface';
+import { ResPage, SearchWithPage, DescriptionUpdate } from '../interface';
 import { Setting } from '../interface/setting';
 import { TimeoutEnum } from '@/enums/http-enum';
 import { App } from '../interface/app';
 
-// license
-export const getLicenseStatus = () => {
-    return http.get<Setting.LicenseStatus>(`/core/licenses/status`);
-};
-export const getMasterLicenseStatus = () => {
-    return http.get<Setting.LicenseStatus>(`/core/licenses/master/status`);
-};
 export const listNodeOptions = () => {
     return http.get<Array<Setting.NodeItem>>(`/core/nodes/options`);
 };

@@ -11,8 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { getEnterpriseFooterSetting } from '@/extensions/footer-setting';
+import { computed } from 'vue';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 import {
     createDefaultFooterNavigationLinks,
@@ -20,15 +19,12 @@ import {
     isSafeExternalUrl,
     mergeFooterNavigationLinks,
 } from './model';
-import type { FooterNavigationKey, FooterNavigationSetting } from './model';
-import { FOOTER_NAVIGATION_REFRESH_EVENT } from './event';
+import type { FooterNavigationKey } from './model';
 
-const { docsUrl, isEE, isFxplay } = useGlobalStore();
-const setting = ref<FooterNavigationSetting | null>(null);
-let loadGeneration = 0;
+const { docsUrl, isFxplay } = useGlobalStore();
 
 const defaults = computed(() => createDefaultFooterNavigationLinks(docsUrl.value));
-const links = computed(() => mergeFooterNavigationLinks(setting.value, defaults.value));
+const links = computed(() => mergeFooterNavigationLinks(null, defaults.value));
 const labels: Record<FooterNavigationKey, string> = {
     documentation: 'setting.doc2',
     project: 'setting.project',
@@ -49,43 +45,12 @@ const visibleLinks = computed(() => {
         }));
 });
 
-const loadSetting = async () => {
-    const generation = ++loadGeneration;
-    if (!isEE.value) {
-        setting.value = null;
-        return;
-    }
-    try {
-        const res = await getEnterpriseFooterSetting(true);
-        if (generation !== loadGeneration || !isEE.value) {
-            return;
-        }
-        setting.value = res?.data || null;
-    } catch {
-        if (generation !== loadGeneration || !isEE.value) {
-            return;
-        }
-        setting.value = null;
-    }
-};
-
 const openLink = (url: string) => {
     if (!isSafeExternalUrl(url)) {
         return;
     }
     window.open(url, '_blank', 'noopener,noreferrer');
 };
-
-watch(isEE, loadSetting, { immediate: true });
-
-onMounted(() => {
-    window.addEventListener(FOOTER_NAVIGATION_REFRESH_EVENT, loadSetting);
-});
-
-onBeforeUnmount(() => {
-    loadGeneration += 1;
-    window.removeEventListener(FOOTER_NAVIGATION_REFRESH_EVENT, loadSetting);
-});
 </script>
 
 <style scoped lang="scss">

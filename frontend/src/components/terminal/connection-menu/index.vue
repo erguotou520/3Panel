@@ -140,7 +140,7 @@ const connectionTree = computed<ConnectionTreeItem[]>(() => {
     if (childNodes.length > 0) {
         groups.push({
             id: 'panel-nodes',
-            label: i18n.global.t('xpack.node.node'),
+            label: i18n.global.t('node.node'),
             kind: 'group',
             children: childNodes.map((node) => ({
                 id: `node-${node.id}`,

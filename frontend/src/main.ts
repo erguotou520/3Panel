@@ -10,10 +10,6 @@ import '@/styles/common.scss';
 import '@/assets/iconfont/iconfont.css';
 import '@/assets/iconfont/iconfont.js';
 import '@/styles/style.css';
-import { loadXpackStyles } from '@/extensions/theme';
-
-loadXpackStyles();
-
 import router from '@/routers/index';
 import i18n, { ensureFallbackLocale, loadLocaleMessages } from '@/lang/index';
 import pinia from '@/store/index';

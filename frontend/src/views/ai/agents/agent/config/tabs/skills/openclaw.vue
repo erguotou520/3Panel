@@ -142,13 +142,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { Refresh, Search } from '@element-plus/icons-vue';
 import { useI18n } from 'vue-i18n';
 import { AI } from '@/api/interface/ai';
 import { installAgentSkill, listAgentSkills, searchAgentSkills, updateAgentSkill } from '@/api/modules/ai';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-import { listEnterprisePublishedSkillHub } from '@/extensions/xpack';
 import { MsgSuccess } from '@/utils/message';
 import { newUUID } from '@/utils/id';
 import { isOpenclawCurrentHTTPVersion } from '@/utils/agent';
@@ -157,7 +156,7 @@ import VersionSupport from '../components/version-support.vue';
 
 type SkillGroupKey = 'builtIn' | 'external' | 'workspace' | 'extra' | 'other';
 type SkillViewMode = 'installed' | 'market';
-type SkillMarketSource = 'clawhub-global' | 'clawhub-cn' | 'skillhub' | 'local-hub';
+type SkillMarketSource = 'clawhub-global' | 'clawhub-cn' | 'skillhub';
 
 const openclawMinSupportedVersion = '2026.3.23';
 const props = defineProps<{
@@ -165,16 +164,13 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
-const { isIntl, isEE, isOffline } = useGlobalStore();
+const { isIntl } = useGlobalStore();
 const loading = ref(false);
 const searching = ref(false);
 const mode = ref<SkillViewMode>('market');
 const installedKeyword = ref('');
 const marketKeyword = ref('');
 const getDefaultMarketSource = (): SkillMarketSource => {
-    if (isEE.value && isOffline.value) {
-        return 'local-hub';
-    }
     return isIntl.value ? 'clawhub-global' : 'clawhub-cn';
 };
 const marketSource = ref<SkillMarketSource>(getDefaultMarketSource());
@@ -188,10 +184,7 @@ const taskLogRef = ref<InstanceType<typeof TaskLog>>();
 const installedLoaded = ref(false);
 const supported = computed(() => isOpenclawCurrentHTTPVersion(props.appVersion));
 const marketSourceOptions = computed(() => {
-    if (isEE.value && isOffline.value) {
-        return [{ value: 'local-hub' as SkillMarketSource, label: t('aiTools.agents.skillsMarketSourceLocalHub') }];
-    }
-    const options = [
+    return [
         {
             value: 'clawhub-global' as SkillMarketSource,
             label: t('aiTools.agents.skillsMarketSourceClawhubGlobal'),
@@ -199,25 +192,12 @@ const marketSourceOptions = computed(() => {
         { value: 'clawhub-cn' as SkillMarketSource, label: t('aiTools.agents.skillsMarketSourceClawhubChina') },
         { value: 'skillhub' as SkillMarketSource, label: t('aiTools.agents.skillsMarketSourceSkillhub') },
     ];
-    if (isEE.value) {
-        options.push({ value: 'local-hub', label: t('aiTools.agents.skillsMarketSourceLocalHub') });
-    }
-    return options;
 });
 
 function handleMarketSourceChange() {
     marketResults.value = [];
     marketSearched.value = false;
 }
-
-watch([isEE, isOffline], () => {
-    const allowed = marketSourceOptions.value.map((option) => option.value);
-    if (allowed.includes(marketSource.value)) {
-        return;
-    }
-    marketSource.value = getDefaultMarketSource();
-    handleMarketSourceChange();
-});
 
 const groupTagLabels = computed<Record<SkillGroupKey, string>>(() => ({
     builtIn: t('aiTools.agents.skillsGroupBuiltIn'),
@@ -306,30 +286,11 @@ const searchMarketSkills = async () => {
     if (!supported.value || !agentId.value) {
         return;
     }
-    if (marketSource.value !== 'local-hub' && !marketKeyword.value.trim()) {
+    if (!marketKeyword.value.trim()) {
         return;
     }
     searching.value = true;
     try {
-        if (marketSource.value === 'local-hub') {
-            const res = await listEnterprisePublishedSkillHub({
-                agentType: 'openclaw',
-                keyword: marketKeyword.value.trim(),
-            });
-            marketResults.value = (res?.data || []).map((item) => ({
-                slug: String(item.id),
-                identifier: String(item.id),
-                name: item.name,
-                description: item.description,
-                summary: item.description,
-                version: item.version,
-                source: 'local-hub',
-                trust: item.riskLevel,
-                score: '',
-            }));
-            marketSearched.value = true;
-            return;
-        }
         const res = await searchAgentSkills({
             agentId: agentId.value,
             source: marketSource.value,

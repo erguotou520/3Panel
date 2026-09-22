@@ -67,10 +67,6 @@ const GlobalStore = defineStore('GlobalState', {
         docWithRegion: true,
         isFxplay: false,
         isOffline: false,
-        // license
-        isProductPro: false,
-        productProExpires: 0,
-        isMasterProductPro: false,
         // multi-node
         masterAlias: '',
         currentNode: 'local',
@@ -80,7 +76,7 @@ const GlobalStore = defineStore('GlobalState', {
         isDarkTheme: (state) =>
             state.themeConfig.theme === 'dark' ||
             (state.themeConfig.theme === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches),
-        isDarkGoldTheme: (state) => state.themeConfig.primary === '#F0BE96' && state.isProductPro,
+        isDarkGoldTheme: () => false,
         isNodeAdmin: (state) =>
             state.nodeRoles.some((item) => item.nodeName === state.currentNode && item.roleName === 'Node Admin'),
         isAdminOrNodeAdmin: (state) =>
@@ -97,12 +93,7 @@ const GlobalStore = defineStore('GlobalState', {
         isMaster: (state) => state.currentNode === 'local',
         isMobile: (state) => state.device === DeviceType.Mobile,
 
-        isXpackOrEE: (state) => state.isMasterProductPro,
-        isEE: () => false,
-        isMasterPro: (state) => state.isMasterProductPro,
-        // Managing several nodes is a core 3Panel feature rather than a paid
-        // add-on, so the node switcher is always available. Enterprise gating
-        // stays on the license UI where it belongs.
+        // Managing several nodes is a core 3Panel feature, so the node switcher is always available.
         isMultiNode: () => true,
     },
     actions: {
@@ -165,7 +156,7 @@ const GlobalStore = defineStore('GlobalState', {
             this.device = value;
         },
         getMasterAlias() {
-            return this.masterAlias || i18n.global.t('xpack.node.master');
+            return this.masterAlias || i18n.global.t('node.master');
         },
     },
     persist: piniaPersistConfig('GlobalState'),

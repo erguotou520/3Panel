@@ -62,7 +62,6 @@
                                 @change="updateConfig('InstallAllowPort', config.installAllowPort)"
                             />
                         </el-form-item>
-                        <CustomSetting v-if="isXpackOrEE" />
                     </el-col>
                 </el-row>
             </el-form>
@@ -76,12 +75,6 @@ import { getAppStoreConfig, updateAppStoreConfig } from '@/api/modules/setting';
 import { FormRules } from 'element-plus';
 import { MsgSuccess } from '@/utils/message';
 import i18n from '@/lang';
-import { defineAsyncComponent } from 'vue';
-import { loadOptionalComponent } from '@/extensions/optional';
-import { useGlobalStore } from '@/composables/useGlobalStore';
-const { isXpackOrEE } = useGlobalStore();
-
-const CustomSetting = defineAsyncComponent(() => loadOptionalComponent('/src/xpack/views/appstore/index.vue'));
 
 const rules = ref<FormRules>({});
 const config = ref({
@@ -114,9 +107,6 @@ const search = async () => {
 };
 
 const getNodeConfig = async () => {
-    if (isXpackOrEE.value) {
-        return;
-    }
     const res = await getCurrentNodeCustomAppConfig();
     if (res && res.data) {
         useCustomApp.value = res.data.status === 'enable';

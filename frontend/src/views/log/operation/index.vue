@@ -50,7 +50,7 @@
                     <el-option :label="$t('commons.status.failed')" value="Failed" />
                 </el-select>
                 <el-select v-if="isAdmin" v-model="searchNode" @change="search()" clearable class="p-w-200">
-                    <template #prefix>{{ $t('xpack.node.node') }}</template>
+                    <template #prefix>{{ $t('node.node') }}</template>
                     <el-option :label="$t('commons.table.all')" value="" />
                     <el-option
                         v-for="(node, index) in nodes"
@@ -82,7 +82,7 @@
                             <span v-if="language === 'en'">{{ row.detailEN }}</span>
                         </template>
                     </el-table-column>
-                    <el-table-column :label="$t('xpack.node.node')" prop="node">
+                    <el-table-column :label="$t('node.node')" prop="node">
                         <template #default="{ row }">
                             <span>{{ loadNodeName(row.node) }}</span>
                         </template>
@@ -271,11 +271,11 @@ const exactReplacements: Record<string, string> = {
     SessionTimeout: 'setting.sessionTimeout',
     SecurityEntrance: 'setting.entrance',
     ExpirationDays: 'setting.expirationTime',
-    OpsReportExportFormat: 'xpack.opsReport.page.defaultFormat',
-    OpsReportSchedule: 'xpack.opsReport.page.generationRule',
-    OpsReportSavePath: 'xpack.opsReport.page.savePath',
-    OpsReportThreshold: 'xpack.opsReport.page.threshold',
-    OpsReportAutoExport: 'xpack.opsReport.page.autoExport',
+    OpsReportExportFormat: 'opsReport.page.defaultFormat',
+    OpsReportSchedule: 'opsReport.page.generationRule',
+    OpsReportSavePath: 'opsReport.page.savePath',
+    OpsReportThreshold: 'opsReport.page.threshold',
+    OpsReportAutoExport: 'opsReport.page.autoExport',
     ComplexityVerification: 'setting.complexity',
     MFAStatus: 'setting.mfa',
     MonitorStatus: 'monitor.enableMonitor',

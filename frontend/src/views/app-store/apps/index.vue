@@ -72,7 +72,7 @@
 <script lang="ts" setup>
 import { App } from '@/api/interface/app';
 import { onMounted, reactive, ref } from 'vue';
-import { searchApp, syncApp, syncCutomAppStore, syncLocalApp, getCurrentNodeCustomAppConfig } from '@/api/modules/app';
+import { searchApp, syncApp, syncCutomAppStore, syncLocalApp } from '@/api/modules/app';
 import Install from '../detail/install/index.vue';
 import router from '@/routers';
 import { MsgSuccess } from '@/utils/message';
@@ -87,7 +87,7 @@ import AppCard from '@/views/app-store/apps/app/index.vue';
 import MainDiv from '@/components/main-div/index.vue';
 import { jumpToInstall } from '@/utils/app';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-const { isProductPro, isOffline, isMobile, isEnterprise } = useGlobalStore();
+const { isOffline, isMobile, isEnterprise } = useGlobalStore();
 
 const paginationConfig = reactive({
     cacheSizeKey: 'app-page-size',
@@ -179,7 +179,7 @@ const sync = async () => {
     };
     try {
         let res;
-        if ((isOffline.value && !isEnterprise.value) || (isProductPro.value && syncCustomAppstore.value)) {
+        if (isOffline.value && !isEnterprise.value) {
             res = await syncCutomAppStore(syncReq);
         } else {
             res = await syncApp(syncReq);
@@ -239,15 +239,7 @@ onMounted(async () => {
         installRef.value.acceptParams(params);
     }
     search(req);
-    if (isProductPro.value) {
-        const res = await getCurrentNodeCustomAppConfig();
-        if (res && res.data) {
-            customAppStoreEnabled.value = res.data.status === 'Enable';
-            syncCustomAppstore.value = customAppStoreEnabled.value;
-        }
-    } else {
-        syncCustomAppstore.value = isOffline.value;
-    }
+    syncCustomAppstore.value = isOffline.value;
     mainHeight.value = window.innerHeight - 380;
     window.onresize = () => {
         return (() => {

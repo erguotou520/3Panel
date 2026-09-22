@@ -47,10 +47,6 @@
                 <el-form-item>
                     <el-checkbox v-model="form.proxyPasswdKeepItem" :label="$t('setting.proxyPasswdKeep')" />
                 </el-form-item>
-                <el-form-item v-if="isXpackOrEE" :label="$t('setting.proxyDocker')" prop="proxyDocker">
-                    <el-checkbox v-model="form.proxyDocker" :label="$t('setting.proxyDocker')" />
-                    <span class="input-help">{{ $t('setting.proxyDockerHelper') }}</span>
-                </el-form-item>
             </div>
         </el-form>
         <template #footer>
@@ -62,9 +58,6 @@
             </el-button>
         </template>
     </DrawerPro>
-
-    <ConfirmDialog ref="confirmDialogRef" @confirm="onSubmit" />
-    <DockerProxyDialog ref="dockerProxyRef" @submit="onSubmit" v-model:with-docker-restart="withDockerRestart" />
 </template>
 
 <script lang="ts" setup>
@@ -74,15 +67,8 @@ import { MsgSuccess } from '@/utils/message';
 import { FormInstance } from 'element-plus';
 import { reactive, ref } from 'vue';
 import { updateProxy } from '@/api/modules/setting';
-import { useGlobalStore } from '@/composables/useGlobalStore';
-import ConfirmDialog from '@/components/confirm-dialog/index.vue';
-import DockerProxyDialog from '@/components/docker-proxy/dialog.vue';
-import { loadDockerStatus } from '@/api/modules/container';
-
-const { isXpackOrEE } = useGlobalStore();
 const emit = defineEmits<{ (e: 'search'): void }>();
 
-const confirmDialogRef = ref();
 const formRef = ref<FormInstance>();
 const rules = reactive({
     proxyType: [Rules.requiredSelect],
@@ -92,7 +78,6 @@ const rules = reactive({
 
 const loading = ref(false);
 const proxyVisible = ref<boolean>(false);
-const proxyDockerVisible = ref<boolean>(false);
 const form = reactive({
     proxyUrl: '',
     proxyType: '',
@@ -104,9 +89,6 @@ const form = reactive({
     proxyPasswdKeepItem: false,
     proxyDocker: false,
 });
-const dockerStatus = ref();
-const withDockerRestart = ref(false);
-const dockerProxyRef = ref();
 
 interface DialogProps {
     url: string;
@@ -132,15 +114,8 @@ const acceptParams = (params: DialogProps): void => {
     form.proxyUser = params.user;
     form.proxyPasswd = params.passwd;
     form.proxyDocker = params.proxyDocker === 'Enable';
-    proxyDockerVisible.value = params.proxyDocker === 'Enable';
     proxyVisible.value = true;
     form.proxyPasswdKeepItem = params.passwdKeep === 'Enable';
-    loadDocker();
-};
-
-const loadDocker = async () => {
-    const res = await loadDockerStatus();
-    dockerStatus.value = res.data.isExist;
 };
 
 const submitChangePassword = async (formEl: FormInstance | undefined) => {
@@ -164,54 +139,18 @@ const submitChangePassword = async (formEl: FormInstance | undefined) => {
         if (form.proxyType === 'http' || form.proxyType === 'https') {
             params.proxyUrl = form.proxyUrl;
         }
-        if (dockerStatus.value && isXpackOrEE.value && (params.proxyDocker || proxyDockerVisible.value)) {
-            dockerProxyRef.value.acceptParams({
-                syncList: 'SyncSystemProxy',
-                open: true,
-            });
-        } else {
-            loading.value = true;
-            await updateProxy(params)
-                .then(async () => {
-                    loading.value = false;
-                    emit('search');
-                    proxyVisible.value = false;
-                    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-                })
-                .catch(() => {
-                    loading.value = false;
-                });
-        }
-    });
-};
-
-const onSubmit = async () => {
-    try {
         loading.value = true;
-        let isClose = form.proxyType === '' || form.proxyType === 'close';
-        let params = {
-            proxyType: isClose ? '' : form.proxyType,
-            proxyUrl: isClose ? '' : form.proxyUrl,
-            proxyPort: isClose ? '' : form.proxyPortItem + '',
-            proxyUser: isClose ? '' : form.proxyUser,
-            proxyPasswd: isClose ? '' : form.proxyPasswd,
-            proxyPasswdKeep: '',
-            proxyDocker: isClose ? false : form.proxyDocker,
-            withDockerRestart: withDockerRestart.value,
-        };
-        if (!isClose) {
-            params.proxyPasswdKeep = form.proxyPasswdKeepItem ? 'Enable' : 'Disable';
-        }
-        if (form.proxyType === 'http' || form.proxyType === 'https') {
-            params.proxyUrl = form.proxyUrl;
-        }
-        await updateProxy(params);
-        emit('search');
-        handleClose();
-        MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    } finally {
-        loading.value = false;
-    }
+        await updateProxy(params)
+            .then(async () => {
+                loading.value = false;
+                emit('search');
+                proxyVisible.value = false;
+                MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+            })
+            .catch(() => {
+                loading.value = false;
+            });
+    });
 };
 
 const handleClose = () => {

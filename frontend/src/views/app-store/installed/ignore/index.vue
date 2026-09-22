@@ -3,7 +3,7 @@
         <template #content>
             <el-table :data="apps">
                 <el-table-column prop="name" :label="$t('app.app')" />
-                <el-table-column prop="scope" :label="$t('license.trialInfo')">
+                <el-table-column prop="scope" :label="$t('app.trialInfo')">
                     <template #default="{ row }">
                         <el-tag v-if="row.version != ''">{{ row.version }}</el-tag>
                         <el-tag v-else>{{ $t('commons.table.all') + $t('app.version') }}</el-tag>

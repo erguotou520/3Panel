@@ -1,10 +1,10 @@
 <template>
-    <DrawerPro v-model="open" :header="$t('xpack.user.userInfo')">
+    <DrawerPro v-model="open" :header="$t('user.userInfo')">
         <div v-loading="loading">
             <el-alert
                 v-if="isLDAPUser"
                 class="mb-4"
-                :title="$t('xpack.ldap.localCredentialsManaged')"
+                :title="$t('ldap.localCredentialsManaged')"
                 type="info"
                 :closable="false"
                 show-icon

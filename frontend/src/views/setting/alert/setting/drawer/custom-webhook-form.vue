@@ -6,10 +6,10 @@
             :closable="false"
             type="warning"
             show-icon
-            :title="$t('xpack.alert.customWebhookRecoveryRequired')"
+            :title="$t('alert.customWebhookRecoveryRequired')"
         />
         <el-form-item
-            :label="$t('xpack.alert.displayName')"
+            :label="$t('alert.displayName')"
             prop="customWebhook.displayName"
             :error="errorFor('displayName')"
         >
@@ -21,17 +21,17 @@
             />
         </el-form-item>
 
-        <el-form-item :label="$t('xpack.alert.webhookPreset')">
+        <el-form-item :label="$t('alert.webhookPreset')">
             <el-select :model-value="modelValue.preset" class="w-full" @change="changePreset">
-                <el-option value="genericJson" :label="$t('xpack.alert.genericJsonPreset')" />
+                <el-option value="genericJson" :label="$t('alert.genericJsonPreset')" />
                 <el-option value="slack" label="Slack" />
                 <el-option value="discord" label="Discord" />
                 <el-option value="teamsWorkflows" label="Teams Workflows" />
-                <el-option value="custom" :label="$t('xpack.alert.customPreset')" />
+                <el-option value="custom" :label="$t('alert.customPreset')" />
             </el-select>
         </el-form-item>
 
-        <el-form-item :label="$t('xpack.alert.webhookUrl')" :error="errorFor('url')">
+        <el-form-item :label="$t('alert.webhookUrl')" :error="errorFor('url')">
             <template v-if="modelValue.url.action === 'keep'">
                 <div class="secret-editor">
                     <el-input
@@ -45,14 +45,14 @@
                     />
                     <div class="secret-editor__actions">
                         <el-button v-if="allowClearUrl" plain type="danger" @click="clearUrl">
-                            {{ $t('xpack.alert.clearSecret') }}
+                            {{ $t('alert.clearSecret') }}
                         </el-button>
                     </div>
                 </div>
             </template>
             <template v-else-if="modelValue.url.action === 'clear'">
                 <div class="secret-editor">
-                    <el-alert :closable="false" type="warning" :title="$t('xpack.alert.secretCleared')" />
+                    <el-alert :closable="false" type="warning" :title="$t('alert.secretCleared')" />
                     <el-input
                         model-value=""
                         type="password"
@@ -64,7 +64,7 @@
                     />
                     <div class="secret-editor__actions">
                         <el-button v-if="modelValue.url.configured" plain @click="keepUrl">
-                            {{ $t('xpack.alert.keepSecret') }}
+                            {{ $t('alert.keepSecret') }}
                         </el-button>
                     </div>
                 </div>
@@ -81,18 +81,18 @@
                         @update:model-value="updateUrlValue"
                     />
                     <div v-if="modelValue.url.configured" class="secret-editor__actions">
-                        <el-button plain @click="keepUrl">{{ $t('xpack.alert.keepSecret') }}</el-button>
+                        <el-button plain @click="keepUrl">{{ $t('alert.keepSecret') }}</el-button>
                         <el-button v-if="allowClearUrl" plain type="danger" @click="clearUrl">
-                            {{ $t('xpack.alert.clearSecret') }}
+                            {{ $t('alert.clearSecret') }}
                         </el-button>
                     </div>
                 </div>
             </template>
-            <span class="input-help">{{ $t('xpack.alert.webhookUrlSecretHelper') }}</span>
-            <span class="input-help">{{ $t('xpack.alert.webhookPublicAddressHelper') }}</span>
+            <span class="input-help">{{ $t('alert.webhookUrlSecretHelper') }}</span>
+            <span class="input-help">{{ $t('alert.webhookPublicAddressHelper') }}</span>
         </el-form-item>
 
-        <el-form-item :label="$t('xpack.alert.bodyType')">
+        <el-form-item :label="$t('alert.bodyType')">
             <el-radio-group :model-value="modelValue.body.type" class="body-type-group" @change="changeBodyType">
                 <el-radio-button value="json">JSON</el-radio-button>
                 <el-radio-button value="form">Form</el-radio-button>
@@ -101,20 +101,20 @@
             <span class="input-help">POST · {{ derivedContentType }}</span>
         </el-form-item>
 
-        <el-form-item :label="$t('xpack.alert.bodyTemplate')" :error="errorFor('body')">
+        <el-form-item :label="$t('alert.bodyTemplate')" :error="errorFor('body')">
             <template v-if="modelValue.body.type === 'form'">
                 <div class="key-value-list">
                     <div v-for="(field, index) in modelValue.body.fields" :key="field.uid" class="key-value-row">
                         <el-input
                             :model-value="field.key"
                             :maxlength="CUSTOM_WEBHOOK_LIMITS.headerName"
-                            :placeholder="$t('xpack.alert.formFieldName')"
+                            :placeholder="$t('alert.formFieldName')"
                             @update:model-value="updateFormField(index, 'key', $event)"
                         />
                         <el-input
                             :model-value="field.value"
                             :maxlength="CUSTOM_WEBHOOK_LIMITS.headerValue"
-                            :placeholder="$t('xpack.alert.formFieldValue')"
+                            :placeholder="$t('alert.formFieldValue')"
                             @focus="activeFormFieldIndex = index"
                             @update:model-value="updateFormField(index, 'value', $event)"
                         />
@@ -128,7 +128,7 @@
                         :disabled="modelValue.body.fields.length >= CUSTOM_WEBHOOK_LIMITS.formFields"
                         @click="addFormField"
                     >
-                        {{ $t('xpack.alert.addFormField') }}
+                        {{ $t('alert.addFormField') }}
                     </el-button>
                 </div>
             </template>
@@ -149,21 +149,21 @@
             <el-collapse-item name="advanced">
                 <template #title>
                     <div class="advanced-title">
-                        <span>{{ $t('xpack.alert.webhookAdvanced') }}</span>
+                        <span>{{ $t('alert.webhookAdvanced') }}</span>
                         <span class="advanced-title__summary">
                             POST · {{ derivedContentType }} · {{ modelValue.headers.length }}
-                            {{ $t('xpack.alert.headers') }}
+                            {{ $t('alert.headers') }}
                         </span>
                     </div>
                 </template>
 
-                <el-form-item :label="$t('xpack.alert.headers')" :error="errorFor('headers')">
+                <el-form-item :label="$t('alert.headers')" :error="errorFor('headers')">
                     <div class="header-list">
                         <div v-for="(header, index) in modelValue.headers" :key="header.uid" class="header-card">
                             <el-input
                                 :model-value="header.key"
                                 :maxlength="CUSTOM_WEBHOOK_LIMITS.headerName"
-                                :placeholder="$t('xpack.alert.headerName')"
+                                :placeholder="$t('alert.headerName')"
                                 @update:model-value="updateHeaderKey(index, $event)"
                             />
 
@@ -171,7 +171,7 @@
                                 <el-input
                                     :model-value="header.value"
                                     :maxlength="CUSTOM_WEBHOOK_LIMITS.headerValue"
-                                    :placeholder="$t('xpack.alert.headerValue')"
+                                    :placeholder="$t('alert.headerValue')"
                                     @update:model-value="updateHeader(index, { value: $event })"
                                 />
                             </template>
@@ -182,7 +182,7 @@
                                     type="password"
                                     show-password
                                     autocomplete="new-password"
-                                    :placeholder="secretEditorPlaceholder(header, $t('xpack.alert.headerValue'))"
+                                    :placeholder="secretEditorPlaceholder(header, $t('alert.headerValue'))"
                                     @update:model-value="updateSecretHeaderValue(index, $event)"
                                 />
                             </template>
@@ -191,7 +191,7 @@
                                     <el-alert
                                         :closable="false"
                                         type="warning"
-                                        :title="$t('xpack.alert.secretCleared')"
+                                        :title="$t('alert.secretCleared')"
                                     />
                                     <el-input
                                         model-value=""
@@ -199,7 +199,7 @@
                                         type="password"
                                         show-password
                                         autocomplete="new-password"
-                                        :placeholder="$t('xpack.alert.headerValue')"
+                                        :placeholder="$t('alert.headerValue')"
                                         @update:model-value="updateSecretHeaderValue(index, $event)"
                                     />
                                 </div>
@@ -211,7 +211,7 @@
                                     type="password"
                                     show-password
                                     autocomplete="new-password"
-                                    :placeholder="$t('xpack.alert.headerValue')"
+                                    :placeholder="$t('alert.headerValue')"
                                     @update:model-value="updateHeader(index, { value: $event })"
                                 />
                             </template>
@@ -222,7 +222,7 @@
                                     :disabled="isCustomWebhookSecretHeader(header.key)"
                                     @update:model-value="toggleHeaderSecret(index, Boolean($event))"
                                 >
-                                    {{ $t('xpack.alert.secretValue') }}
+                                    {{ $t('alert.secretValue') }}
                                 </el-checkbox>
                                 <div v-if="header.secret" class="header-card__secret-actions">
                                     <el-button
@@ -230,7 +230,7 @@
                                         link
                                         @click="setHeaderSecretAction(index, 'keep')"
                                     >
-                                        {{ $t('xpack.alert.keepSecret') }}
+                                        {{ $t('alert.keepSecret') }}
                                     </el-button>
                                     <el-button
                                         v-if="header.configured && header.action !== 'clear'"
@@ -238,7 +238,7 @@
                                         type="danger"
                                         @click="setHeaderSecretAction(index, 'clear')"
                                     >
-                                        {{ $t('xpack.alert.clearSecret') }}
+                                        {{ $t('alert.clearSecret') }}
                                     </el-button>
                                 </div>
                                 <el-button link type="danger" @click="removeHeader(index)">
@@ -252,12 +252,12 @@
                             :disabled="modelValue.headers.length >= CUSTOM_WEBHOOK_LIMITS.headers"
                             @click="addHeader"
                         >
-                            {{ $t('xpack.alert.addHeader') }}
+                            {{ $t('alert.addHeader') }}
                         </el-button>
                     </div>
                 </el-form-item>
 
-                <el-form-item :label="$t('xpack.alert.templateVariables')">
+                <el-form-item :label="$t('alert.templateVariables')">
                     <div class="variable-list">
                         <el-tag
                             v-for="variable in templateVariables"
@@ -270,7 +270,7 @@
                             {{ $t(variable.labelKey) }}
                         </el-tag>
                     </div>
-                    <span class="input-help">{{ $t('xpack.alert.templateVariablesHelper') }}</span>
+                    <span class="input-help">{{ $t('alert.templateVariablesHelper') }}</span>
                 </el-form-item>
             </el-collapse-item>
         </el-collapse>
@@ -329,11 +329,11 @@ const bodyTemplateInputRef = ref<InstanceType<typeof ElInput>>();
 const bodyTemplateFocused = ref(false);
 const activeFormFieldIndex = ref<number | null>(null);
 const templateVariables = [
-    { token: CUSTOM_WEBHOOK_VARIABLES[0], labelKey: 'xpack.alert.templateVariableTitle' },
-    { token: CUSTOM_WEBHOOK_VARIABLES[1], labelKey: 'xpack.alert.templateVariableMessage' },
-    { token: CUSTOM_WEBHOOK_VARIABLES[2], labelKey: 'xpack.alert.templateVariableType' },
-    { token: CUSTOM_WEBHOOK_VARIABLES[3], labelKey: 'xpack.alert.templateVariableNodeName' },
-    { token: CUSTOM_WEBHOOK_VARIABLES[4], labelKey: 'xpack.alert.templateVariableTimestamp' },
+    { token: CUSTOM_WEBHOOK_VARIABLES[0], labelKey: 'alert.templateVariableTitle' },
+    { token: CUSTOM_WEBHOOK_VARIABLES[1], labelKey: 'alert.templateVariableMessage' },
+    { token: CUSTOM_WEBHOOK_VARIABLES[2], labelKey: 'alert.templateVariableType' },
+    { token: CUSTOM_WEBHOOK_VARIABLES[3], labelKey: 'alert.templateVariableNodeName' },
+    { token: CUSTOM_WEBHOOK_VARIABLES[4], labelKey: 'alert.templateVariableTimestamp' },
 ];
 const bodyDrafts = reactive<Record<CustomWebhookBodyType, CustomWebhookBody>>({
     json: { type: 'json', template: '', fields: [] },
@@ -365,8 +365,8 @@ const changePreset = async (value: string | number | boolean | undefined) => {
     if (overwritesBody) {
         try {
             await ElMessageBox.confirm(
-                i18n.global.t('xpack.alert.presetOverwriteHelper'),
-                i18n.global.t('xpack.alert.webhookPreset'),
+                i18n.global.t('alert.presetOverwriteHelper'),
+                i18n.global.t('alert.webhookPreset'),
                 {
                     confirmButtonText: i18n.global.t('commons.button.confirm'),
                     cancelButtonText: i18n.global.t('commons.button.cancel'),
@@ -553,7 +553,7 @@ const insertVariable = (variable: string) => {
 
 const errorFor = (field: string): string => {
     const issue = props.validationIssues.find((item) => item.field === field || item.field.startsWith(`${field}.`));
-    return issue ? i18n.global.t(`xpack.alert.customWebhookValidation.${issue.code}`) : '';
+    return issue ? i18n.global.t(`alert.customWebhookValidation.${issue.code}`) : '';
 };
 </script>
 

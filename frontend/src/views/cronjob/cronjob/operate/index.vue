@@ -691,15 +691,15 @@
                             <el-row :gutter="20">
                                 <LayoutCol :span="8">
                                     <el-form-item prop="hasAlert">
-                                        <el-checkbox v-model="form.hasAlert" :label="$t('xpack.alert.isAlert')" />
-                                        <span class="input-help">{{ $t('xpack.alert.cronJobHelper') }}</span>
+                                        <el-checkbox v-model="form.hasAlert" :label="$t('alert.isAlert')" />
+                                        <span class="input-help">{{ $t('alert.cronJobHelper') }}</span>
                                     </el-form-item>
                                 </LayoutCol>
                             </el-row>
                             <el-row :gutter="20">
                                 <LayoutCol>
                                     <el-form-item
-                                        :label="$t('xpack.alert.alertMethod')"
+                                        :label="$t('alert.alertMethod')"
                                         v-if="form.hasAlert"
                                         prop="alertMethodItems"
                                     >
@@ -718,7 +718,7 @@
                                                 :key="group.type"
                                                 :label="
                                                     i18n.global.t(
-                                                        'xpack.alert.' + (group.type === 'email' ? 'mail' : group.type),
+                                                        'alert.' + (group.type === 'email' ? 'mail' : group.type),
                                                     )
                                                 "
                                             >
@@ -750,7 +750,7 @@
                                     <el-form-item
                                         prop="alertCount"
                                         v-if="form.hasAlert"
-                                        :label="$t('xpack.alert.alertCount')"
+                                        :label="$t('alert.alertCount')"
                                     >
                                         <el-input-number
                                             class="selectClass"
@@ -760,7 +760,7 @@
                                             :step="1"
                                             v-model.number="form.alertCount"
                                         />
-                                        <span class="input-help">{{ $t('xpack.alert.alertCountHelper') }}</span>
+                                        <span class="input-help">{{ $t('alert.alertCountHelper') }}</span>
                                     </el-form-item>
                                 </LayoutCol>
                             </el-row>
@@ -953,7 +953,7 @@ const groupedAlertConfigOptions = computed(() => {
 });
 
 const getConfigTypeLabel = (type: string): string => {
-    return i18n.global.t(`xpack.alert.${type === 'email' ? 'mail' : type}`);
+    return i18n.global.t(`alert.${type === 'email' ? 'mail' : type}`);
 };
 
 const getAlertConfigOptionLabel = (c: Alert.AlertConfigInfo): string => {
@@ -961,10 +961,10 @@ const getAlertConfigOptionLabel = (c: Alert.AlertConfigInfo): string => {
         const cfg = JSON.parse(c.config || '{}') as Record<string, unknown>;
         return (
             getAlertConfigDisplayName(c.type, cfg) ||
-            i18n.global.t(`xpack.alert.${c.type === 'email' ? 'mail' : c.type}`)
+            i18n.global.t(`alert.${c.type === 'email' ? 'mail' : c.type}`)
         );
     } catch {
-        return i18n.global.t(`xpack.alert.${c.type === 'email' ? 'mail' : c.type}`);
+        return i18n.global.t(`alert.${c.type === 'email' ? 'mail' : c.type}`);
     }
 };
 

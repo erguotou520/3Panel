@@ -69,14 +69,6 @@
             <el-form-item :label="$t('website.remark')" prop="description">
                 <el-input v-model="ssl.description"></el-input>
             </el-form-item>
-            <PushToNode
-                v-if="isMaster && isXpackOrEE"
-                :push-node="ssl.pushNode"
-                :nodes="ssl.pushNodes"
-                type="ssl"
-                @update:push-node="ssl.pushNode = $event"
-                @update:nodes="ssl.pushNodes = $event"
-            />
         </el-form>
         <template #footer>
             <span class="dialog-footer">
@@ -97,21 +89,9 @@ import { Rules } from '@/global/form-rules';
 import i18n from '@/lang';
 import { FormInstance } from 'element-plus';
 import FileList from '@/components/file-list/index.vue';
-import { defineAsyncComponent, ref } from 'vue';
+import { ref } from 'vue';
 import { MsgSuccess } from '@/utils/message';
 import { Website } from '@/api/interface/website';
-import { useGlobalStore } from '@/composables/useGlobalStore';
-
-const { isMaster, isXpackOrEE } = useGlobalStore();
-
-const PushToNode = defineAsyncComponent(async () => {
-    const modules = import.meta.glob('@/xpack/views/ssl/index.vue');
-    const loader = modules['/src/xpack/views/ssl/index.vue'];
-    if (loader) {
-        return ((await loader()) as any).default;
-    }
-    return { template: '<div></div>' };
-});
 
 const open = ref(false);
 const keyFileRef = ref();

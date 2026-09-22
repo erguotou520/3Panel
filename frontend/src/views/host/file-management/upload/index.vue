@@ -11,7 +11,7 @@
                 v-if="isAppendOnly"
                 class="mb-4"
                 type="warning"
-                :title="$t('xpack.tamper.tamperCreateHint')"
+                :title="$t('tamper.tamperCreateHint')"
                 :closable="false"
             />
             <div class="upload-button flex flex-wrap justify-between items-center gap-4 pb-4 md:flex-nowrap">

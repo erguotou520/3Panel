@@ -313,72 +313,72 @@ export const Fields = [
         value: 'Host',
     },
     {
-        label: i18n.global.t('xpack.waf.method'),
+        label: i18n.global.t('waf.method'),
         value: 'Method',
     },
 ];
 
 export const Patterns = [
     {
-        label: i18n.global.t('xpack.waf.contain'),
+        label: i18n.global.t('waf.contain'),
         value: 'contain',
         hidden: ['Method'],
     },
     {
-        label: i18n.global.t('xpack.waf.notContain'),
+        label: i18n.global.t('waf.notContain'),
         value: 'notContain',
         hidden: ['Method'],
     },
     {
-        label: i18n.global.t('xpack.waf.equal'),
+        label: i18n.global.t('waf.equal'),
         value: 'eq',
     },
     {
-        label: i18n.global.t('xpack.waf.notEqual'),
+        label: i18n.global.t('waf.notEqual'),
         value: 'notEq',
     },
     {
-        label: i18n.global.t('xpack.waf.regex'),
+        label: i18n.global.t('waf.regex'),
         value: 'regex',
         hidden: ['Method'],
     },
     {
-        label: i18n.global.t('xpack.waf.belongToIpGroup'),
+        label: i18n.global.t('waf.belongToIpGroup'),
         value: 'belongToIpGroup',
     },
     {
-        label: i18n.global.t('xpack.waf.notBelongToIpGroup'),
+        label: i18n.global.t('waf.notBelongToIpGroup'),
         value: 'notBelongToIpGroup',
     },
 ];
 
 export const HttpCodes = [
     {
-        label: i18n.global.t('xpack.waf.badReq'),
+        label: i18n.global.t('waf.badReq'),
         value: 400,
     },
     {
-        label: i18n.global.t('xpack.waf.forbidden'),
+        label: i18n.global.t('waf.forbidden'),
         value: 403,
     },
     {
-        label: i18n.global.t('xpack.waf.notFound'),
+        label: i18n.global.t('waf.notFound'),
         value: 404,
     },
     {
-        label: i18n.global.t('xpack.waf.noRes'),
+        label: i18n.global.t('waf.noRes'),
         value: 444,
     },
     {
-        label: i18n.global.t('xpack.waf.serverErr'),
+        label: i18n.global.t('waf.serverErr'),
         value: 500,
     },
     {
-        label: i18n.global.t('xpack.waf.serviceUnavailable'),
+        label: i18n.global.t('waf.serviceUnavailable'),
         value: 503,
     },
     {
-        label: i18n.global.t('xpack.waf.gatewayTimeout'),
+        label: i18n.global.t('waf.gatewayTimeout'),
         value: 504,
     },
 ];
@@ -420,19 +420,19 @@ export const HttpMethods = [
 
 export const Actions = [
     {
-        label: i18n.global.t('xpack.waf.actionAllow'),
+        label: i18n.global.t('waf.actionAllow'),
         value: 'allow',
     },
     {
-        label: i18n.global.t('xpack.waf.deny'),
+        label: i18n.global.t('waf.deny'),
         value: 'deny',
     },
     {
-        label: i18n.global.t('xpack.waf.captcha'),
+        label: i18n.global.t('waf.captcha'),
         value: 'captcha',
     },
     {
-        label: i18n.global.t('xpack.waf.fiveSeconds'),
+        label: i18n.global.t('waf.fiveSeconds'),
         value: 'five_seconds',
     },
 ];

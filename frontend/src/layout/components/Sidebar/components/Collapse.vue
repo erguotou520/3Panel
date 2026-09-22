@@ -40,7 +40,7 @@
                 <el-divider v-if="showNodes()" class="divider" />
                 <div class="dropdown-item" @click="openNodeDashboard" v-if="isMultiNode">
                     <SvgIcon class="icon" iconName="p-gailan1" />
-                    {{ $t('xpack.node.multiOverview') }}
+                    {{ $t('node.multiOverview') }}
                 </div>
                 <el-divider v-if="isMultiNode" class="divider" />
 
@@ -57,7 +57,7 @@
                             <span class="node-name">{{ displayNodeName(item) }}</span>
                             <el-tooltip
                                 v-if="item.status !== 'Online'"
-                                :content="$t('xpack.node.nodeUnhealthy')"
+                                :content="$t('node.nodeUnhealthy')"
                                 placement="right"
                             >
                                 <el-icon class="icon-status" type="danger">
@@ -103,7 +103,6 @@ import bus from '@/global/bus';
 import { logOutApi } from '@/api/modules/auth';
 import { submitSAML2Navigation } from '@/utils/saml2';
 import router from '@/routers';
-import { loadProductProFromDB } from '@/utils/xpack';
 import { routerToNameWithQuery } from '@/utils/router';
 import { changeToLocal, listNodes, setDefaultNodeInfo } from '@/utils/node';
 import { Login } from '@/api/interface/auth';
@@ -212,7 +211,6 @@ const changeNode = async (command: string) => {
                     localStorage.removeItem('upgradeChecked');
                     menuStore.setMenuList([]);
                     emit('refresh');
-                    loadProductProFromDB();
                     routerToNameWithQuery('home', { t: Date.now() });
                     return;
                 }
@@ -220,7 +218,7 @@ const changeNode = async (command: string) => {
                 // 本仓库后端没有许可证校验，isBound 实际含义是 agent 已 join，且 join
                 // 后必然为 true，所以那道校验只会误伤；节点是否可用只看在线状态。
                 if (item.status !== 'Online') {
-                    MsgError(i18n.global.t('xpack.node.nodeUnhealthyHelper'));
+                    MsgError(i18n.global.t('node.nodeUnhealthyHelper'));
                     return;
                 }
                 if (props.version != item.version) {
@@ -242,7 +240,6 @@ const changeNode = async (command: string) => {
                 }
                 menuStore.setMenuList([]);
                 emit('refresh');
-                loadProductProFromDB();
                 routerToNameWithQuery('home', { t: Date.now() });
                 return;
             }
@@ -301,7 +298,7 @@ const logout = () => {
 };
 
 const loadCurrentUser = async (currentNode?: string) => {
-    const authInfo = await syncAuthInfo(currentNode);
+    const authInfo = await syncAuthInfo();
     if (authInfo) {
         currentUser.value = authInfo;
     }

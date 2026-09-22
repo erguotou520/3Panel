@@ -100,7 +100,7 @@
                             <el-form-item :label="$t('terminal.defaultConn')">
                                 <el-switch v-model="form.showDefaultConn" @change="changeShow" />
                             </el-form-item>
-                            <el-form-item :label="$t('xpack.node.connInfo')">
+                            <el-form-item :label="$t('node.connInfo')">
                                 <el-input disabled v-model="form.defaultConn">
                                     <template #append>
                                         <el-button @click="dialogRef.acceptParams(false)" icon="Setting">
@@ -305,7 +305,7 @@ const loadConnShow = async () => {
 };
 
 const changeShow = async () => {
-    let op = form.showDefaultConn ? i18n.global.t('xpack.waf.allow') : i18n.global.t('xpack.waf.deny');
+    let op = form.showDefaultConn ? i18n.global.t('waf.allow') : i18n.global.t('waf.deny');
     opRef.value.acceptParams({
         title: i18n.global.t('terminal.defaultConn'),
         names: [],

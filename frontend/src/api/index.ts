@@ -86,11 +86,6 @@ class RequestHttp {
                     }
                     return Promise.reject(data);
                 }
-                if (data.code == ResultEnum.ERR_XPACK) {
-                    globalStore.isProductPro = false;
-                    window.location.reload();
-                    return Promise.reject(data);
-                }
                 if (data.code == ResultEnum.NODE_UNBIND) {
                     changeToLocal();
                     window.location.reload();
@@ -110,7 +105,7 @@ class RequestHttp {
                 }
                 if (data.code && data.code !== ResultEnum.SUCCESS) {
                     if (data.message.toLowerCase().indexOf('operation not permitted') !== -1) {
-                        MsgError(i18n.global.t('license.tamperHelper'));
+                        MsgError(i18n.global.t('file.tamperHelper'));
                         return Promise.reject(data);
                     }
                     if (!(response.config as RequestConfig).skipErrorMessage) {

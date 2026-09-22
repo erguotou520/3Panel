@@ -4,7 +4,7 @@
             <div class="node-drawer">
                 <el-input
                     v-model="keyword"
-                    :placeholder="$t('xpack.node.searchNodePlaceholder')"
+                    :placeholder="$t('node.searchNodePlaceholder')"
                     class="node-search-input"
                     clearable
                 />
@@ -47,7 +47,7 @@
                                         </el-button>
                                         <el-tooltip
                                             v-if="row.status !== 'Online'"
-                                            :content="$t('xpack.node.nodeUnhealthy')"
+                                            :content="$t('node.nodeUnhealthy')"
                                             placement="left"
                                         >
                                             <span class="node-status-wrap">
@@ -147,7 +147,7 @@ const nodeGroups = computed(() => {
     if (commonNodes.value.length > 0) {
         groups.unshift({
             key: 'common',
-            label: i18n.global.t('xpack.node.commonNodes'),
+            label: i18n.global.t('node.commonNodes'),
             items: commonNodes.value,
         });
     }

@@ -6,8 +6,8 @@
                     <el-radio :value="true">{{ $t('setting.restartNow') }}</el-radio>
                     <el-radio :value="false">{{ $t('setting.restartLater') }}</el-radio>
                 </el-radio-group>
-                <span class="input-help" v-if="restart">{{ $t('xpack.node.syncProxyHelper1') }}</span>
-                <span class="input-help" v-else>{{ $t('xpack.node.syncProxyHelper2') }}</span>
+                <span class="input-help" v-if="restart">{{ $t('node.syncProxyHelper1') }}</span>
+                <span class="input-help" v-else>{{ $t('node.syncProxyHelper2') }}</span>
             </el-form-item>
         </el-form>
         <slot name="helper" />

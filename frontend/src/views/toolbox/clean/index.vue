@@ -511,7 +511,7 @@ function load18n(label: string) {
         case 'rollback':
             return i18n.global.t('clean.rollback');
         case 'rollback_community_restore':
-            return i18n.global.t('license.restoreCommunity');
+            return i18n.global.t('clean.restoreCommunity');
         case 'tmp_backup':
             return i18n.global.t('clean.tmpBackup');
         case 'unknown_app':
@@ -566,7 +566,7 @@ function load18n(label: string) {
         case 'Backup':
             return i18n.global.t('logs.detail.backups');
         case 'Tamper':
-            return i18n.global.t('xpack.tamper.tamper');
+            return i18n.global.t('tamper.tamper');
         case 'TaskRollback':
             return i18n.global.t('setting.rollback');
         case 'Script':
@@ -576,9 +576,9 @@ function load18n(label: string) {
         case 'Compose':
             return i18n.global.t('container.compose');
         case 'CustomAppstore':
-            return i18n.global.t('xpack.customApp.name');
+            return i18n.global.t('customApp.name');
         case 'NodeFile':
-            return i18n.global.t('xpack.sync.file');
+            return i18n.global.t('sync.file');
         case 'RuntimeExtension':
             return i18n.global.t('website.runtime');
         case 'Image':

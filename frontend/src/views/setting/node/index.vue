@@ -1,12 +1,12 @@
 <template>
     <div>
-        <LayoutContent v-loading="loading" :title="$t('xpack.node.nodeManagement')">
+        <LayoutContent v-loading="loading" :title="$t('node.nodeManagement')">
             <template #leftToolBar>
                 <el-button type="primary" @click="onCreate()">
-                    {{ $t('xpack.node.addNode') }}
+                    {{ $t('node.addNode') }}
                 </el-button>
                 <el-button type="primary" plain @click="onCheck()">
-                    {{ $t('xpack.node.healthCheck') }}
+                    {{ $t('node.healthCheck') }}
                 </el-button>
             </template>
             <template #rightToolBar>
@@ -17,19 +17,19 @@
                 <ComplexTable :data="data" @search="search">
                     <el-table-column
                         show-overflow-tooltip
-                        :label="$t('xpack.node.nodeName')"
+                        :label="$t('node.nodeName')"
                         min-width="120"
                         prop="name"
                         fix
                     />
                     <el-table-column
                         show-overflow-tooltip
-                        :label="$t('xpack.node.nodeAddr')"
+                        :label="$t('node.nodeAddr')"
                         min-width="140"
                         prop="addr"
                     />
-                    <el-table-column :label="$t('xpack.node.nodeVersion')" min-width="100" prop="version" />
-                    <el-table-column :label="$t('xpack.node.nodeStatus')" min-width="90" prop="status">
+                    <el-table-column :label="$t('node.nodeVersion')" min-width="100" prop="version" />
+                    <el-table-column :label="$t('node.nodeStatus')" min-width="90" prop="status">
                         <template #default="{ row }">
                             <el-tag v-if="row.status === 'Online'" type="success">{{ row.status }}</el-tag>
                             <el-tag v-else type="info">{{ row.status }}</el-tag>
@@ -37,7 +37,7 @@
                     </el-table-column>
                     <el-table-column
                         show-overflow-tooltip
-                        :label="$t('xpack.node.nodeDescription')"
+                        :label="$t('node.nodeDescription')"
                         min-width="140"
                         prop="description"
                     />
@@ -50,7 +50,7 @@
                                 :loading="upgradingIDs.has(row.id)"
                                 @click="onUpgrade(row)"
                             >
-                                {{ $t('xpack.node.upgradeNode') }}
+                                {{ $t('node.upgradeNode') }}
                             </el-button>
                             <el-button link type="danger" @click="onDelete(row)">
                                 {{ $t('commons.button.delete') }}
@@ -63,18 +63,18 @@
 
         <el-dialog
             v-model="createVisible"
-            :title="$t('xpack.node.addNode')"
+            :title="$t('node.addNode')"
             width="560px"
             :close-on-click-modal="false"
         >
             <el-form ref="createFormRef" :model="createForm" :rules="createRules" label-width="100px">
-                <el-form-item :label="$t('xpack.node.nodeName')" prop="name">
-                    <el-input v-model="createForm.name" :placeholder="$t('xpack.node.nodeNameHelper')" />
+                <el-form-item :label="$t('node.nodeName')" prop="name">
+                    <el-input v-model="createForm.name" :placeholder="$t('node.nodeNameHelper')" />
                 </el-form-item>
-                <el-form-item :label="$t('xpack.node.nodeAddr')" prop="addr">
-                    <el-input v-model="createForm.addr" :placeholder="$t('xpack.node.nodeAddrHelper')" />
+                <el-form-item :label="$t('node.nodeAddr')" prop="addr">
+                    <el-input v-model="createForm.addr" :placeholder="$t('node.nodeAddrHelper')" />
                 </el-form-item>
-                <el-form-item :label="$t('xpack.node.nodeDescription')" prop="description">
+                <el-form-item :label="$t('node.nodeDescription')" prop="description">
                     <el-input v-model="createForm.description" type="textarea" :rows="2" />
                 </el-form-item>
             </el-form>
@@ -88,27 +88,27 @@
 
         <el-dialog
             v-model="joinVisible"
-            :title="$t('xpack.node.joinCommand')"
+            :title="$t('node.joinCommand')"
             width="700px"
             :close-on-click-modal="false"
         >
-            <el-alert type="success" :title="$t('xpack.node.nodeCreated')" :closable="false" class="mb-3" />
-            <div class="join-hint">{{ $t('xpack.node.joinCommandHelper') }}</div>
+            <el-alert type="success" :title="$t('node.nodeCreated')" :closable="false" class="mb-3" />
+            <div class="join-hint">{{ $t('node.joinCommandHelper') }}</div>
             <div class="join-cmd">{{ joinCommand }}</div>
             <div class="join-actions">
                 <el-button type="primary" @click="copyText(joinCommand)">
-                    {{ $t('xpack.node.copyCommand') }}
+                    {{ $t('node.copyCommand') }}
                 </el-button>
                 <span v-if="joinExpiredAt" class="join-expire">
-                    {{ $t('xpack.node.joinTokenExpire', [joinExpiredAt]) }}
+                    {{ $t('node.joinTokenExpire', [joinExpiredAt]) }}
                 </span>
             </div>
             <el-collapse>
-                <el-collapse-item :title="$t('xpack.node.joinHasAgent')" name="agent">
-                    <div class="join-hint">{{ $t('xpack.node.agentCommandHelper') }}</div>
+                <el-collapse-item :title="$t('node.joinHasAgent')" name="agent">
+                    <div class="join-hint">{{ $t('node.agentCommandHelper') }}</div>
                     <div class="join-cmd">{{ agentCommand }}</div>
                     <el-button plain size="small" class="mt-2" @click="copyText(agentCommand)">
-                        {{ $t('xpack.node.copyCommand') }}
+                        {{ $t('node.copyCommand') }}
                     </el-button>
                 </el-collapse-item>
             </el-collapse>
@@ -141,7 +141,7 @@ const creating = ref(false);
 const createFormRef = ref();
 const createForm = reactive({ name: '', addr: '', description: '' });
 const createRules = {
-    name: [{ required: true, message: i18n.global.t('xpack.node.nodeNameHelper'), trigger: 'blur' }],
+    name: [{ required: true, message: i18n.global.t('node.nodeNameHelper'), trigger: 'blur' }],
 };
 
 const joinVisible = ref(false);
@@ -238,7 +238,7 @@ const submitCreate = async () => {
 const onDelete = async (row: Setting.NodeItem) => {
     try {
         await ElMessageBox.confirm(
-            i18n.global.t('xpack.node.deleteNodeConfirm', [row.name]),
+            i18n.global.t('node.deleteNodeConfirm', [row.name]),
             i18n.global.t('commons.button.delete'),
             { type: 'warning' },
         );
@@ -247,7 +247,7 @@ const onDelete = async (row: Setting.NodeItem) => {
     }
     try {
         await deleteNode(row.id);
-        MsgSuccess(i18n.global.t('xpack.node.nodeDeleted'));
+        MsgSuccess(i18n.global.t('node.nodeDeleted'));
         search();
     } catch {
         /* message already shown by interceptor */

@@ -23,25 +23,7 @@
             <Sidebar @menu-click="handleMenuClick" :menu-router="!classObj.openMenuTabs" @open-task="openTask" />
         </div>
 
-        <el-watermark
-            v-if="isXpackOrEE && watermarkShow && watermark"
-            :content="loadContent()"
-            :font="{
-                fontSize: watermark.fontSize,
-                color: isDarkTheme ? watermark.darkColor : watermark.lightColor,
-                textBaseline: 'top',
-            }"
-            :rotate="watermark.rotate"
-            :gap="[watermark.gap, watermark.gap]"
-        >
-            <div class="main-container">
-                <mobile-header v-if="classObj.mobile" />
-                <Tabs v-if="classObj.openMenuTabs" />
-                <app-main :keep-alive="classObj.openMenuTabs ? tabsStore.keepAliveTabs : null" class="app-main" />
-                <Footer class="app-footer" v-if="!isFullScreen" />
-            </div>
-        </el-watermark>
-        <div class="main-container" v-else>
+        <div class="main-container">
             <mobile-header v-if="classObj.mobile" />
             <Tabs v-if="classObj.openMenuTabs" />
             <app-main :keep-alive="classObj.openMenuTabs ? tabsStore.keepAliveTabs : null" class="app-main" />
@@ -60,9 +42,8 @@ import TerminalHost from '@/components/terminal/host.vue';
 import TerminalDock from '@/components/terminal/dock/index.vue';
 import useResize from './hooks/useResize';
 import { MenuStore, TabsStore } from '@/store';
-import { getSystemAvailable } from '@/api/modules/setting';
+import { getSettingBaseInfo, getSystemAvailable } from '@/api/modules/setting';
 import { useRoute, useRouter } from 'vue-router';
-import { loadMasterProductProFromDB, loadProductProFromDB } from '@/utils/xpack';
 import { useTheme } from '@/global/use-theme';
 import TaskList from '@/components/task-list/index.vue';
 import i18n from '@/lang';
@@ -70,18 +51,12 @@ import { useGlobalStore } from '@/composables/useGlobalStore';
 
 const {
     globalStore,
-    currentNode,
-    currentNodeAddr,
     entrance,
-    isDarkTheme,
     isFullScreen,
     isLoading,
     isMobile,
-    isXpackOrEE,
     loadingText: globalLoadingText,
     openMenuTabs,
-    watermark,
-    watermarkShow,
 } = useGlobalStore();
 const { switchTheme } = useTheme();
 
@@ -123,19 +98,6 @@ const handleClickOutside = () => {
 
 const handleCollapse = () => {
     menuStore.setCollapse();
-};
-
-const loadContent = () => {
-    if (!watermark.value) {
-        return '';
-    }
-
-    let itemName = watermark.value.content.replaceAll(
-        '${nodeName}',
-        currentNode.value === 'local' ? globalStore.getMasterAlias() : currentNode.value,
-    );
-    itemName = itemName.replaceAll('${nodeAddr}', currentNodeAddr.value || '127.0.0.1');
-    return itemName;
 };
 
 watch(
@@ -189,14 +151,17 @@ onBeforeUnmount(() => {
     clearInterval(Number(timer));
     timer = null;
 });
-onMounted(() => {
+onMounted(async () => {
     if (openMenuTabs.value && !tabsStore.activeTabPath) {
         handleMenuClick('/');
     }
 
     loadStatus();
-    loadProductProFromDB();
-    loadMasterProductProFromDB();
+    const baseInfo = await getSettingBaseInfo();
+    document.title = baseInfo.data.panelName;
+    globalStore.entrance = baseInfo.data.securityEntrance;
+    globalStore.openMenuTabs = baseInfo.data.menuTabs === 'Enable';
+    globalStore.menuAccordion = baseInfo.data.menuAccordion === 'Enable';
     isFullScreen.value = false;
 
     const mqList = window.matchMedia('(prefers-color-scheme: dark)');

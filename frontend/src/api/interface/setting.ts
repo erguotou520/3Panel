@@ -264,30 +264,6 @@ export namespace Setting {
         releaseNote: string;
     }
 
-    export interface License {
-        licenseName: string;
-        assigneeName: string;
-        productPro: string;
-        versionConstraint: string;
-        trial: boolean;
-        status: string;
-        message: string;
-        smsUsed: number;
-        smsTotal: number;
-    }
-    export interface LicenseOptions {
-        id: number;
-        licenseName: string;
-        totalFreeCount: number;
-        availableXpackCount: number;
-        availableFreeCount: number;
-    }
-    export interface LicenseStatus {
-        productPro: string;
-        status: string;
-        smsTotal: number;
-        smsUsed: number;
-    }
     export interface NodeItem {
         id: number;
         groupID?: number;
@@ -295,7 +271,6 @@ export namespace Setting {
         addr: string;
         status: string;
         version: string;
-        isXpack: boolean;
         isBound: boolean;
         isFavorite?: boolean;
         name: string;
@@ -339,24 +314,6 @@ export namespace Setting {
         NewCount: number;
         OptimizationCount: number;
         FixCount: number;
-    }
-
-    export interface LicenseBind {
-        nodeID: number;
-        licenseID: number;
-        syncList: string;
-        withDockerRestart: boolean;
-    }
-    export interface LicenseUnbind {
-        id: number;
-        force: boolean;
-        withDockerRestart: boolean;
-    }
-
-    export interface SmsInfo {
-        licenseName: string;
-        smsUsed: number;
-        smsTotal: number;
     }
 
     export interface NodeAppItem {

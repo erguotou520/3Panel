@@ -1,13 +1,10 @@
 import { createRouter, createWebHistory, RouteRecordRaw } from 'vue-router';
-import { getXpackRoutes } from '@/extensions/routes';
 import { Layout } from '@/routers/constant';
 
 type AppRouteRecord = RouteRecordRaw & { sort?: number };
 type RouteModuleMap = Record<string, { default?: AppRouteRecord }>;
 
-let modules = import.meta.glob('./modules/*.ts', { eager: true }) as RouteModuleMap;
-const xpackModules = getXpackRoutes(modules);
-modules = { ...modules, ...xpackModules };
+const modules = import.meta.glob('./modules/*.ts', { eager: true }) as RouteModuleMap;
 
 const homeRouter: RouteRecordRaw = {
     path: '/',
@@ -28,10 +25,10 @@ const homeRouter: RouteRecordRaw = {
             path: '/node-dashboard',
             name: 'NodeDashboard',
             component: () => import('@/views/home/node-dashboard/index.vue'),
-            hidden: true,
             meta: {
-                title: 'xpack.node.multiOverview',
+                title: 'node.multiOverview',
                 activeMenu: '/',
+                hidden: true,
             },
         },
     ],

@@ -28,7 +28,7 @@
         <el-alert
             v-if="websiteType == 'stream'"
             :title="
-                versionNotMatch ? $t('xpack.waf.openRestyAlert', ['1.27.1.2-2-3-focal']) : $t('website.streamHelper')
+                versionNotMatch ? $t('waf.openRestyAlert', ['1.27.1.2-2-3-focal']) : $t('website.streamHelper')
             "
             :type="versionNotMatch ? 'error' : 'info'"
             :closable="false"

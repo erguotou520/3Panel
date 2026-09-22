@@ -122,15 +122,6 @@
                     <span class="input-help">{{ $t('app.pullImageHelper') }}</span>
                 </el-form-item>
 
-                <PushToNode
-                    v-if="isMaster && isXpackOrEE && batchInstallSupport"
-                    :push-node="formData.pushNode"
-                    :nodes="formData.nodes"
-                    type="app"
-                    @update:push-node="formData.pushNode = $event"
-                    @update:nodes="formData.nodes = $event"
-                />
-
                 <el-form-item prop="editCompose">
                     <el-checkbox v-model="formData.editCompose" :label="$t('app.editCompose')" size="large" />
                     <span class="input-help">{{ $t('app.editComposeHelper') }}</span>
@@ -157,16 +148,7 @@ import CodemirrorPro from '@/components/codemirror-pro/index.vue';
 import { computeSizeFromMB } from '@/utils/size';
 import { loadResourceLimit } from '@/api/modules/container';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-const { isMaster, isOffline, isXpackOrEE } = useGlobalStore();
-
-const PushToNode = defineAsyncComponent(async () => {
-    const modules = import.meta.glob('@/xpack/views/ssl/index.vue');
-    const loader = modules['/src/xpack/views/ssl/index.vue'];
-    if (loader) {
-        return ((await loader()) as any).default;
-    }
-    return { template: '<div></div>' };
-});
+const { isOffline } = useGlobalStore();
 
 interface ClusterProps {
     key: string;
