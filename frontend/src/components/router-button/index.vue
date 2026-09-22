@@ -21,9 +21,30 @@
                 </div>
             </div>
         </el-card>
-        <div v-if="currentNodeVersionMismatch" class="mt-3">
+        <div v-if="currentNodeVersionMismatch" class="mt-3 version-mismatch-alert">
             <el-alert type="warning" :closable="false" show-icon :title="$t('setting.currentNodeVersionNotSame')" />
+            <el-button v-if="isAdmin" type="warning" plain :loading="upgradeLoading" @click="openUpgradeDialog">
+                {{ $t('xpack.node.upgradeNode') }}
+            </el-button>
         </div>
+        <el-dialog
+            v-model="upgradeVisible"
+            :title="$t('xpack.node.upgradeNode')"
+            width="700px"
+            append-to-body
+            :close-on-click-modal="false"
+        >
+            <div class="join-hint">{{ $t('xpack.node.upgradeCommandHelper') }}</div>
+            <div class="join-cmd">{{ upgradeCommand }}</div>
+            <div class="join-actions">
+                <el-button type="primary" @click="copyText(upgradeCommand)">
+                    {{ $t('xpack.node.copyCommand') }}
+                </el-button>
+                <span v-if="panelVersion" class="join-expire">
+                    {{ $t('xpack.node.upgradeVersionHint', [panelVersion]) }}
+                </span>
+            </div>
+        </el-dialog>
     </div>
 </template>
 
@@ -33,8 +54,9 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { hasPermissionMetaAccess, hasRouteAccess } from '@/utils/rbac';
 import { useGlobalStore } from '@/composables/useGlobalStore';
-import { getSettingBaseInfo } from '@/api/modules/setting';
+import { getSettingBaseInfo, upgradeNodeCommand } from '@/api/modules/setting';
 import { listNodes } from '@/utils/node';
+import { copyText } from '@/utils/clipboard';
 
 defineOptions({ name: 'RouterButton' });
 
@@ -46,7 +68,7 @@ const props = defineProps({
 });
 
 const router = useRouter();
-const { currentNode } = useGlobalStore();
+const { currentNode, isAdmin } = useGlobalStore();
 const buttonArray = computed(() => {
     return props.buttons.filter((button) => {
         if (!hasPermissionMetaAccess(button.permission)) {
@@ -62,6 +84,25 @@ const buttonArray = computed(() => {
 
 const activeName = ref('');
 const currentNodeVersionMismatch = ref(false);
+const upgradeVisible = ref(false);
+const upgradeLoading = ref(false);
+const upgradeCommand = ref('');
+const panelVersion = ref('');
+
+const openUpgradeDialog = async () => {
+    upgradeVisible.value = true;
+    if (upgradeCommand.value) return;
+    upgradeLoading.value = true;
+    try {
+        const res = await upgradeNodeCommand();
+        upgradeCommand.value = res.data.command;
+        panelVersion.value = res.data.version;
+    } catch {
+        upgradeVisible.value = false;
+    } finally {
+        upgradeLoading.value = false;
+    }
+};
 
 const handleChange = (label: string) => {
     const btn = buttonArray.value.find((btn) => btn.label === label);
@@ -93,7 +134,7 @@ async function checkCurrentNodeVersion() {
     }
 
     try {
-        const [settingRes, nodes] = await Promise.all([getSettingBaseInfo(), listNodes('all')]);
+        const [settingRes, nodes] = await Promise.all([getSettingBaseInfo(), listNodes()]);
         if (currentNode.value !== checkedNode) {
             return;
         }
@@ -159,5 +200,43 @@ function syncActiveName() {
         border-color: var(--panel-color-primary) !important;
         border-radius: 4px;
     }
+}
+
+.version-mismatch-alert {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+
+    .el-alert {
+        flex: 1;
+    }
+}
+
+.join-hint {
+    margin-bottom: 10px;
+    color: var(--el-text-color-regular);
+    line-height: 1.6;
+}
+
+.join-cmd {
+    padding: 12px;
+    background: var(--panel-main-bg-color-10, #f5f5f5);
+    border-radius: 4px;
+    word-break: break-all;
+    font-family: monospace;
+    user-select: all;
+}
+
+.join-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+}
+
+.join-expire {
+    color: var(--el-text-color-secondary);
+    font-size: 12px;
+    line-height: 1.4;
 }
 </style>

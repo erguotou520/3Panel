@@ -176,7 +176,7 @@ const loadNodes = async () => {
         loading.value = false;
         return;
     }
-    await listNodes('all')
+    await listNodes()
         .then((res) => {
             nodes.value = res || [];
             if (nodes.value.length === 0) {

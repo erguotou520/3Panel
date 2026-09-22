@@ -4,7 +4,7 @@ import { GlobalStore } from '@/store';
 
 export const changeToLocal = async () => {
     const globalStore = GlobalStore();
-    let nodes = await listNodes('all');
+    let nodes = await listNodes();
     if (nodes.length === 0) {
         setDefaultNodeInfo();
         return;
@@ -22,9 +22,9 @@ export const changeToLocal = async () => {
     globalStore.currentNodeAddr = nodes[0].addr;
 };
 
-export async function listNodes(type: string): Promise<Array<Setting.NodeItem>> {
+export async function listNodes(): Promise<Array<Setting.NodeItem>> {
     try {
-        const res = await listNodeOptions(type);
+        const res = await listNodeOptions();
         return res.data || [];
     } catch (error) {
         return [];

@@ -170,7 +170,7 @@ const connectionTree = computed<ConnectionTreeItem[]>(() => {
 const loadNodes = async () => {
     nodes.value = [];
     if (!isMultiNode.value) return;
-    const res = await listNodeOptions('all');
+    const res = await listNodeOptions();
     nodes.value = res.data || [];
 };
 const loadHosts = async () => {

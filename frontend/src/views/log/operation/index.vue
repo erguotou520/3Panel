@@ -186,7 +186,7 @@ const loadDetail = (log: string) => {
 };
 
 const loadNodes = async () => {
-    await listNodes('all')
+    await listNodes()
         .then((res) => {
             nodes.value = res || [];
         })
