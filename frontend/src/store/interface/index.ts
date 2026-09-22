@@ -69,8 +69,6 @@ export interface GlobalState {
     isProductPro: boolean;
     productProExpires: number;
     isMasterProductPro: boolean;
-    isEnterpriseLicensed: boolean;
-    isEnterpriseLicenseLoaded: boolean;
     // multi-node
     masterAlias: string;
     currentNode: string;

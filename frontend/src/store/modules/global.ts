@@ -71,8 +71,6 @@ const GlobalStore = defineStore('GlobalState', {
         isProductPro: false,
         productProExpires: 0,
         isMasterProductPro: false,
-        isEnterpriseLicensed: false,
-        isEnterpriseLicenseLoaded: false,
         // multi-node
         masterAlias: '',
         currentNode: 'local',
@@ -99,10 +97,8 @@ const GlobalStore = defineStore('GlobalState', {
         isMaster: (state) => state.currentNode === 'local',
         isMobile: (state) => state.device === DeviceType.Mobile,
 
-        isXpackOrEE: (state) => {
-            return (state.isEnterprise && state.isEnterpriseLicensed) || state.isMasterProductPro;
-        },
-        isEE: (state) => state.isEnterprise && state.isEnterpriseLicensed,
+        isXpackOrEE: (state) => state.isMasterProductPro,
+        isEE: () => false,
         isMasterPro: (state) => state.isMasterProductPro,
         // Managing several nodes is a core 3Panel feature rather than a paid
         // add-on, so the node switcher is always available. Enterprise gating

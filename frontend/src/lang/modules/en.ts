@@ -203,7 +203,6 @@ const message = {
             uninstallSuccess: 'Uninstalled successfully',
             offlineTips: 'Offline edition does not support this action',
             errImportFormat: 'Import data or format is abnormal, check and try again!',
-            importHelper: 'If conflicts exist, imported data overwrites existing records.',
             errImport: 'File content is abnormal:',
         },
         login: {
@@ -3166,7 +3165,6 @@ const message = {
         upload: 'Upload snapshot file',
         recoverDetail: 'Recover detail',
         recoverFailed: 'Snapshot recovery failed',
-        importHelper: 'Snapshot directory: ',
         lastRecoverAt: 'Last recovery time',
         lastRollbackAt: 'Last rollback time',
         reDownload: 'Download the backup file again',
@@ -3232,27 +3230,7 @@ const message = {
     },
     license: {
         trialInfo: 'Version',
-        importLicense: 'Import license',
-        importHelper: 'Click or drag the license file here',
-        licenseRequiredShortTip:
-            'Please copy the device ID first to obtain a license. You can log in after importing the license.',
         restoreCommunity: 'Restore Community Edition',
-        restoreCommunityOnline: 'Online restore',
-        restoreCommunityOffline: 'Offline restore',
-        restoreCommunityPackageFound: 'Package is ready',
-        restoreCommunityPackageMissing: 'Waiting for package',
-        restoreCommunityPackageChecking: 'Checking package',
-        restoreCommunityPackageReadyHelper: 'You can proceed with the offline restore.',
-        restoreCommunityOnlineHelper:
-            'The Community Edition package for the current version will be downloaded automatically, and Enterprise-only data will be cleaned up.',
-        restoreCommunityOfflineHelper:
-            'Place an official package no older than the current Enterprise version in {path}. Switching is enabled after a usable package is detected.',
-        restoreCommunityCopyDownloadLink: 'Copy download link',
-        restoreCommunityConfirm:
-            'After switching versions, you can sign in to Community Edition with the current Enterprise super administrator account. Enterprise-only data will be removed during the switch. Proceed with caution.',
-        restoreCommunityStarting: 'Preparing Community Edition. The panel will restart automatically when ready.',
-        deviceID: 'Device ID',
-        tamperHelper: 'Operation failed, the file or folder has tamper protection enabled. Please check and try again!',
     },
     clean: {
         scan: 'Start scanning',

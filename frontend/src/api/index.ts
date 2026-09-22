@@ -91,14 +91,6 @@ class RequestHttp {
                     window.location.reload();
                     return Promise.reject(data);
                 }
-                if (data.code == ResultEnum.ERR_ENTERPRISE) {
-                    globalStore.isEnterpriseLicensed = false;
-                    const routeName = router.currentRoute.value.name;
-                    if (globalStore.isLogin && routeName !== 'EnterpriseLicenseRequired') {
-                        router.push({ name: 'EnterpriseLicenseRequired' });
-                    }
-                    return Promise.reject(data);
-                }
                 if (data.code == ResultEnum.NODE_UNBIND) {
                     changeToLocal();
                     window.location.reload();

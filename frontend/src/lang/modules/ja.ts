@@ -3207,7 +3207,6 @@ const message = {
         operator: 'オペレーター',
         clickToRefresh: 'クリックして更新',
         recoverFailed: 'スナップショット復元失敗',
-        importHelper: 'スナップショットディレクトリ: ',
         upgradeRecord: 'アップグレード履歴',
         upgrading: 'アップグレード中、しばらくお待ちください...',
         versionHelper: '命名規則: [メジャー].[機能].[バグ修正]。例:',
@@ -3215,29 +3214,9 @@ const message = {
     },
     license: {
         trialInfo: 'バージョン',
-        importLicense: 'ライセンス',
-        importHelper: 'ここでライセンスファイルをクリックまたはドラッグしてください',
-        licenseRequiredShortTip:
-            'まずデバイス ID をコピーしてライセンスを取得し、ライセンスをインポートするとログインできます。',
         restoreCommunity: 'コミュニティ版に戻す',
-        restoreCommunityOnline: 'オンライン復元',
-        restoreCommunityOffline: 'オフライン復元',
-        restoreCommunityPackageFound: 'パッケージの準備ができました',
-        restoreCommunityPackageMissing: 'パッケージの配置待ち',
-        restoreCommunityPackageChecking: 'パッケージを確認しています',
-        restoreCommunityPackageReadyHelper: 'オフライン復元を実行できます。',
-        restoreCommunityOnlineHelper:
-            '現在のバージョンのコミュニティ版パッケージを自動的にダウンロードし、Enterprise 専用データを削除します。',
-        restoreCommunityOfflineHelper:
-            '現在の Enterprise バージョン以上の公式パッケージを {path} に配置してください。使用可能なパッケージが検出されると切り替えが有効になります。',
-        restoreCommunityCopyDownloadLink: 'ダウンロードリンクをコピー',
-        restoreCommunityConfirm:
-            'バージョン切り替え後は、現在の Enterprise スーパー管理者アカウントでコミュニティ版にログインできます。切り替え中に Enterprise 専用データが消去されるため、慎重に操作してください。',
-        restoreCommunityStarting: 'コミュニティ版を準備しています。完了後、パネルは自動的に再起動します。',
         technicalAdvice: '技術的な相談',
         advice: '相談',
-        deviceID: 'デバイス ID',
-        tamperHelper: '操作失敗。ファイル/フォルダの改ざん保護を確認してください。',
     },
     clean: {
         scan: 'スキャンを開始します',

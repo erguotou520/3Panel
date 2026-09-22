@@ -3171,7 +3171,6 @@ const message = {
         compress: 'Создать файл снапшота',
         upload: 'Загрузить файл снапшота',
         recoverDetail: 'Детали восстановления',
-        importHelper: 'Директория снапшот: ',
         lastRecoverAt: 'Время последнего восстановления',
         lastRollbackAt: 'Время последнего отката',
         reDownload: 'Скачать файл резервной копии снова',
@@ -3264,30 +3263,9 @@ const message = {
     },
     license: {
         trialInfo: 'Версия',
-        importLicense: 'Лицензия',
-        importHelper: 'Пожалуйста, нажмите или перетащите файл лицензии сюда',
-        licenseRequiredShortTip:
-            'Сначала скопируйте ID устройства, чтобы получить лицензию. После импорта лицензии вы сможете войти.',
         restoreCommunity: 'Восстановить Community Edition',
-        restoreCommunityOnline: 'Онлайн-восстановление',
-        restoreCommunityOffline: 'Офлайн-восстановление',
-        restoreCommunityPackageFound: 'Пакет готов',
-        restoreCommunityPackageMissing: 'Ожидание пакета',
-        restoreCommunityPackageChecking: 'Проверка пакета',
-        restoreCommunityPackageReadyHelper: 'Можно выполнить офлайн-восстановление.',
-        restoreCommunityOnlineHelper:
-            'Пакет Community Edition текущей версии будет загружен автоматически, а данные, предназначенные только для Enterprise, будут очищены.',
-        restoreCommunityOfflineHelper:
-            'Поместите официальный пакет версии не ниже текущей Enterprise в {path}. Переключение станет доступно после обнаружения подходящего пакета.',
-        restoreCommunityCopyDownloadLink: 'Копировать ссылку для скачивания',
-        restoreCommunityConfirm:
-            'После смены версии можно войти в Community Edition с текущей учётной записью суперадминистратора Enterprise. Во время переключения данные, доступные только в Enterprise, будут удалены. Будьте осторожны.',
-        restoreCommunityStarting:
-            'Подготавливается Community Edition. После завершения панель автоматически перезапустится.',
         technicalAdvice: 'Техническая консультация',
         advice: 'Консультация',
-        deviceID: 'ID устройства',
-        tamperHelper: 'Операция не выполнена: для файла или папки включена защита от изменений. Проверьте и повторите!',
     },
     clean: {
         scan: 'Начать сканирование',

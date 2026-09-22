@@ -88,14 +88,6 @@ export const routes: RouteRecordRaw[] = [
         },
     },
     {
-        path: '/enterprise/license-required',
-        name: 'EnterpriseLicenseRequired',
-        component: () => import('@/views/setting/license-required/index.vue'),
-        meta: {
-            key: 'enterprise-license-required',
-        },
-    },
-    {
         path: '/s/:code',
         name: 'file-share',
         component: () => import('@/views/share/index.vue'),

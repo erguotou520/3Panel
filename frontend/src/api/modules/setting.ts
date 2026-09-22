@@ -7,38 +7,11 @@ import { TimeoutEnum } from '@/enums/http-enum';
 import { App } from '../interface/app';
 
 // license
-export const uploadLicense = (oldLicense: string, params: FormData) => {
-    if (oldLicense === '') {
-        return http.upload('/core/licenses/upload', params);
-    }
-    return http.upload('/core/licenses/update', params);
-};
-export const searchLicense = (params: ReqPage) => {
-    return http.post<ResPage<Setting.License>>('/core/licenses/search', params);
-};
-export const deleteLicense = (params: { ids: number }) => {
-    return http.post('/core/licenses/del', params);
-};
 export const getLicenseStatus = () => {
     return http.get<Setting.LicenseStatus>(`/core/licenses/status`);
 };
 export const getMasterLicenseStatus = () => {
     return http.get<Setting.LicenseStatus>(`/core/licenses/master/status`);
-};
-export const syncLicense = (id: number) => {
-    return http.post(`/core/licenses/sync`, { id: id });
-};
-export const bindLicense = (params: Setting.LicenseBind) => {
-    return http.post(`/core/licenses/bind`, params, TimeoutEnum.T_60S);
-};
-export const unbindLicense = (params: Setting.LicenseUnbind) => {
-    return http.post(`/core/licenses/unbind`, params, TimeoutEnum.T_60S);
-};
-export const changeBind = (id: number, nodeIDs: Array<number>) => {
-    return http.post(`/core/licenses/bind/free`, { licenseID: id, nodeIDs: nodeIDs }, TimeoutEnum.T_60S);
-};
-export const loadLicenseOptions = () => {
-    return http.get<Array<Setting.LicenseOptions>>(`/core/licenses/options`);
 };
 export const listNodeOptions = () => {
     return http.get<Array<Setting.NodeItem>>(`/core/nodes/options`);
@@ -64,27 +37,8 @@ export const updateNodeFavorite = (id: number, isFavorite: boolean) => {
 export const listAllSimpleNodes = () => {
     return http.get<Array<Setting.SimpleNodeItem>>(`/core/nodes/simple/all`);
 };
-export const getLicenseSmsInfo = () => {
-    return http.get<Setting.SmsInfo>(`/core/licenses/sms/info`);
-};
 export const listAppNodes = () => {
-    return http.get<Array<Setting.NodeAppItem>>(`/core/xpack/nodes/apps/update`, {}, { timeout: TimeoutEnum.T_60S });
-};
-
-export const uploadEnterpriseLicense = (params: FormData) => {
-    return http.upload('/core/enterprise/licenses/upload', params);
-};
-export const getEnterpriseLicense = () => {
-    return http.get<Setting.LicenseEE>(`/core/enterprise/licenses/info`);
-};
-export const getEnterpriseLicenseStatus = () => {
-    return http.get<Setting.LicenseStatus>(`/core/enterprise/licenses/status`);
-};
-export const getCommunityRestoreStatus = () => {
-    return http.get<Setting.CommunityRestoreStatus>(`/core/enterprise/licenses/community-restore/status`);
-};
-export const restoreCommunity = (mode: Setting.CommunityRestoreMode) => {
-    return http.post(`/core/enterprise/licenses/community-restore`, { mode });
+    return http.get<Array<Setting.NodeAppItem>>(`/core/nodes/apps/update`, {}, { timeout: TimeoutEnum.T_60S });
 };
 
 // agent

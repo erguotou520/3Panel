@@ -202,7 +202,6 @@ const message = {
             uninstallSuccess: 'Desinstalado correctamente',
             offlineTips: 'La edición sin conexión no admite esta acción',
             errImportFormat: 'Los datos de importación o el formato son incorrectos, verifica y vuelve a intentarlo',
-            importHelper: 'Si hay conflictos, los datos importados sobrescribirán los existentes.',
             errImport: 'El contenido del archivo es anormal:',
             backupSuccess: 'Copia completada',
             restoreSuccess: 'Restauración completada',
@@ -3223,7 +3222,6 @@ const message = {
         compress: 'Crear archivo de instantánea',
         upload: 'Subir archivo de instantánea',
         recoverDetail: 'Detalle de recuperación',
-        importHelper: 'Directorio de instantánea: ',
         lastRecoverAt: 'Última hora de recuperación',
         lastRollbackAt: 'Última hora de reversión',
         reDownload: 'Descargar el archivo de respaldo de nuevo',
@@ -3297,27 +3295,7 @@ const message = {
     },
     license: {
         trialInfo: 'Versión',
-        importLicense: 'Importar licencia',
-        importHelper: 'Haga clic o arrastre el archivo de licencia aquí',
-        licenseRequiredShortTip:
-            'Primero copie el ID del dispositivo para obtener una licencia. Podrá iniciar sesión después de importarla.',
         restoreCommunity: 'Restaurar Community Edition',
-        restoreCommunityOnline: 'Restauración en línea',
-        restoreCommunityOffline: 'Restauración sin conexión',
-        restoreCommunityPackageFound: 'El paquete está listo',
-        restoreCommunityPackageMissing: 'Esperando el paquete',
-        restoreCommunityPackageChecking: 'Comprobando el paquete',
-        restoreCommunityPackageReadyHelper: 'Puede continuar con la restauración sin conexión.',
-        restoreCommunityOnlineHelper:
-            'Se descargará automáticamente el paquete Community Edition de la versión actual y se limpiarán los datos exclusivos de Enterprise.',
-        restoreCommunityOfflineHelper:
-            'Coloque en {path} un paquete oficial cuya versión no sea anterior a la versión Enterprise actual. El cambio se habilitará al detectar un paquete utilizable.',
-        restoreCommunityCopyDownloadLink: 'Copiar enlace de descarga',
-        restoreCommunityConfirm:
-            'Después de cambiar de versión, podrá iniciar sesión en Community Edition con la cuenta actual de superadministrador de Enterprise. Los datos exclusivos de Enterprise se eliminarán durante el cambio. Proceda con precaución.',
-        restoreCommunityStarting:
-            'Preparando Community Edition. El panel se reiniciará automáticamente cuando termine.',
-        deviceID: 'ID del dispositivo',
         tamperHelper:
             'La operación falló, el archivo/carpeta tiene protección antimanipulación. Revise e intente de nuevo.',
     },

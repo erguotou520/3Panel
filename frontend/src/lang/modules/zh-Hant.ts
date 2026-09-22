@@ -203,7 +203,6 @@ const message = {
             uninstallSuccess: '移除成功',
             offlineTips: '離線版本不支援此操作',
             errImportFormat: '匯入資料或格式異常，請檢查後重試',
-            importHelper: '匯入衝突或重複資料時，將以匯入內容為標準，更新原資料庫資料。',
             errImport: '檔案內容異常：',
         },
         login: {
@@ -2860,7 +2859,6 @@ const message = {
         upload: '上傳快照檔案',
         recoverDetail: '復原詳情',
         recoverFailed: '快照復原失敗',
-        importHelper: '快照檔案目錄：',
         lastRecoverAt: '上次復原時間',
         lastRollbackAt: '上次回滾時間',
         reDownload: '重新下載備份檔案',
@@ -3023,25 +3021,7 @@ const message = {
     },
     license: {
         trialInfo: '版本',
-        importLicense: '匯入許可證',
-        importHelper: '請點選或拖動許可檔案到此處',
-        licenseRequiredShortTip: '請先複製裝置 ID 取得許可證，匯入許可證後即可登入。',
         restoreCommunity: '恢復社群版',
-        restoreCommunityOnline: '線上恢復',
-        restoreCommunityOffline: '離線恢復',
-        restoreCommunityPackageFound: '安裝包已就緒',
-        restoreCommunityPackageMissing: '等待放置安裝包',
-        restoreCommunityPackageChecking: '正在檢查安裝包',
-        restoreCommunityPackageReadyHelper: '可直接執行離線恢復。',
-        restoreCommunityOnlineHelper: '切換後將自動下載目前版本的社群版安裝包，並清理企業版專屬資料。',
-        restoreCommunityOfflineHelper:
-            '請先將版本不低於目前企業版的官方安裝包放入 {path}，偵測到可用安裝包後即可執行切換。',
-        restoreCommunityCopyDownloadLink: '複製下載連結',
-        restoreCommunityConfirm:
-            '版本切換後，可以使用目前企業版超級管理員帳號登入社群版。切換過程中將清除企業版專屬資料，請謹慎操作。',
-        restoreCommunityStarting: '正在準備社群版，完成後面板將自動重新啟動。',
-        deviceID: '裝置 ID',
-        tamperHelper: '操作失敗，該檔案或資料夾已經開啟防篡改，請檢查後重試',
     },
     clean: {
         scan: '開始掃描',

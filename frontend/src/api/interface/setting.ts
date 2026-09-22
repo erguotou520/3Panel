@@ -288,31 +288,6 @@ export namespace Setting {
         smsTotal: number;
         smsUsed: number;
     }
-    export interface LicenseEE {
-        deviceID: string;
-        corporation: string;
-        isv: string;
-        expired: string;
-        product: string;
-        edition: string;
-        licenseVersion: string;
-        count: number;
-        serialNo: string;
-        remark: string;
-        ext: string;
-
-        status: string;
-        message: string;
-    }
-    export interface CommunityRestoreStatus {
-        state: 'Ready' | 'Running' | 'Failed';
-        message: string;
-        packageExist: boolean;
-        packageDirectory: string;
-        packageName: string;
-        packageURL: string;
-    }
-    export type CommunityRestoreMode = 'online' | 'offline';
     export interface NodeItem {
         id: number;
         groupID?: number;

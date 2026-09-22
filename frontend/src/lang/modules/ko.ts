@@ -3072,7 +3072,6 @@ const message = {
         compress: '스냅샷 파일 생성',
         upload: '스냅샷 파일 업로드',
         recoverDetail: '복구 세부정보',
-        importHelper: '스냅샷 디렉토리: ',
         lastRecoverAt: '마지막 복구 시간',
         lastRollbackAt: '마지막 롤백 시간',
         reDownload: '백업 파일 다시 다운로드',
@@ -3157,28 +3156,9 @@ const message = {
     },
     license: {
         trialInfo: '버전',
-        importLicense: '라이센스',
-        importHelper: '라이센스 파일을 여기에 클릭하거나 드래그하세요',
-        licenseRequiredShortTip: '먼저 장치 ID를 복사해 라이선스를 받은 뒤, 라이선스를 가져오면 로그인할 수 있습니다.',
         restoreCommunity: '커뮤니티 버전 복원',
-        restoreCommunityOnline: '온라인 복원',
-        restoreCommunityOffline: '오프라인 복원',
-        restoreCommunityPackageFound: '설치 패키지 준비 완료',
-        restoreCommunityPackageMissing: '설치 패키지 배치 대기 중',
-        restoreCommunityPackageChecking: '설치 패키지 확인 중',
-        restoreCommunityPackageReadyHelper: '오프라인 복원을 바로 실행할 수 있습니다.',
-        restoreCommunityOnlineHelper:
-            '현재 버전의 커뮤니티 버전 패키지를 자동으로 다운로드하고 Enterprise 전용 데이터를 정리합니다.',
-        restoreCommunityOfflineHelper:
-            '현재 Enterprise 버전 이상인 공식 패키지를 {path}에 저장하세요. 사용 가능한 패키지가 감지되면 전환이 활성화됩니다.',
-        restoreCommunityCopyDownloadLink: '다운로드 링크 복사',
-        restoreCommunityConfirm:
-            '버전 전환 후 현재 Enterprise 슈퍼 관리자 계정으로 커뮤니티 버전에 로그인할 수 있습니다. 전환 과정에서 Enterprise 전용 데이터가 삭제되므로 신중하게 진행하세요.',
-        restoreCommunityStarting: '커뮤니티 버전을 준비 중입니다. 완료되면 패널이 자동으로 다시 시작됩니다.',
         technicalAdvice: '기술 상담',
         advice: '상담',
-        deviceID: '장치 ID',
-        tamperHelper: '작업 실패, 파일/폴더에 변조 방지가 활성화되어 있습니다. 확인 후 다시 시도하세요!',
     },
     clean: {
         scan: '스캔 시작',

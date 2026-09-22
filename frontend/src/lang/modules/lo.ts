@@ -204,7 +204,6 @@ const message = {
             uninstallSuccess: 'ຖອນການຕິດຕັ້ງສຳເລັດແລ້ວ',
             offlineTips: 'ເວີຊັນອອຟລາຍບໍ່ຮອງຮັບການດຳເນີນການນີ້',
             errImportFormat: 'ຂໍ້ມູນ ຫຼື ຮູບແບບທີ່ນຳເຂົ້າຜິດພາດ, ກະລຸນາກວດສອບ ແລະ ລອງໃໝ່!',
-            importHelper: 'ຫາກມີຂໍ້ມູນຂັດແຍ້ງ, ຂໍ້ມູນທີ່ນຳເຂົ້າຈະຂຽນທັບຂໍ້ມູນທີ່ມີຢູ່.',
             errImport: 'ເນື້ອໃນໄຟລ໌ຜິດພາດ:',
         },
         login: {
@@ -3077,7 +3076,6 @@ const message = {
         upload: 'ອັບໂຫຼດໄຟລ໌ສະແນັບຊັອດ',
         recoverDetail: 'ລາຍລະອຽດການກູ້ຄືນ',
         recoverFailed: 'ກູ້ຄືນສະແນັບຊັອດບໍ່ສຳເລັດ',
-        importHelper: 'ໄດເຣັກທໍຣີສະແນັບຊັອດ: ',
         lastRecoverAt: 'ເວລາກູ້ຄືນຫຼ້າສຸດ',
         lastRollbackAt: 'ເວລາຍ້ອນກັບຫຼ້າສຸດ',
         reDownload: 'ດາວໂຫຼດໄຟລ໌ສຳຮອງໃໝ່',
@@ -3141,27 +3139,7 @@ const message = {
     },
     license: {
         trialInfo: 'ເວີຊັນ',
-        importLicense: 'ນຳເຂົ້າລິຂະສິດ',
-        importHelper: 'ຄລິກ ຫຼື ລາກໄຟລ໌ລິຂະສິດມາທີ່ນີ້',
-        licenseRequiredShortTip:
-            'ກະລຸນາຄັດລອກ ID ອຸປະກອນກ່ອນເພື່ອຮັບລິຂະສິດ. ທ່ານສາມາດເຂົ້າລະບົບໄດ້ຫຼັງຈາກນຳເຂົ້າລິຂະສິດແລ້ວ.',
         restoreCommunity: 'ກູ້ຄືນ Community Edition',
-        restoreCommunityOnline: 'ກູ້ຄືນອອນລາຍ',
-        restoreCommunityOffline: 'ກູ້ຄືນອອບລາຍ',
-        restoreCommunityPackageFound: 'ແພັກເກດພ້ອມໃຊ້ງານ',
-        restoreCommunityPackageMissing: 'ກຳລັງລໍຖ້າແພັກເກດ',
-        restoreCommunityPackageChecking: 'ກຳລັງກວດສອບແພັກເກດ',
-        restoreCommunityPackageReadyHelper: 'ສາມາດດຳເນີນການກູ້ຄືນອອບລາຍໄດ້ທັນທີ.',
-        restoreCommunityOnlineHelper:
-            'ລະບົບຈະດາວໂຫຼດແພັກເກດ Community Edition ສຳລັບເວີຊັນປັດຈຸບັນອັດຕະໂນມັດ ແລະ ລ້າງຂໍ້ມູນສະເພາະ Enterprise.',
-        restoreCommunityOfflineHelper:
-            'ວາງແພັກເກດທາງການທີ່ມີເວີຊັນບໍ່ຕ່ຳກວ່າ Enterprise ປັດຈຸບັນໄວ້ໃນ {path}. ການສະຫຼັບຈະເປີດໃຊ້ເມື່ອກວດພົບແພັກເກດທີ່ໃຊ້ໄດ້.',
-        restoreCommunityCopyDownloadLink: 'ຄັດລອກລິ້ງດາວໂຫຼດ',
-        restoreCommunityConfirm:
-            'ຫຼັງຈາກສະຫຼັບເວີຊັນ ສາມາດໃຊ້ບັນຊີຜູ້ດູແລສູງສຸດ Enterprise ປັດຈຸບັນເຂົ້າ Community Edition. ຂໍ້ມູນສະເພາະ Enterprise ຈະຖືກລຶບໃນລະຫວ່າງການສະຫຼັບ. ກະລຸນາດຳເນີນການດ້ວຍຄວາມລະມັດລະວັງ.',
-        restoreCommunityStarting: 'ກຳລັງກະກຽມ Community Edition. ແຜງຄວບຄຸມຈະເລີ່ມໃໝ່ອັດຕະໂນມັດເມື່ອສຳເລັດ.',
-        deviceID: 'ID ອຸປະກອນ',
-        tamperHelper: 'ການດຳເນີນການລົ້ມເຫຼວ, ໄຟລ໌ ຫຼື ໂຟນເດີມີການເປີດໃຊ້ການປ້ອງກັນການດັດແກ້. ກະລຸນາກວດສອບ ແລະ ລອງໃໝ່!',
     },
     clean: {
         scan: 'ເລີ່ມສະແກນ',

@@ -203,7 +203,6 @@ const message = {
             uninstallSuccess: 'حذف نصب با موفقیت انجام شد',
             offlineTips: 'نسخه آفلاین از این عملیات پشتیبانی نمی‌کند',
             errImportFormat: 'داده‌های وارداتی یا فرمت آن غیرعادی است، بررسی کنید و دوباره تلاش کنید!',
-            importHelper: 'در صورت وجود تضاد، داده‌های وارداتی جایگزین رکوردهای موجود می‌شوند.',
             errImport: 'محتوای فایل غیرعادی است:',
         },
         login: {
@@ -3132,7 +3131,6 @@ const message = {
         upload: 'بارگذاری فایل تصویر لحظه‌ای',
         recoverDetail: 'جزئیات بازیابی',
         recoverFailed: 'بازیابی تصویر لحظه‌ای ناموفق بود',
-        importHelper: 'دایرکتوری تصویر لحظه‌ای: ',
         lastRecoverAt: 'آخرین زمان بازیابی',
         lastRollbackAt: 'آخرین زمان بازگشت',
         reDownload: 'دانلود مجدد فایل پشتیبان',
@@ -3198,27 +3196,7 @@ const message = {
     },
     license: {
         trialInfo: 'نسخه',
-        importLicense: 'واردات مجوز',
-        importHelper: 'برای بارگذاری مجوز، کلیک کنید یا فایل را اینجا بکشید',
-        licenseRequiredShortTip:
-            'لطفاً ابتدا شناسه دستگاه را کپی کنید تا مجوز دریافت کنید. پس از وارد کردن مجوز می‌توانید وارد شوید.',
         restoreCommunity: 'بازیابی نسخه Community',
-        restoreCommunityOnline: 'بازیابی آنلاین',
-        restoreCommunityOffline: 'بازیابی آفلاین',
-        restoreCommunityPackageFound: 'بسته آماده است',
-        restoreCommunityPackageMissing: 'در انتظار قرار دادن بسته',
-        restoreCommunityPackageChecking: 'در حال بررسی بسته',
-        restoreCommunityPackageReadyHelper: 'می‌توانید بازیابی آفلاین را انجام دهید.',
-        restoreCommunityOnlineHelper:
-            'بسته نسخه Community برای نسخه فعلی به‌طور خودکار دانلود و داده‌های ویژه Enterprise پاک‌سازی می‌شوند.',
-        restoreCommunityOfflineHelper:
-            'یک بسته رسمی با نسخه‌ای قدیمی‌تر نبودن از نسخه فعلی Enterprise را در {path} قرار دهید. پس از شناسایی بسته قابل استفاده، تغییر نسخه فعال می‌شود.',
-        restoreCommunityCopyDownloadLink: 'کپی لینک دانلود',
-        restoreCommunityConfirm:
-            'پس از تغییر نسخه، می‌توانید با حساب ابرمدیر فعلی Enterprise وارد نسخه Community شوید. داده‌های مختص Enterprise در طول تغییر حذف می‌شوند. لطفاً با احتیاط ادامه دهید.',
-        restoreCommunityStarting:
-            'نسخه Community در حال آماده‌سازی است. پس از تکمیل، پنل به‌طور خودکار راه‌اندازی مجدد می‌شود.',
-        deviceID: 'شناسه دستگاه',
         tamperHelper:
             'عملیات ناموفق بود، فایل یا پوشه دارای محافظت در برابر دستکاری است. لطفاً بررسی و دوباره تلاش کنید!',
     },

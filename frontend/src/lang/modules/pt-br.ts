@@ -3198,7 +3198,6 @@ const message = {
         compress: 'Criar arquivo de snapshot',
         upload: 'Fazer upload do arquivo de snapshot',
         recoverDetail: 'Detalhes da recuperação',
-        importHelper: 'Diretório do snapshot: ',
         lastRecoverAt: 'Última recuperação realizada',
         lastRollbackAt: 'Último rollback realizado',
         reDownload: 'Baixar o arquivo de backup novamente',
@@ -3293,29 +3292,9 @@ const message = {
     },
     license: {
         trialInfo: 'Versão',
-        importLicense: 'Licença',
-        importHelper: 'Clique ou arraste o arquivo de licença aqui',
-        licenseRequiredShortTip:
-            'Copie primeiro o ID do dispositivo para obter a licença. Você poderá entrar depois de importá-la.',
         restoreCommunity: 'Restaurar Community Edition',
-        restoreCommunityOnline: 'Restauração online',
-        restoreCommunityOffline: 'Restauração offline',
-        restoreCommunityPackageFound: 'O pacote está pronto',
-        restoreCommunityPackageMissing: 'Aguardando o pacote',
-        restoreCommunityPackageChecking: 'Verificando o pacote',
-        restoreCommunityPackageReadyHelper: 'Você pode prosseguir com a restauração offline.',
-        restoreCommunityOnlineHelper:
-            'O pacote Community Edition da versão atual será baixado automaticamente e os dados exclusivos da Enterprise serão limpos.',
-        restoreCommunityOfflineHelper:
-            'Coloque em {path} um pacote oficial cuja versão não seja anterior à versão Enterprise atual. A troca será habilitada quando um pacote utilizável for detectado.',
-        restoreCommunityCopyDownloadLink: 'Copiar link de download',
-        restoreCommunityConfirm:
-            'Após trocar de versão, você poderá entrar na Community Edition com a conta atual de superadministrador da Enterprise. Os dados exclusivos da Enterprise serão removidos durante a troca. Prossiga com cuidado.',
-        restoreCommunityStarting:
-            'Preparando a Community Edition. O painel será reiniciado automaticamente quando estiver pronto.',
         technicalAdvice: 'Consultoria técnica',
         advice: 'Consultoria',
-        deviceID: 'ID do dispositivo',
         tamperHelper:
             'Falha na operação, o arquivo ou pasta tem proteção contra alteração habilitada. Verifique e tente novamente!',
     },

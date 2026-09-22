@@ -3206,7 +3206,6 @@ const message = {
         compress: 'Anlık görüntü dosyası oluştur',
         upload: 'Anlık görüntü dosyasını yükle',
         recoverDetail: 'Kurtarma detayı',
-        importHelper: 'Anlık görüntü dizini: ',
         lastRecoverAt: 'Son kurtarma zamanı',
         lastRollbackAt: 'Son geri alma zamanı',
         reDownload: 'Yedekleme dosyasını tekrar indir',
@@ -3278,27 +3277,7 @@ const message = {
     },
     license: {
         trialInfo: 'Sürüm',
-        importLicense: 'Lisansı içe aktar',
-        importHelper: 'Lütfen lisans dosyasını buraya tıklayın veya sürükleyin',
-        licenseRequiredShortTip:
-            'Lütfen önce cihaz kimliğini kopyalayarak lisansı alın. Lisansı içe aktardıktan sonra giriş yapabilirsiniz.',
         restoreCommunity: 'Community Edition sürümünü geri yükle',
-        restoreCommunityOnline: 'Çevrimiçi geri yükleme',
-        restoreCommunityOffline: 'Çevrimdışı geri yükleme',
-        restoreCommunityPackageFound: 'Paket hazır',
-        restoreCommunityPackageMissing: 'Paket bekleniyor',
-        restoreCommunityPackageChecking: 'Paket kontrol ediliyor',
-        restoreCommunityPackageReadyHelper: 'Çevrimdışı geri yüklemeye devam edebilirsiniz.',
-        restoreCommunityOnlineHelper:
-            'Geçerli sürümün Community Edition paketi otomatik olarak indirilecek ve Enterprise sürümüne özel veriler temizlenecektir.',
-        restoreCommunityOfflineHelper:
-            'Geçerli Enterprise sürümünden eski olmayan resmi bir paketi {path} dizinine yerleştirin. Kullanılabilir bir paket algılandığında geçiş etkinleştirilir.',
-        restoreCommunityCopyDownloadLink: 'İndirme bağlantısını kopyala',
-        restoreCommunityConfirm:
-            'Sürüm değişikliğinden sonra mevcut Enterprise süper yönetici hesabıyla Community Edition sürümüne giriş yapabilirsiniz. Enterprise sürümüne özel veriler geçiş sırasında silinecektir. Lütfen dikkatli ilerleyin.',
-        restoreCommunityStarting:
-            'Community Edition hazırlanıyor. Hazır olduğunda panel otomatik olarak yeniden başlatılacaktır.',
-        deviceID: 'Cihaz Kimliği',
         tamperHelper:
             'İşlem başarısız oldu, dosya veya klasörde kurcalama koruması etkin. Lütfen kontrol edin ve tekrar deneyin!',
     },

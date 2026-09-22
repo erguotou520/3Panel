@@ -2,7 +2,6 @@ import {
     getLicenseStatus,
     getMasterLicenseStatus,
     getSettingBaseInfo,
-    getEnterpriseLicenseStatus,
 } from '@/api/modules/setting';
 import { useTheme } from '@/global/use-theme';
 import {
@@ -90,59 +89,27 @@ const loadDataFromDB = async () => {
 
 export async function loadProductProFromDB() {
     const globalStore = GlobalStore();
-    if (!globalStore.isEnterprise) {
-        globalStore.isEnterpriseLicenseLoaded = true;
-        const res = await getLicenseStatus();
-        if (!res || !res.data) {
-            globalStore.isProductPro = false;
-            globalStore.productProExpires = 0;
-        } else {
-            globalStore.isProductPro = res.data.status === 'Bound';
-            if (globalStore.isProductPro) {
-                globalStore.productProExpires = Number(res.data.productPro);
-            } else {
-                globalStore.productProExpires = 0;
-            }
-        }
-        return;
-    }
-    const res = await getEnterpriseLicenseStatus();
-    globalStore.isEnterpriseLicenseLoaded = true;
+    const res = await getLicenseStatus();
     if (!res || !res.data) {
-        globalStore.isEnterpriseLicensed = false;
         globalStore.isProductPro = false;
         globalStore.productProExpires = 0;
     } else {
-        globalStore.isEnterpriseLicensed = res.data.status === 'Bound';
-        globalStore.isProductPro = globalStore.isEnterpriseLicensed;
-        globalStore.productProExpires = globalStore.isProductPro ? Number(res.data.productPro) : 0;
+        globalStore.isProductPro = res.data.status === 'Bound';
+        if (globalStore.isProductPro) {
+            globalStore.productProExpires = Number(res.data.productPro);
+        } else {
+            globalStore.productProExpires = 0;
+        }
     }
 }
 
 export async function loadMasterProductProFromDB() {
     const globalStore = GlobalStore();
-    if (!globalStore.isEnterprise) {
-        globalStore.isEnterpriseLicenseLoaded = true;
-        const res = await getMasterLicenseStatus();
-        if (!res || !res.data) {
-            globalStore.isMasterProductPro = false;
-        } else {
-            globalStore.isMasterProductPro = res.data.status === 'Bound';
-        }
+    const res = await getMasterLicenseStatus();
+    if (!res || !res.data) {
+        globalStore.isMasterProductPro = false;
     } else {
-        const res = await getEnterpriseLicenseStatus();
-        globalStore.isEnterpriseLicenseLoaded = true;
-        if (!res || !res.data) {
-            globalStore.isEnterpriseLicensed = false;
-            globalStore.isMasterProductPro = false;
-            globalStore.isProductPro = false;
-            globalStore.productProExpires = 0;
-        } else {
-            globalStore.isEnterpriseLicensed = res.data.status === 'Bound';
-            globalStore.isMasterProductPro = res.data.status === 'Bound';
-            globalStore.isProductPro = res.data.status === 'Bound';
-            globalStore.productProExpires = globalStore.isProductPro ? Number(res.data.productPro) : 0;
-        }
+        globalStore.isMasterProductPro = res.data.status === 'Bound';
     }
     switchTheme();
     initFavicon();
