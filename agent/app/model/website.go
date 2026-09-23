@@ -35,6 +35,8 @@ type Website struct {
 	DbType string `json:"dbType"`
 	DbID   uint   `json:"dbID"`
 
+	WafEnabled bool `json:"wafEnabled"`
+
 	Favorite bool `json:"favorite"`
 
 	StreamPorts string `json:"streamPorts"`

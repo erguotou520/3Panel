@@ -1873,6 +1873,38 @@ var AddComposePinned = &gormigrate.Migration{
 	},
 }
 
+var AddWAFTables = &gormigrate.Migration{
+	ID: "20260923-add-waf-tables",
+	Migrate: func(tx *gorm.DB) error {
+		if err := tx.AutoMigrate(&model.WAFRule{}, &model.WAFCCConfig{}, &model.WAFOption{}, &model.WAFLog{}, &model.Website{}); err != nil {
+			return err
+		}
+		// 日志保留天数默认设置
+		var count int64
+		tx.Model(&model.Setting{}).Where("key = ?", "WAFLogRetentionDays").Count(&count)
+		if count == 0 {
+			if err := tx.Create(&model.Setting{Key: "WAFLogRetentionDays", Value: "30"}).Error; err != nil {
+				return err
+			}
+		}
+		// Webhook 外发默认设置（默认关闭）
+		var webhookCount int64
+		tx.Model(&model.Setting{}).Where("key = ?", "WAFWebhookEnable").Count(&webhookCount)
+		if webhookCount == 0 {
+			for _, item := range []model.Setting{
+				{Key: "WAFWebhookEnable", Value: "false"},
+				{Key: "WAFWebhookMethod", Value: "custom"},
+				{Key: "WAFWebhookURL", Value: ""},
+			} {
+				if err := tx.Create(&item).Error; err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	},
+}
+
 var AddFirewallRuleTable = &gormigrate.Migration{
 	ID: "20260819-add-firewall-v2-tables",
 	Migrate: func(tx *gorm.DB) error {
