@@ -161,10 +161,12 @@ func CreateDefaultDockerNetwork() error {
 	}
 
 	defer cli.Close()
-	if !cli.NetworkExist("3panel-network") {
-		if err := cli.CreateNetwork("3panel-network"); err != nil {
-			global.LOG.Warnf("create default docker network  error %s", err.Error())
-			return err
+	for _, name := range []string{"1panel-network", "3panel-network"} {
+		if !cli.NetworkExist(name) {
+			if err := cli.CreateNetwork(name); err != nil {
+				global.LOG.Warnf("create default docker network %s error %s", name, err.Error())
+				return err
+			}
 		}
 	}
 	return nil
