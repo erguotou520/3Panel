@@ -10,7 +10,7 @@ func ShouldProxyToAgent(reqPath string) bool {
 	if strings.HasPrefix(reqPath, "/3panel/swagger") || !strings.HasPrefix(reqPath, "/api/v2") {
 		return false
 	}
-	if strings.HasPrefix(reqPath, "/api/v2/core") && !strings.HasPrefix(reqPath, "/api/v2/core/xpack") {
+	if strings.HasPrefix(reqPath, "/api/v2/core") {
 		return false
 	}
 	return true

@@ -187,9 +187,6 @@ function buildAuthVisibleMenuList(source: RouteRecordRaw[]) {
                     menuItem.meta.title = onlyChild.meta.title;
                 }
             }
-            if (menuItem.name === 'Xpack-Menu') {
-                menuItem.meta.hideInSidebar = false;
-            }
             return menuItem;
         })
         .filter(Boolean) as RouteRecordRaw[];
@@ -224,9 +221,6 @@ function buildVisibleMenu(menu: RouteRecordRaw, showSet: Set<string>): RouteReco
         if (onlyChild.meta?.title) {
             menuItem.meta.title = onlyChild.meta.title;
         }
-    }
-    if (menuItem.name === 'Xpack-Menu') {
-        menuItem.meta.hideInSidebar = false;
     }
     return menuItem;
 }

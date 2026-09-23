@@ -13,7 +13,7 @@ type Base struct {
 	Edition      string `mapstructure:"edition"` // [ cn / intl]
 	Version      string `mapstructure:"version"`
 	EncryptKey   string `mapstructure:"encrypt_key"`
-	Mode         string `mapstructure:"mode"` // xpack [ Enable / Disable ]
+	Mode         string `mapstructure:"mode"`
 	IsDemo       bool   `mapstructure:"is_demo"`
 	InstallDir   string `mapstructure:"install_dir"`
 	IsOffline    bool   `mapstructure:"is_offline"`

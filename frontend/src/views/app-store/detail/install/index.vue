@@ -29,7 +29,6 @@ import { newUUID } from '@/utils/id';
 import { routerToName } from '@/utils/router';
 import TaskLog from '@/components/log/task/index.vue';
 import i18n from '@/lang';
-import { installAppToNodes } from '@/api/modules/app';
 defineOptions({ name: 'AppInstallPage' });
 
 const router = useRouter();
@@ -37,7 +36,6 @@ const open = ref(false);
 const loading = ref(false);
 const installFormRef = ref<InstanceType<typeof AppInstallForm>>();
 const taskLogRef = ref();
-const appKey = ref('');
 const batchInstallSupport = ref(false);
 
 const formData = ref({
@@ -109,12 +107,7 @@ const install = async (submitData: any) => {
     submitData.taskID = taskID;
 
     try {
-        if (submitData.pushNode) {
-            submitData.appKey = appKey.value;
-            await installAppToNodes(submitData);
-        } else {
-            await installApp(submitData);
-        }
+        await installApp(submitData);
         handleClose();
         openTaskLog(taskID);
     } catch (error) {
@@ -128,7 +121,6 @@ const openTaskLog = (taskID: string) => {
 };
 
 const acceptParams = async (props: { app: any; params?: any }) => {
-    appKey.value = props.app.key;
     batchInstallSupport.value = props.app.batchInstallSupport;
     open.value = true;
     await nextTick();

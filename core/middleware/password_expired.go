@@ -12,8 +12,8 @@ import (
 	"github.com/3panel-dev/3panel/core/constant"
 	"github.com/3panel-dev/3panel/core/global"
 	psessionUtils "github.com/3panel-dev/3panel/core/init/session/psession"
-	"github.com/3panel-dev/3panel/core/utils/common"
 	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
+	"github.com/3panel-dev/3panel/core/utils/common"
 	"github.com/gin-gonic/gin"
 )
 
@@ -37,7 +37,6 @@ func PasswordExpired() gin.HandlerFunc {
 			c.Request.URL.Path == "/api/v2/core/nodes/join" ||
 			c.Request.URL.Path == "/api/v2/core/settings/search" ||
 			c.Request.URL.Path == "/api/v2/core/settings/search/base" ||
-			c.Request.URL.Path == "/api/v2/core/xpack/settings/search" ||
 			c.Request.URL.Path == "/api/v2/core/xapp/verifyQRCode" {
 			c.Next()
 			return

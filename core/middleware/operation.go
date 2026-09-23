@@ -94,7 +94,7 @@ func OperationLog() gin.HandlerFunc {
 			}
 		}
 		needAgentResolve := len(operationDic.BeforeFunctions) != 0 && len(currentNode) != 0 && currentNode != "local" && !strings.HasPrefix(record.Path, "/core")
-		allowCoreFallback := strings.HasPrefix(record.Path, "/core/xpack") || !ShouldProxyToAgent(c.Request.URL.Path) || len(currentNode) == 0 || currentNode == "local"
+		allowCoreFallback := !ShouldProxyToAgent(c.Request.URL.Path) || len(currentNode) == 0 || currentNode == "local"
 		if needAgentResolve {
 			c.Request.Header.Set(headerNeedOperationResolve, "1")
 			defer func() {
@@ -279,7 +279,7 @@ func (r *responseBodyWriter) Write(b []byte) (int, error) {
 }
 
 func loadLogInfo(path string) string {
-	path = replaceStr(path, "/api/v2", "/core", "/xpack", "/enterprise")
+	path = replaceStr(path, "/api/v2", "/core", "/enterprise")
 	if !strings.Contains(path, "/") {
 		return ""
 	}
@@ -299,8 +299,6 @@ func normalizeOperationPath(reqPath string) string {
 func newDB(pathItem string) (*gorm.DB, error) {
 	dbFile := ""
 	switch {
-	case strings.HasPrefix(pathItem, "/core/xpack") || strings.HasPrefix(pathItem, "/xpack"):
-		dbFile = path.Join(global.CONF.Base.InstallDir, "3panel/db/xpack.db")
 	case strings.HasPrefix(pathItem, "/core/enterprise") || strings.HasPrefix(pathItem, "/enterprise"):
 		dbFile = path.Join(global.CONF.Base.InstallDir, "3panel/db/enterprise.db")
 	case strings.HasPrefix(pathItem, "/core"):

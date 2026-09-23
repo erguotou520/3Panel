@@ -20,8 +20,6 @@ func TestGenerateXlog(t *testing.T) {
 	apiDirs := []string{
 		filepath.Join(workDir, "agent/app/api/v2"),
 		filepath.Join(workDir, "core/app/api/v2"),
-		filepath.Join(workDir, "agent/xpack/app/api/v2"),
-		filepath.Join(workDir, "core/xpack/app/api/v2"),
 		filepath.Join(workDir, "agent/enterprise/app/api/v2"),
 		filepath.Join(workDir, "core/enterprise/app/api/v2"),
 	}

@@ -24,7 +24,6 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/docker"
 	terminalai "github.com/3panel-dev/3panel/agent/utils/terminal/ai"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/docker/docker/api/types/container"
 	"gopkg.in/yaml.v3"
 	"gorm.io/gorm"
@@ -128,7 +127,6 @@ const (
 	defaultUserTimezone           = "Asia/Shanghai"
 	defaultToolsProfile           = "full"
 	defaultToolsSessionVisibility = "all"
-	maxCommunityAIAgents          = int64(5)
 	openclawPluginBaseDir         = "/home/node/.openclaw/extensions"
 	openclawPluginPackageTmpDir   = "/tmp/openclaw-plugin"
 	openclawManagedSkillsDir      = "/home/node/.openclaw/skills"
@@ -150,15 +148,6 @@ func (a AgentService) Create(req dto.AgentCreateReq) (*dto.AgentItem, error) {
 	}
 	if installs, _ := appInstallRepo.ListBy(context.Background(), repo.WithByLowerName(req.Name)); len(installs) > 0 {
 		return nil, buserr.New("ErrNameIsExist")
-	}
-	if !global.CONF.Base.IsEnterprise && !multinode.Provider.IsXpack() {
-		count, _, err := agentRepo.Page(1, 1)
-		if err != nil {
-			return nil, err
-		}
-		if count >= maxCommunityAIAgents {
-			return nil, buserr.WithMap("ErrAgentLimitReached", map[string]interface{}{"max": maxCommunityAIAgents}, nil)
-		}
 	}
 	app, err := appRepo.GetFirst(appRepo.WithKey(agentType))
 	if err != nil || app.ID == 0 {

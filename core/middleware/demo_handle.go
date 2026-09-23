@@ -40,40 +40,25 @@ var demoAllowedRoutes = map[demoRoute]struct{}{
 	{http.MethodPost, "/api/v2/databases/variables"}:        {},
 	{http.MethodPost, "/api/v2/databases/status"}:           {},
 
-	{http.MethodPost, "/api/v2/ai/accounts/counts"}:                              {},
-	{http.MethodPost, "/api/v2/ai/accounts/models"}:                              {},
-	{http.MethodPost, "/api/v2/ai/agents/overview"}:                              {},
-	{http.MethodPost, "/api/v2/ai/agents/hermes/chat/sessions"}:                  {},
-	{http.MethodPost, "/api/v2/ai/agents/agent/list"}:                            {},
-	{http.MethodPost, "/api/v2/ai/agents/agent/channels"}:                        {},
-	{http.MethodPost, "/api/v2/ai/agents/agent/md/list"}:                         {},
-	{http.MethodPost, "/api/v2/ai/agents/plugins/list"}:                          {},
-	{http.MethodPost, "/api/v2/ai/agents/skills/list"}:                           {},
-	{http.MethodPost, "/api/v2/alert/cronjob/list"}: {},
-
-	{http.MethodPost, "/api/v2/xpack/waf/attack/stat"}:    {},
-	{http.MethodPost, "/api/v2/xpack/waf/config/website"}: {},
-	{http.MethodPost, "/api/v2/xpack/waf/relation/stat"}:  {},
-
-	{http.MethodPost, "/api/v2/xpack/monitor/stat"}:         {},
-	{http.MethodPost, "/api/v2/xpack/monitor/visitors"}:     {},
-	{http.MethodPost, "/api/v2/xpack/monitor/visitors/loc"}: {},
-	{http.MethodPost, "/api/v2/xpack/monitor/qps"}:          {},
-	{http.MethodPost, "/api/v2/xpack/monitor/logs/stat"}:    {},
-	{http.MethodPost, "/api/v2/xpack/monitor/websites"}:     {},
-	{http.MethodPost, "/api/v2/xpack/monitor/trend"}:        {},
-	{http.MethodPost, "/api/v2/xpack/monitor/rank"}:         {},
-	{http.MethodPost, "/api/v2/xpack/waf/cdn"}:              {},
+	{http.MethodPost, "/api/v2/ai/accounts/counts"}:             {},
+	{http.MethodPost, "/api/v2/ai/accounts/models"}:             {},
+	{http.MethodPost, "/api/v2/ai/agents/overview"}:             {},
+	{http.MethodPost, "/api/v2/ai/agents/hermes/chat/sessions"}: {},
+	{http.MethodPost, "/api/v2/ai/agents/agent/list"}:           {},
+	{http.MethodPost, "/api/v2/ai/agents/agent/channels"}:       {},
+	{http.MethodPost, "/api/v2/ai/agents/agent/md/list"}:        {},
+	{http.MethodPost, "/api/v2/ai/agents/plugins/list"}:         {},
+	{http.MethodPost, "/api/v2/ai/agents/skills/list"}:          {},
+	{http.MethodPost, "/api/v2/alert/cronjob/list"}:             {},
 
 	{http.MethodPost, "/api/v2/core/nodes/list"}: {},
 }
 
 var demoDeniedRoutes = map[demoRoute]struct{}{
-	{http.MethodGet, "/api/v2/containers/exec"}:           {},
-	{http.MethodGet, "/api/v2/hosts/terminal/local"}:      {},
-	{http.MethodGet, "/api/v2/hosts/terminal/ssh"}:        {},
-	{http.MethodGet, "/api/v2/hosts/terminal/container"}:  {},
-	{http.MethodGet, "/api/v2/core/xpack/vms/console/ws"}: {},
+	{http.MethodGet, "/api/v2/containers/exec"}:          {},
+	{http.MethodGet, "/api/v2/hosts/terminal/local"}:     {},
+	{http.MethodGet, "/api/v2/hosts/terminal/ssh"}:       {},
+	{http.MethodGet, "/api/v2/hosts/terminal/container"}: {},
 }
 
 func DemoHandle() gin.HandlerFunc {

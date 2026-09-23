@@ -91,7 +91,6 @@ type NodeInfo struct {
 	Description string `json:"description"`
 	GroupID     uint   `json:"groupID"`
 	GroupBelong string `json:"groupBelong"`
-	IsXpack     bool   `json:"isXpack"`
 	IsBound     bool   `json:"isBound"`
 	IsFavorite  bool   `json:"isFavorite"`
 }

@@ -28,12 +28,12 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/i18n"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/files"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
 	"github.com/3panel-dev/3panel/agent/utils/ssl"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	gormv2 "gorm.io/gorm"
 )
 
@@ -290,7 +290,7 @@ func normalizeSSLPushConfig(pushNode bool, nodes string) (bool, string) {
 
 func setSSLPushConfig(websiteSSL *model.WebsiteSSL, pushNode bool, nodes string) {
 	pushNode, nodes = normalizeSSLPushConfig(pushNode, nodes)
-	if !global.IsMaster || !multinode.Provider.IsXpack() {
+	if !global.IsMaster || !multinode.Provider.SupportsSSLPush() {
 		pushNode = false
 		nodes = ""
 	}
@@ -777,7 +777,7 @@ func (w WebsiteSSLService) Update(update request.WebsiteSSLUpdate) error {
 		updateParams["shell"] = ""
 	}
 	pushNode, nodes := normalizeSSLPushConfig(update.PushNode, update.Nodes)
-	if !global.IsMaster || !multinode.Provider.IsXpack() {
+	if !global.IsMaster || !multinode.Provider.SupportsSSLPush() {
 		pushNode = false
 		nodes = ""
 	}
@@ -944,8 +944,8 @@ func (w WebsiteSSLService) PushToNode(req request.WebsiteSSLPush) error {
 	if !global.IsMaster {
 		return errors.New("only master node can push SSL to nodes")
 	}
-	if !multinode.Provider.IsXpack() {
-		return errors.New("SSL node push is an XPack feature")
+	if !multinode.Provider.SupportsSSLPush() {
+		return errors.New("SSL node push is not supported")
 	}
 	pushNode, nodes := normalizeSSLPushConfig(req.PushNode, req.Nodes)
 	if !pushNode {

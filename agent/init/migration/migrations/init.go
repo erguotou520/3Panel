@@ -19,13 +19,13 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	migrationutils "github.com/3panel-dev/3panel/agent/init/migration/migrations/utils"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	alertwebhook "github.com/3panel-dev/3panel/agent/utils/alert_webhook"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/copier"
 	"github.com/3panel-dev/3panel/agent/utils/encrypt"
 	"github.com/3panel-dev/3panel/agent/utils/firewall"
 	"github.com/3panel-dev/3panel/agent/utils/ssh"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 
 	"github.com/go-gormigrate/gormigrate/v2"
 	"github.com/google/uuid"
@@ -397,7 +397,7 @@ var InitAlertConfig = &gormigrate.Migration{
 		records := []model.AlertConfig{
 			{
 				Type:       "sms",
-				Title:      "xpack.alert.smsConfig",
+				Title:      "alert.smsConfig",
 				Status:     "Enable",
 				Config:     `{"alertDailyNum":50}`,
 				CreateUser: "system",
@@ -405,7 +405,7 @@ var InitAlertConfig = &gormigrate.Migration{
 			},
 			{
 				Type:       "common",
-				Title:      "xpack.alert.commonConfig",
+				Title:      "alert.commonConfig",
 				Status:     "Enable",
 				Config:     `{"isOffline":"Disable","alertSendTimeRange":{"noticeAlert":{"sendTimeRange":"08:00:00 - 23:59:59","type":["ssl","siteEndTime","panelPwdEndTime","panelUpdate"]},"resourceAlert":{"sendTimeRange":"00:00:00 - 23:59:59","type":["clams","cronJob","cpu","memory","load","disk"]}}}`,
 				CreateUser: "system",

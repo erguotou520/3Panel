@@ -27,6 +27,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/i18n"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/compose"
@@ -37,7 +38,6 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/nginx/parser"
 	"github.com/3panel-dev/3panel/agent/utils/re"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/pkg/errors"
@@ -2259,9 +2259,6 @@ func getAppVersions(key string, details []model.AppDetail) []string {
 	hasLatest := false
 	latestVersion := ""
 	for _, detail := range details {
-		if !canAccessVllmVersion(key, detail.Version) {
-			continue
-		}
 		if key != "mssql" && strings.Contains(detail.Version, "latest") {
 			hasLatest = true
 			latestVersion = detail.Version

@@ -169,12 +169,8 @@ var updateVersion = &cobra.Command{
 		}
 		defer dropUpgradeBackupCopies(db)
 
-		xpackDB, err := loadDBConn("xpack.db")
-		if err != nil {
-			return nil
-		}
 		var nodes []Node
-		if err := xpackDB.Where("is_auto_upgrade = ? AND name != ?", true, "local").Find(&nodes).Error; err != nil {
+		if err := db.Where("is_auto_upgrade = ? AND name != ?", true, "local").Find(&nodes).Error; err != nil {
 			fmt.Println(i18n.GetMsgWithMapForCmd("LoadAutoUpgradeNodesFailed", map[string]interface{}{"err": err.Error()}))
 		}
 		var nodeNames []string
@@ -184,7 +180,7 @@ var updateVersion = &cobra.Command{
 		if len(nodeNames) > 0 {
 			fmt.Printf("[%s] %s\n", time.Now().Format("2006-01-02 15:04:05"), i18n.GetMsgWithMapForCmd("AutoUpgradeNodes", map[string]interface{}{"nodes": strings.Join(nodeNames, ", ")}))
 		}
-		if err := xpackDB.Model(&Node{}).
+		if err := db.Model(&Node{}).
 			Where("is_auto_upgrade = ? AND name != ?", true, "local").
 			Updates(map[string]interface{}{"status": constant.StatusWaitForUpgrade}).
 			Error; err != nil {

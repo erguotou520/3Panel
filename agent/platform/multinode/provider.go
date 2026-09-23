@@ -9,7 +9,7 @@ import (
 )
 
 type MultiNodeProvider interface {
-	IsXpack() bool
+	SupportsSSLPush() bool
 	IsUseCustomApp() bool
 	GetImagePrefix() string
 	RemoveTamper(website string)

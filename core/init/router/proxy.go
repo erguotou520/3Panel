@@ -16,8 +16,8 @@ import (
 	"github.com/3panel-dev/3panel/core/init/proxy"
 	psessionUtils "github.com/3panel-dev/3panel/core/init/session/psession"
 	"github.com/3panel-dev/3panel/core/middleware"
-	terminalsession "github.com/3panel-dev/3panel/core/utils/terminal_session"
 	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
+	terminalsession "github.com/3panel-dev/3panel/core/utils/terminal_session"
 	"github.com/gin-gonic/gin"
 )
 
@@ -91,9 +91,7 @@ func isTerminalRevalidationEndpoint(reqPath string) bool {
 
 func isInternalOnlyAgentEndpoint(reqPath string) bool {
 	normalizedPath := path.Clean(reqPath)
-	return normalizedPath == "/api/v2/xpack/alert/offline/email" ||
-		normalizedPath == "/api/v2/xpack/alert/offline/webhook" ||
-		normalizedPath == "/api/v2/hosts/firewall/port" ||
+	return normalizedPath == "/api/v2/hosts/firewall/port" ||
 		normalizedPath == "/api/v2/internal/terminal/sessions/revoke"
 }
 
@@ -130,5 +128,5 @@ func checkSession(c *gin.Context, refresh bool) bool {
 }
 
 func isLocalAPI(urlPath string) bool {
-	return urlPath == "/api/v2/core/xpack/sync/ssl" || urlPath == "/api/v2/core/xpack/settings/search"
+	return false
 }

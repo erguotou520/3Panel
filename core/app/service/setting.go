@@ -30,14 +30,14 @@ import (
 	"github.com/3panel-dev/3panel/core/constant"
 	"github.com/3panel-dev/3panel/core/global"
 	"github.com/3panel-dev/3panel/core/i18n"
+	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
+	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 	"github.com/3panel-dev/3panel/core/utils/common"
 	"github.com/3panel-dev/3panel/core/utils/controller"
 	"github.com/3panel-dev/3panel/core/utils/encrypt"
 	"github.com/3panel-dev/3panel/core/utils/menutree"
 	"github.com/3panel-dev/3panel/core/utils/passkey"
 	"github.com/3panel-dev/3panel/core/utils/req_helper/proxy_local"
-	coreauth "github.com/3panel-dev/3panel/core/platform/auth"
-	multinode "github.com/3panel-dev/3panel/core/platform/multinode"
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/proxy"
 	"gorm.io/gorm"
@@ -186,7 +186,7 @@ func repairAndSortHideMenu(settingMap map[string]string) {
 		return
 	}
 
-	menus, changed := menutree.ReconcileHideMenuIntegrity(menus, nil)
+	menus, changed := menutree.RemoveLegacyExtensionMenus(menus)
 	if changed {
 		repairedBytes, err := json.Marshal(menus)
 		if err != nil {
@@ -252,7 +252,7 @@ func (u *SettingService) Update(c *gin.Context, key, value string) error {
 		if len(menus) == 0 {
 			return fmt.Errorf("hide menu cannot be empty")
 		}
-		menus, _ = menutree.ReconcileHideMenuIntegrity(menus, previousMenus)
+		menus, _ = menutree.RemoveLegacyExtensionMenus(menus)
 		for i := 0; i < len(menus); i++ {
 			if menus[i].Label == "Home-Menu" || menus[i].Label == "App-Menu" || menus[i].Label == "Setting-Menu" {
 				menus[i].IsShow = true

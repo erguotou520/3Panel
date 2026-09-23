@@ -66,9 +66,6 @@
                                 </span>
                                 <span class="input-help logText" v-if="form.type === 'syncIpGroup'">
                                     {{ $t('cronjob.syncIpGroupHelper') }}
-                                    <el-link class="link" icon="Position" @click="goWafIpGroup" type="primary">
-                                        {{ $t('firewall.quickJump') }}
-                                    </el-link>
                                 </span>
                             </el-form-item>
                             <el-row :gutter="20">
@@ -959,10 +956,7 @@ const getConfigTypeLabel = (type: string): string => {
 const getAlertConfigOptionLabel = (c: Alert.AlertConfigInfo): string => {
     try {
         const cfg = JSON.parse(c.config || '{}') as Record<string, unknown>;
-        return (
-            getAlertConfigDisplayName(c.type, cfg) ||
-            i18n.global.t(`alert.${c.type === 'email' ? 'mail' : c.type}`)
-        );
+        return getAlertConfigDisplayName(c.type, cfg) || i18n.global.t(`alert.${c.type === 'email' ? 'mail' : c.type}`);
     } catch {
         return i18n.global.t(`alert.${c.type === 'email' ? 'mail' : c.type}`);
     }
@@ -1151,11 +1145,6 @@ const search = async () => {
 
 const goRouter = async (path: string) => {
     routerToPath(path);
-};
-
-const goWafIpGroup = async () => {
-    localStorage.setItem('black-white-tab', '3');
-    routerToPath('/xpack/waf/blackwhite');
 };
 
 const containerOptions = ref([]);

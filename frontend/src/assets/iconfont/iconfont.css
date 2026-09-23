@@ -442,9 +442,6 @@
   content: "\e666";
 }
 
-.p-xpack:before {
-  content: "\e60b";
-}
 
 .p-monitor-4:before {
   content: "\ec4e";
@@ -561,4 +558,3 @@
 .p-17:before {
   content: "\e618";
 }
-

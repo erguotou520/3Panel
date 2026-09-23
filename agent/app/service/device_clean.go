@@ -1084,18 +1084,6 @@ func dropTaskLog(logDir string) {
 		_ = global.DB.Model(&model.BackupRecord{}).Where("task_id != ?", "").Select("task_id").Find(&usedTasks).Error
 	case "Clam":
 		_ = global.DB.Model(&model.ClamRecord{}).Where("task_id != ?", "").Select("task_id").Find(&usedTasks).Error
-	case "Tamper":
-		xpackDB, err := common.LoadDBConnByPathWithErr(path.Join(global.CONF.Base.InstallDir, "3panel/db/xpack.db"), "xpack.db")
-		if err == nil {
-			_ = xpackDB.Table("tampers").Where("task_id != ?", "").Select("task_id").Find(&usedTasks).Error
-		}
-		defer common.CloseDB(xpackDB)
-	case "System":
-		xpackDB, err := common.LoadDBConnByPathWithErr(path.Join(global.CONF.Base.InstallDir, "3panel/db/xpack.db"), "xpack.db")
-		if err == nil {
-			_ = xpackDB.Model("nodes").Where("task_id != ?", "").Select("task_id").Find(&usedTasks).Error
-		}
-		defer common.CloseDB(xpackDB)
 	default:
 		dropFileOrDir(logDir)
 		_ = taskRepo.Delete(repo.WithByType(taskType))

@@ -27,12 +27,12 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/i18n"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/3panel-dev/3panel/agent/utils/appicon"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/docker"
 	"github.com/3panel-dev/3panel/agent/utils/files"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"gopkg.in/yaml.v3"
 )
 
@@ -223,9 +223,6 @@ func (a AppService) GetAppDetailByKey(appKey, version string) (response.AppDetai
 	if err != nil {
 		return appDetailDTO, err
 	}
-	if err = checkVllmVersionAccess(app.Key, version); err != nil {
-		return appDetailDTO, err
-	}
 	appDetail, err := appDetailRepo.GetFirst(appDetailRepo.WithAppId(app.ID), appDetailRepo.WithVersion(version))
 	if err != nil {
 		return appDetailDTO, err
@@ -246,9 +243,6 @@ func (a AppService) GetAppDetail(appID uint, version, appType string) (response.
 	}
 	app, err := appRepo.GetFirst(repo.WithByID(detail.AppId))
 	if err != nil {
-		return appDetailDTO, err
-	}
-	if err = checkVllmVersionAccess(app.Key, detail.Version); err != nil {
 		return appDetailDTO, err
 	}
 	appDetailDTO.AppDetail = detail
@@ -374,9 +368,6 @@ func (a AppService) installWithHooks(req request.AppInstallCreate, executeScript
 	}
 	app, err = appRepo.GetFirst(repo.WithByID(appDetail.AppId))
 	if err != nil {
-		return
-	}
-	if err = checkVllmVersionAccess(app.Key, appDetail.Version); err != nil {
 		return
 	}
 	if DatabaseKeys[app.Key] > 0 {

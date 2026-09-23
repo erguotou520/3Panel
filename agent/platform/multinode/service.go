@@ -124,7 +124,7 @@ func (m *multiNodeHelper) IsUseCustomApp() bool {
 	return false
 }
 
-func (m *multiNodeHelper) IsXpack() bool {
+func (m *multiNodeHelper) SupportsSSLPush() bool {
 	return false
 }
 

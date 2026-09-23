@@ -124,18 +124,6 @@ func LoadMenus() string {
 		{ID: "8", Disabled: false, Title: "menu.terminal", IsShow: true, Label: "Terminal-Menu", Path: "/hosts/terminal", Sort: 800},
 		{ID: "10", Disabled: false, Title: "menu.cronjob", IsShow: true, Label: "Cronjob-Menu", Path: "/cronjobs", Sort: 900},
 		{ID: "9", Disabled: false, Title: "menu.toolbox", IsShow: true, Label: "Toolbox-Menu", Path: "/toolbox", Sort: 1000},
-		{ID: "11", Disabled: false, Title: "xpack.menu", IsShow: true, Label: "Xpack-Menu", Sort: 1100,
-			Children: []dto.ShowMenu{
-				{ID: "118", Disabled: false, Title: "xpack.app.app", IsShow: true, Label: "XApp", Path: "/xpack/app", Sort: 100},
-				{ID: "112", Disabled: false, Title: "xpack.waf.name", IsShow: true, Label: "Dashboard", Path: "/xpack/waf/dashboard", Sort: 200},
-				{ID: "111", Disabled: false, Title: "xpack.node.nodeManagement", IsShow: true, Label: "NodeDashboard", Path: "/xpack/node/dashboard", Sort: 300},
-				{ID: "113", Disabled: false, Title: "xpack.monitor.name", IsShow: true, Label: "MonitorDashboard", Path: "/xpack/monitor/dashboard", Sort: 600},
-				{ID: "115", Disabled: false, Title: "xpack.sync.menu", IsShow: true, Label: "Sync", Path: "/xpack/sync", Sort: 700},
-				{ID: "123", Disabled: false, Title: "xpack.vm.title", IsShow: true, Label: "VirtualMachine", Path: "/xpack/vm", Sort: 900},
-				{ID: "114", Disabled: false, Title: "xpack.tamper.tamper", IsShow: true, Label: "Tamper", Path: "/xpack/tamper", Sort: 1000},
-				{ID: "120", Disabled: false, Title: "xpack.cluster.cluster", IsShow: true, Label: "Cluster", Path: "/xpack/cluster", Sort: 1100},
-				{ID: "117", Disabled: false, Title: "xpack.setting.setting", IsShow: true, Label: "XSetting", Path: "/xpack/setting", Sort: 1200},
-			}},
 		{ID: "12", Disabled: false, Title: "menu.logs", IsShow: true, Label: "Log-Menu", Path: "/logs", Sort: 1200},
 		{ID: "13", Disabled: true, Title: "menu.settings", IsShow: true, Label: "Setting-Menu", Path: "/settings", Sort: 1300},
 	}
@@ -171,28 +159,6 @@ func LoadMenus() string {
 				}, "SkillsHub")
 				continue
 			}
-			if item[i].Label != "Xpack-Menu" {
-				continue
-			}
-			item[i].Children = UpsertMenuByLabel(item[i].Children, dto.ShowMenu{
-				ID:       "121",
-				Disabled: false,
-				Title:    "xpack.user.userManage",
-				IsShow:   true,
-				Label:    "UserManagement",
-				Path:     "/enterprise/users",
-				Sort:     400,
-			}, "NodeDashboard")
-			item[i].Children = UpsertMenuByLabel(item[i].Children, dto.ShowMenu{
-				ID:       "122",
-				Disabled: false,
-				Title:    "xpack.opsReport.name",
-				IsShow:   true,
-				Label:    "OpsReport",
-				Path:     "/enterprise/ops-report",
-				Sort:     500,
-			}, "UserManagement")
-			break
 		}
 	}
 	menu, _ := json.Marshal(item)
@@ -228,15 +194,13 @@ func MenuSort() []dto.MenuLabelSort {
 		{Label: "Terminal-Menu", Sort: 800},
 		{Label: "Cronjob-Menu", Sort: 900},
 		{Label: "Toolbox-Menu", Sort: 1000},
-		{Label: "Xpack-Menu", Sort: 1100},
 		{Label: "Log-Menu", Sort: 1200},
 		{Label: "Setting-Menu", Sort: 1300},
 	}
-	MenuLabelsWithSort = append(MenuLabelsWithSort, XpackMenuSort()...)
 	return MenuLabelsWithSort
 }
 
-func XpackMenuSort() []dto.MenuLabelSort {
+func LegacyExtensionMenuSort() []dto.MenuLabelSort {
 	return []dto.MenuLabelSort{
 		{Label: "XApp", Sort: 100},
 		{Label: "Dashboard", Sort: 200},

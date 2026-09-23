@@ -38,15 +38,6 @@ export const jumpToInstall = (type: string, key: string) => {
             return true;
         case 'vllm':
             return false;
-        case 'mysql-cluster':
-            jumpToPath(router, '/xpack/cluster/mysql');
-            return true;
-        case 'redis-cluster':
-            jumpToPath(router, '/xpack/cluster/redis');
-            return true;
-        case 'postgresql-cluster':
-            jumpToPath(router, '/xpack/cluster/postgres');
-            return true;
     }
     return false;
 };

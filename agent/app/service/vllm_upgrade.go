@@ -4,35 +4,16 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/3panel-dev/3panel/agent/buserr"
 	"github.com/3panel-dev/3panel/agent/utils/common"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 )
 
 const (
-	vllmAppKeyForUpgrade  = "vllm"
-	vllmGB10VersionPrefix = "nvidia-gb10-dspark-"
-	vllmImageEnvKey       = "IMAGE"
-	vllmImageTypeNvidia   = "nvidia"
-	vllmImageTypeIntel    = "intel"
-	vllmImageTypeAscend   = "ascend"
+	vllmAppKeyForUpgrade = "vllm"
+	vllmImageEnvKey      = "IMAGE"
+	vllmImageTypeNvidia  = "nvidia"
+	vllmImageTypeIntel   = "intel"
+	vllmImageTypeAscend  = "ascend"
 )
-
-func isVllmProOnlyVersion(appKey, version string) bool {
-	return strings.EqualFold(strings.TrimSpace(appKey), vllmAppKeyForUpgrade) &&
-		strings.HasPrefix(strings.ToLower(strings.TrimSpace(version)), vllmGB10VersionPrefix)
-}
-
-func canAccessVllmVersion(appKey, version string) bool {
-	return !isVllmProOnlyVersion(appKey, version) || multinode.Provider.IsXpack()
-}
-
-func checkVllmVersionAccess(appKey, version string) error {
-	if !canAccessVllmVersion(appKey, version) {
-		return buserr.New("ErrVllmGB10ProOnly")
-	}
-	return nil
-}
 
 func resolveVllmVersionFamily(version, image string) string {
 	normalizedVersion := strings.ToLower(strings.TrimSpace(version))
