@@ -30,7 +30,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/klauspost/compress v1.20.0
 	github.com/mattn/go-shellwords v1.0.14
-	github.com/mholt/archiver/v4 v4.0.0-alpha.8
+	github.com/mholt/archiver/v4 v4.0.0-alpha.9
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
@@ -69,6 +69,7 @@ require (
 	filippo.io/edwards25519 v1.2.0 // indirect
 	github.com/BurntSushi/toml v1.6.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
+	github.com/STARRY-S/zip v0.1.0 // indirect
 	github.com/alex-ant/gomath v0.0.0-20160516115720-89013a210a82 // indirect
 	github.com/alibabacloud-go/alibabacloud-gateway-spi v0.0.5 // indirect
 	github.com/alibabacloud-go/darabonba-openapi/v2 v2.2.3 // indirect
@@ -187,6 +188,7 @@ require (
 	github.com/rs/xid v1.6.0 // indirect
 	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/sorairolake/lzip-go v0.3.5 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common v1.3.133 // indirect
