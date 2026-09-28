@@ -312,3 +312,23 @@ func (b *BaseApi) CreateRuleFromWAFLog(c *gin.Context) {
 	}
 	helper.Success(c)
 }
+
+// @Tags WAF
+// @Summary Mark a WAF log as false positive and create a temporary site allow rule
+// @Accept json
+// @Param request body request.WAFFalsePositiveOp true "request"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/logs/false-positive [post]
+func (b *BaseApi) MarkWAFFalsePositive(c *gin.Context) {
+	var req request.WAFFalsePositiveOp
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := wafService.MarkFalsePositive(req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}

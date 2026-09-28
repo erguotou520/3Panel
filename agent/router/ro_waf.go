@@ -30,5 +30,6 @@ func (a *WAFRouter) InitRouter(Router *gin.RouterGroup) {
 		wafRouter.POST("/logs/stat", baseApi.StatWAFLogs)
 		wafRouter.POST("/logs/export", baseApi.ExportWAFLogs)
 		wafRouter.POST("/logs/rule", baseApi.CreateRuleFromWAFLog)
+		wafRouter.POST("/logs/false-positive", baseApi.MarkWAFFalsePositive)
 	}
 }

@@ -27,9 +27,7 @@
                 <el-button type="primary" :plain="index !== 'resource'" @click="changeTab('resource')">
                     {{ $t('website.source', 2) }}
                 </el-button>
-                <el-button type="primary" :plain="index !== 'waf'" @click="changeTab('waf')">
-                    WAF
-                </el-button>
+                <el-button type="primary" :plain="index !== 'waf'" @click="changeTab('waf')">WAF</el-button>
             </template>
             <template #main>
                 <MainDiv :heightDiff="260">
@@ -48,7 +46,7 @@ import { onMounted, ref, watch } from 'vue';
 import Basic from './basic/index.vue';
 import Resource from './resource/index.vue';
 import Log from './log/index.vue';
-import Waf from './waf/index.vue';
+import Waf from '../waf/index.vue';
 import WebsiteStatus from '@/views/website/website/status/index.vue';
 import { getWebsite } from '@/api/modules/website';
 import { GetRuntime } from '@/api/modules/runtime';

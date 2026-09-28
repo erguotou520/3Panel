@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,14 +19,16 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/repo"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/files"
-	wafutils "github.com/3panel-dev/3panel/agent/utils/waf"
-	"github.com/3panel-dev/3panel/agent/utils/webhook_sender"
+	"github.com/3panel-dev/3panel/agent/utils/geo"
 	"github.com/3panel-dev/3panel/agent/utils/nginx"
 	"github.com/3panel-dev/3panel/agent/utils/nginx/parser"
+	wafutils "github.com/3panel-dev/3panel/agent/utils/waf"
+	"github.com/3panel-dev/3panel/agent/utils/webhook_sender"
 	"gorm.io/gorm"
 )
 
 type WAFService struct {
+	syncRulesFn func() error
 }
 
 func NewIWAFService() IWAFService {
@@ -47,18 +51,19 @@ type IWAFService interface {
 	StatLogs(req request.WAFLogSearch) (map[string][]WAFStatItem, error)
 	ExportLogs(req request.WAFLogSearch) (string, []byte, error)
 	AddRuleFromLog(logID uint, action string) error
+	MarkFalsePositive(req request.WAFFalsePositiveOp) error
 	CleanExpiredRules()
 	CleanExpiredLogs()
 	IngestLogs()
 }
 
-// wafHostConfDir 解析 openresty 宿主机 conf 目录（WAF 资源挂载点）
+// wafHostConfDir resolves the host website-data directory mounted at /www in
+// the managed OpenResty container.
 func wafHostConfDir() (string, error) {
-	nginxInstall, err := getAppInstallByKey("openresty")
-	if err != nil {
-		return "", err
+	if global.Dir.DataDir == "" {
+		return "", fmt.Errorf("3panel data directory is empty")
 	}
-	return path.Join(nginxInstall.GetPath(), "conf"), nil
+	return path.Join(global.Dir.DataDir, "www"), nil
 }
 
 // ==================== 站点开关 ====================
@@ -71,30 +76,39 @@ func (w WAFService) SetWebsiteWAF(websiteID uint, enable bool) error {
 	if err != nil {
 		return err
 	}
-	// 部署 Lua 模块与 http 级配置（幂等）
-	confDir, err := wafHostConfDir()
-	if err != nil {
-		return err
+	// 首次开启时安装 Lua 入口；之后的启停只热更新 rules.json，避免因单站点
+	// 状态变化 reload 整个 OpenResty。关闭时保留无操作的 access 入口。
+	if enable {
+		confDir, err := wafHostConfDir()
+		if err != nil {
+			return err
+		}
+		luaFiles, err := wafutils.LuaFiles()
+		if err != nil {
+			return err
+		}
+		if err := wafutils.DeployLuaModules(luaFiles, confDir); err != nil {
+			return err
+		}
+		if err := wafEnsureHTTPConfig(); err != nil {
+			return err
+		}
+		if err := wafInjectServer(&website, true); err != nil {
+			return err
+		}
 	}
-	luaFiles, err := wafutils.LuaFiles()
-	if err != nil {
-		return err
-	}
-	if err := wafutils.DeployLuaModules(luaFiles, confDir); err != nil {
-		return err
-	}
-	if err := wafEnsureHTTPConfig(); err != nil {
-		return err
-	}
-	if err := wafInjectServer(&website, enable); err != nil {
-		return err
-	}
+	previous := website.WafEnabled
 	website.WafEnabled = enable
 	if err := global.DB.Save(&website).Error; err != nil {
 		return err
 	}
-	if enable {
-		_ = w.SyncRules()
+	if err := w.syncDataPlane(); err != nil {
+		website.WafEnabled = previous
+		if rollbackErr := global.DB.Save(&website).Error; rollbackErr != nil {
+			return fmt.Errorf("sync WAF data plane: %w; rollback website state: %v", err, rollbackErr)
+		}
+		_ = w.syncDataPlane()
+		return err
 	}
 	return nil
 }
@@ -118,14 +132,35 @@ func wafEnsureHTTPConfig() error {
 	if httpBlock == nil {
 		return fmt.Errorf("http block not found in nginx.conf")
 	}
-	packagePath := fmt.Sprintf("%s/?.lua;", wafutils.WAFDir)
-	// CC 计数与挑战所需的共享内存字典
-	if len(httpBlock.FindDirectives("lua_shared_dict")) == 0 {
+	packagePath := fmt.Sprintf("%s/?.lua;", path.Dir(wafutils.WAFDir))
+	// CC 计数与挑战所需的共享内存字典。不能用“是否存在任意共享字典”代替 waf_dict 检查。
+	hasWAFDict := false
+	for _, directive := range httpBlock.FindDirectives("lua_shared_dict") {
+		params := directive.GetParameters()
+		if len(params) > 0 && params[0] == "waf_dict" {
+			hasWAFDict = true
+			break
+		}
+	}
+	if !hasWAFDict {
 		httpBlock.UpdateDirective("lua_shared_dict", []string{"waf_dict", "32m"})
 	}
-	if len(httpBlock.FindDirectives("lua_package_path")) == 0 {
-		httpBlock.UpdateDirective("lua_package_path", []string{packagePath})
-	} else {
+	hasPackagePath := false
+	currentPackagePath := ""
+	for _, directive := range httpBlock.FindDirectives("lua_package_path") {
+		params := directive.GetParameters()
+		if len(params) > 0 {
+			currentPackagePath = params[0]
+			if strings.Contains(params[0], path.Dir(wafutils.WAFDir)+"/?.lua") {
+				hasPackagePath = true
+				break
+			}
+		}
+	}
+	if !hasPackagePath {
+		httpBlock.UpdateDirective("lua_package_path", []string{packagePath + currentPackagePath})
+	}
+	if hasWAFDict && hasPackagePath {
 		return nil
 	}
 	rootConfig.FilePath = mainConfPath
@@ -145,23 +180,54 @@ func wafInjectServer(website *model.Website, enable bool) error {
 	serverBlock := config.Config.FindServers()[0]
 
 	accessConf := fmt.Sprintf("%s/access.lua", wafutils.WAFDir)
-	confDir, err := wafHostConfDir()
-	if err != nil {
-		return err
+	rulesFile := fmt.Sprintf("%s/rules.json", wafutils.WAFDir)
+	logFile := fmt.Sprintf("%s/waf_events.log", wafutils.WAFDir)
+	if enable {
+		hasAccess := false
+		for _, directive := range serverBlock.FindDirectives("access_by_lua_file") {
+			params := directive.GetParameters()
+			if len(params) > 0 && params[0] == accessConf {
+				hasAccess = true
+				break
+			}
+		}
+		requiredSets := map[string]bool{
+			"$waf_site_id": false, "$waf_rules_path": false,
+			"$waf_log_path": false, "$waf_challenge_secret": false,
+		}
+		for _, directive := range serverBlock.FindDirectives("set") {
+			params := directive.GetParameters()
+			if len(params) >= 2 {
+				if _, required := requiredSets[params[0]]; required && params[1] != "" {
+					requiredSets[params[0]] = true
+				}
+			}
+		}
+		complete := hasAccess
+		for _, present := range requiredSets {
+			complete = complete && present
+		}
+		if complete {
+			return nil
+		}
 	}
-	rulesFile := fmt.Sprintf("%s/rules.json", wafutils.HostWAFDir(confDir))
-	logFile := fmt.Sprintf("%s/waf_events.log", wafutils.HostWAFDir(confDir))
 
 	if enable {
+		secret := make([]byte, 32)
+		if _, err := rand.Read(secret); err != nil {
+			return err
+		}
 		serverBlock.UpdateDirective("set", []string{"$waf_site_id", fmt.Sprintf("%d", website.ID)})
 		serverBlock.UpdateDirective("set", []string{"$waf_rules_path", rulesFile})
 		serverBlock.UpdateDirective("set", []string{"$waf_log_path", logFile})
+		serverBlock.UpdateDirective("set", []string{"$waf_challenge_secret", base64.RawURLEncoding.EncodeToString(secret)})
 		serverBlock.UpdateDirective("access_by_lua_file", []string{accessConf})
 	} else {
 		serverBlock.RemoveDirective("access_by_lua_file", []string{accessConf})
 		serverBlock.RemoveDirective("set", []string{"$waf_site_id", fmt.Sprintf("%d", website.ID)})
 		serverBlock.RemoveDirective("set", []string{"$waf_rules_path", rulesFile})
 		serverBlock.RemoveDirective("set", []string{"$waf_log_path", logFile})
+		serverBlock.RemoveDirective("set", []string{"$waf_challenge_secret"})
 	}
 
 	if err := nginx.WriteConfig(config.Config, nginx.IndentedStyle); err != nil {
@@ -190,7 +256,15 @@ func (w WAFService) SyncRules() error {
 	if err := global.DB.Find(&options).Error; err != nil {
 		return err
 	}
-	return wafutils.ExportRules(rules, ccs, options, confDir)
+	var websites []model.Website
+	if err := global.DB.Select("id", "waf_enabled").Find(&websites).Error; err != nil {
+		return err
+	}
+	enabledSites := make(map[uint]bool, len(websites))
+	for _, website := range websites {
+		enabledSites[website.ID] = website.WafEnabled
+	}
+	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir)
 }
 
 func (w WAFService) loadAllRules() []model.WAFRule {
@@ -199,10 +273,11 @@ func (w WAFService) loadAllRules() []model.WAFRule {
 	return rules
 }
 
-func (w WAFService) syncRules() {
-	if err := w.SyncRules(); err != nil {
-		global.LOG.Errorf("[waf] export rules failed: %v", err)
+func (w WAFService) syncDataPlane() error {
+	if w.syncRulesFn != nil {
+		return w.syncRulesFn()
 	}
+	return w.SyncRules()
 }
 
 // ==================== CC 配置 ====================
@@ -222,7 +297,12 @@ func (w WAFService) GetCCConfig(websiteID uint) (*model.WAFCCConfig, error) {
 func (w WAFService) UpdateCCConfig(req request.WAFCCUpdate) error {
 	var cc model.WAFCCConfig
 	err := global.DB.Where("website_id = ?", req.WebsiteID).First(&cc).Error
+	wasNew := errors.Is(err, gorm.ErrRecordNotFound)
+	original := cc
 	if err != nil {
+		if !wasNew {
+			return err
+		}
 		cc = model.WAFCCConfig{WebsiteID: req.WebsiteID}
 	}
 	cc.Limit = req.Limit
@@ -239,7 +319,15 @@ func (w WAFService) UpdateCCConfig(req request.WAFCCUpdate) error {
 	if err := global.DB.Save(&cc).Error; err != nil {
 		return err
 	}
-	w.syncRules()
+	if err := w.syncDataPlane(); err != nil {
+		if wasNew {
+			_ = global.DB.Delete(&cc).Error
+		} else {
+			_ = global.DB.Save(&original).Error
+		}
+		_ = w.syncDataPlane()
+		return err
+	}
 	return nil
 }
 
@@ -250,7 +338,7 @@ func (w WAFService) ListRules(req request.WAFRuleSearch) ([]model.WAFRule, error
 		db = db.Where("scope = ?", req.Scope)
 	}
 	if req.WebsiteID > 0 {
-		db = db.Where("website_id = ?", req.WebsiteID)
+		db = db.Where("scope = ? OR website_id = ?", model.WAFScopeGlobal, req.WebsiteID)
 	}
 	if req.Action != "" {
 		db = db.Where("action = ?", req.Action)
@@ -260,6 +348,10 @@ func (w WAFService) ListRules(req request.WAFRuleSearch) ([]model.WAFRule, error
 }
 
 func (w WAFService) CreateRule(req request.WAFRuleCreate) error {
+	return w.createRule(req, "manual")
+}
+
+func (w WAFService) createRule(req request.WAFRuleCreate, source string) error {
 	if req.Scope == model.WAFScopeSite && req.WebsiteID == 0 {
 		return fmt.Errorf("site rule requires websiteId")
 	}
@@ -273,12 +365,16 @@ func (w WAFService) CreateRule(req request.WAFRuleCreate) error {
 		Priority: req.Priority, MatchType: req.MatchType, MatchValue: req.MatchValue,
 		MatchOp: req.MatchOp, Action: req.Action, TTL: req.TTL,
 		ExpiresAt: expiresAt, Enabled: true,
-		Source: "manual", Remark: req.Remark,
+		Source: source, Remark: req.Remark,
 	}
 	if err := global.DB.Create(&rule).Error; err != nil {
 		return err
 	}
-	w.syncRules()
+	if err := w.syncDataPlane(); err != nil {
+		_ = global.DB.Delete(&rule).Error
+		_ = w.syncDataPlane()
+		return err
+	}
 	return nil
 }
 
@@ -287,6 +383,7 @@ func (w WAFService) UpdateRule(req request.WAFRuleUpdate) error {
 	if err := global.DB.First(&rule, req.ID).Error; err != nil {
 		return err
 	}
+	original := rule
 	rule.Name = req.Name
 	rule.Priority = req.Priority
 	rule.MatchType = req.MatchType
@@ -306,15 +403,27 @@ func (w WAFService) UpdateRule(req request.WAFRuleUpdate) error {
 	if err := global.DB.Save(&rule).Error; err != nil {
 		return err
 	}
-	w.syncRules()
+	if err := w.syncDataPlane(); err != nil {
+		_ = global.DB.Save(&original).Error
+		_ = w.syncDataPlane()
+		return err
+	}
 	return nil
 }
 
 func (w WAFService) DeleteRule(id uint) error {
-	if err := global.DB.Delete(&model.WAFRule{}, id).Error; err != nil {
+	var original model.WAFRule
+	if err := global.DB.First(&original, id).Error; err != nil {
 		return err
 	}
-	w.syncRules()
+	if err := global.DB.Delete(&original).Error; err != nil {
+		return err
+	}
+	if err := w.syncDataPlane(); err != nil {
+		_ = global.DB.Create(&original).Error
+		_ = w.syncDataPlane()
+		return err
+	}
 	return nil
 }
 
@@ -335,7 +444,12 @@ func (w WAFService) GetOption(websiteID uint) (*model.WAFOption, error) {
 func (w WAFService) UpdateOption(req request.WAFOptionUpdate) error {
 	var opt model.WAFOption
 	err := global.DB.Where("website_id = ?", req.WebsiteID).First(&opt).Error
+	wasNew := errors.Is(err, gorm.ErrRecordNotFound)
+	original := opt
 	if err != nil {
+		if !wasNew {
+			return err
+		}
 		opt = model.WAFOption{WebsiteID: req.WebsiteID, AllowGoodBots: true, BlockBadBots: true, ProbeMaxURIs: 60, ProbeWindow: 60, ProbeMaxRPS: 120}
 	}
 	opt.BotEnabled = req.BotEnabled
@@ -354,7 +468,15 @@ func (w WAFService) UpdateOption(req request.WAFOptionUpdate) error {
 	if err := global.DB.Save(&opt).Error; err != nil {
 		return err
 	}
-	w.syncRules()
+	if err := w.syncDataPlane(); err != nil {
+		if wasNew {
+			_ = global.DB.Delete(&opt).Error
+		} else {
+			_ = global.DB.Save(&original).Error
+		}
+		_ = w.syncDataPlane()
+		return err
+	}
 	return nil
 }
 
@@ -422,6 +544,9 @@ func (w WAFService) SearchLogs(req request.WAFLogSearch) (int64, []model.WAFLog,
 	}
 	if req.Action != "" {
 		db = db.Where("action = ?", req.Action)
+	}
+	if req.FalsePositive != nil {
+		db = db.Where("false_positive = ?", *req.FalsePositive)
 	}
 	if req.StartTime > 0 {
 		db = db.Where("created_at >= ?", time.Unix(req.StartTime, 0))
@@ -499,9 +624,9 @@ func (w WAFService) ExportLogs(req request.WAFLogSearch) (string, []byte, error)
 	}
 	if req.Format == "csv" {
 		var sb strings.Builder
-		sb.WriteString("time,website,attack_type,action,rule,ip,method,path,user_agent,detail\n")
+		sb.WriteString("time,website,attack_type,action,rule,ip,area,method,path,user_agent,detail,false_positive,disposition_remark\n")
 		for _, l := range logs {
-			row := []string{l.CreatedAt.Format(time.RFC3339), l.WebsiteName, l.AttackType, l.Action, l.RuleName, l.IP, l.Method, l.Path, l.UserAgent, l.Detail}
+			row := []string{l.CreatedAt.Format(time.RFC3339), l.WebsiteName, l.AttackType, l.Action, l.RuleName, l.IP, l.Area, l.Method, l.Path, l.UserAgent, l.Detail, strconv.FormatBool(l.FalsePositive), l.DispositionRemark}
 			for i, c := range row {
 				if i > 0 {
 					sb.WriteString(",")
@@ -527,7 +652,8 @@ func (w WAFService) AddRuleFromLog(logID uint, action string) error {
 	}
 	return w.CreateRule(request.WAFRuleCreate{
 		Name:       fmt.Sprintf("from-log-%d", l.ID),
-		Scope:      model.WAFScopeGlobal,
+		Scope:      model.WAFScopeSite,
+		WebsiteID:  l.WebsiteID,
 		MatchType:  "ip",
 		MatchValue: l.IP,
 		MatchOp:    "exact",
@@ -537,10 +663,84 @@ func (w WAFService) AddRuleFromLog(logID uint, action string) error {
 	})
 }
 
+func (w WAFService) MarkFalsePositive(req request.WAFFalsePositiveOp) error {
+	var log model.WAFLog
+	if err := global.DB.First(&log, req.LogID).Error; err != nil {
+		return err
+	}
+	ttl := req.TTL
+	if ttl == 0 {
+		ttl = 24 * 60 * 60
+	}
+	if ttl < 60 || ttl > 30*24*60*60 {
+		return fmt.Errorf("false positive allow TTL must be between 60 and 2592000 seconds")
+	}
+	matchType, matchValue := "", ""
+	quotedIP, ipOK := quoteWAFExprValue(log.IP)
+	quotedPath, pathOK := quoteWAFExprValue(log.Path)
+	if log.IP != "" && log.Path != "" && ipOK && pathOK {
+		matchType = "expr"
+		matchValue = "ip in " + quotedIP + " and path eq " + quotedPath
+	} else if log.IP != "" {
+		matchType, matchValue = "ip", log.IP
+	} else if log.Path != "" {
+		matchType, matchValue = "path", log.Path
+	}
+	if matchValue == "" {
+		return fmt.Errorf("log has no path or IP for temporary allow rule")
+	}
+	originalFalsePositive, originalRemark, originalAt := log.FalsePositive, log.DispositionRemark, log.DispositionAt
+	now := time.Now()
+	log.FalsePositive = true
+	log.DispositionRemark = req.Remark
+	log.DispositionAt = &now
+	if err := global.DB.Save(&log).Error; err != nil {
+		return err
+	}
+	remark := fmt.Sprintf("false positive log %d", log.ID)
+	if req.Remark != "" {
+		remark += ": " + req.Remark
+	}
+	if err := w.createRule(request.WAFRuleCreate{
+		Name:       fmt.Sprintf("false-positive-%d", log.ID),
+		Scope:      model.WAFScopeSite,
+		WebsiteID:  log.WebsiteID,
+		Priority:   10,
+		MatchType:  matchType,
+		MatchValue: matchValue,
+		MatchOp:    "exact",
+		Action:     model.WAFActionAllow,
+		TTL:        ttl,
+		Remark:     remark,
+	}, "false_positive"); err != nil {
+		log.FalsePositive, log.DispositionRemark, log.DispositionAt = originalFalsePositive, originalRemark, originalAt
+		_ = global.DB.Save(&log).Error
+		return err
+	}
+	return nil
+}
+
+func quoteWAFExprValue(value string) (string, bool) {
+	if !strings.Contains(value, `"`) {
+		return `"` + value + `"`, true
+	}
+	if !strings.Contains(value, `'`) {
+		return `'` + value + `'`, true
+	}
+	return "", false
+}
+
 // CleanExpiredRules 定时清理过期名单
 func (w WAFService) CleanExpiredRules() {
-	if err := global.DB.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now()).Delete(&model.WAFRule{}).Error; err != nil {
-		global.LOG.Errorf("[waf] clean expired rules failed: %v", err)
+	result := global.DB.Where("expires_at IS NOT NULL AND expires_at < ?", time.Now()).Delete(&model.WAFRule{})
+	if result.Error != nil {
+		global.LOG.Errorf("[waf] clean expired rules failed: %v", result.Error)
+		return
+	}
+	if result.RowsAffected > 0 {
+		if err := w.syncDataPlane(); err != nil {
+			global.LOG.Errorf("[waf] sync rules after expiry cleanup failed: %v", err)
+		}
 	}
 }
 
@@ -610,6 +810,12 @@ func (w WAFService) IngestLogs() {
 		}
 		logs = append(logs, log)
 	}
+	if reader, geoErr := geo.NewGeo(); geoErr == nil {
+		enrichWAFAreas(logs, func(ip string) (string, error) {
+			return geo.GetIPLocation(reader, ip, "zh")
+		})
+		_ = reader.Close()
+	}
 	if len(logs) > 0 {
 		if err := global.DB.CreateInBatches(logs, 100).Error; err != nil {
 			global.LOG.Errorf("[waf] ingest logs failed: %v", err)
@@ -619,6 +825,29 @@ func (w WAFService) IngestLogs() {
 	}
 	// 处理完删除轮转文件
 	_ = os.Remove(tmpPath)
+}
+
+func enrichWAFAreas(logs []model.WAFLog, lookup func(string) (string, error)) {
+	if lookup == nil {
+		return
+	}
+	cache := make(map[string]string)
+	for i := range logs {
+		if logs[i].IP == "" || logs[i].Area != "" {
+			continue
+		}
+		if area, ok := cache[logs[i].IP]; ok {
+			logs[i].Area = area
+			continue
+		}
+		area, err := lookup(logs[i].IP)
+		if err != nil {
+			continue
+		}
+		area = strings.TrimSpace(area)
+		cache[logs[i].IP] = area
+		logs[i].Area = area
+	}
 }
 
 // wafWebhookSetting 读取外发设置（enable, method, url）

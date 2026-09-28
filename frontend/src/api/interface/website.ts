@@ -32,6 +32,7 @@ export namespace Website {
     }
 
     export interface WebsiteDTO extends Website {
+        wafEnabled: boolean;
         errorLogPath: string;
         accessLogPath: string;
         sitePath: string;

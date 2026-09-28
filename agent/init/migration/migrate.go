@@ -113,6 +113,7 @@ func agentDBMigrations() []*gormigrate.Migration {
 		migrations.AddDockerPortGuardReadOnly,
 		migrations.MigrateFirewallPortWhitelistSources,
 		migrations.AddWAFTables,
+		migrations.AddWAFLogDisposition,
 	}
 }
 

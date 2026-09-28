@@ -5,6 +5,24 @@ local _M = {}
 _M.RULES_PATH = "/www/waf/rules.json"
 _M.LOG_PATH = "/www/waf/waf_events.log"
 _M.BODY_LIMIT = 1024 * 1024 -- 超过 1MB 的 body 只抽样检测
+_M.LOG_VALUE_LIMIT = 4096
+
+local SENSITIVE_NAMES = {"password", "passwd", "pwd", "token", "secret", "authorization", "cookie", "session", "api_key", "apikey"}
+
+function _M.sanitize_log_value(value)
+    if not value or value == "" then return "" end
+    local text = tostring(value)
+    local lower = text:lower()
+    for _, name in ipairs(SENSITIVE_NAMES) do
+        if lower:find(name, 1, true) then
+            return "[redacted]"
+        end
+    end
+    if #text > _M.LOG_VALUE_LIMIT then
+        return text:sub(1, _M.LOG_VALUE_LIMIT) .. "[truncated]"
+    end
+    return text
+end
 
 function _M.get_rules_path()
     local p = ngx.var.waf_rules_path

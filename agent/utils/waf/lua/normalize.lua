@@ -36,6 +36,9 @@ function _M.normalize(s)
         if not cur or cur == prev then break end
         prev = cur
     end
+    -- 字面 "\n"/"\r"/"\t" 转义序列在参数里是真实注入写法（test:1-100\n/usr/bin/id），
+    -- 不还原成真换行会影响按行切分的正则，统一折成空白。
+    prev = prev:gsub("\\[nrt]", " ")
     return prev:lower()
 end
 

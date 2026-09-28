@@ -18,11 +18,8 @@ local ngx_say = ngx.say
 local ngx_exit = ngx.exit
 
 local function client_ip()
-    -- 优先 X-Forwarded-For 第一跳（面板反代场景）
-    local xff = ngx.var.http_x_forwarded_for
-    if xff and xff ~= "" then
-        return xff:match("^([^,%s]+)")
-    end
+    -- OpenResty 是受保护站点的流量入口。未经 real_ip 模块可信代理校验的
+    -- X-Forwarded-For 可由客户端伪造，因此日志与规则统一使用 remote_addr。
     return ngx.var.remote_addr or ""
 end
 
@@ -43,11 +40,11 @@ local function log_event(action, layer, attack_type, rule, detail, start_ms, bod
         action = action,
         method = ngx.req.get_method(),
         path = ngx.var.uri or "",
-        query = ngx.var.query_string or "",
+        query = config.sanitize_log_value(ngx.var.query_string),
         ip = client_ip(),
-        userAgent = ngx.var.http_user_agent or "",
-        detail = detail or "",
-        requestBody = body or "",
+        userAgent = config.sanitize_log_value(ngx.var.http_user_agent),
+        detail = config.sanitize_log_value(detail),
+        requestBody = config.sanitize_log_value(body),
         durationMs = math.floor((ngx.now() * 1000 - start_ms) * 100) / 100,
     })
     if not ok then
@@ -84,6 +81,9 @@ local function detect_request(start_ms)
         ngx.req.read_body()
         local body = ngx.req.get_body_data()
         if body then
+            if ct:find("multipart", 1, true) and semantic.detect_upload(body) then
+                return "upload", "dangerous file upload"
+            end
             local h = semantic.inspect(body, uri)
             if h then
                 return h.type, h.value
@@ -96,9 +96,21 @@ end
 local function access_main()
     local start_ms = config.now_ms()
 
+    -- The directive stays installed after first enablement. Daily enable/disable is
+    -- a rules.json data-plane switch, so toggling one site needs no nginx reload.
+    local state_ok, state = pcall(rules.get_site_state)
+    if not state_ok or not state or (state.site and state.site.enabled == false) then
+        return
+    end
+
     -- 1. 名单引擎
-    local ok, res = pcall(rules.check)
-    if ok and res then
+    local res
+    if rules.has_rules(state) then
+        local ok
+        ok, res = pcall(rules.check, state)
+        if not ok then res = nil end
+    end
+    if res then
         if res.action == "allow" then
             return -- 白名单：直接放行，跳过所有检测
         elseif res.action == "deny" then
@@ -114,7 +126,9 @@ local function access_main()
     end
 
     -- 2. 机器人识别（善意 bot 放行等同白名单；扫描器指纹拦截）
-    local ok_bot, bot_verdict = pcall(bot.check, rules.get_bot_conf())
+    local bot_conf = state.site and state.site.bot
+    local ok_bot, bot_verdict = true, nil
+    if bot_conf then ok_bot, bot_verdict = pcall(bot.check, bot_conf) end
     if ok_bot and bot_verdict == "good" then
         return -- 善意 bot 直接放行，跳过检测
     elseif ok_bot and bot_verdict == "bad" then
@@ -123,7 +137,7 @@ local function access_main()
     end
 
     -- 3. CC 防护（挑战已通过的请求直接放行）
-    local cc_conf = rules.get_cc_conf()
+    local cc_conf = state.site and state.site.cc
     if cc_conf and not challenge.passed() then
         local ok3, verdict = pcall(cc.check, cc_conf)
         if ok3 and verdict == "deny" then
@@ -138,10 +152,29 @@ local function access_main()
     end
 
     -- 5. 扫描器行为指纹（URI 多样性 / 速率突增）
-    local ok_probe, probe_hit = pcall(probe.check, rules.get_probe_conf())
+    local probe_conf = state.site and state.site.probe
+    local ok_probe, probe_hit = true, nil
+    if probe_conf then ok_probe, probe_hit = pcall(probe.check, probe_conf) end
     if ok_probe and probe_hit then
         log_event("deny", "probe", "scanner", nil, probe_hit, start_ms)
         return deny()
+    end
+
+    -- Common static/page GET: after policy checks, inspect the URI once and avoid
+    -- allocating the complete header/argument tables when the request has no
+    -- query string, body, Content-Length, or Transfer-Encoding.
+    if ngx.req.get_method() == "GET"
+        and not ngx.var.query_string
+        and not ngx.var.content_length
+        and not ngx.var.http_transfer_encoding then
+        local uri = ngx.var.request_uri or ""
+        local ok_fast, fast_hit = pcall(semantic.inspect, uri, uri)
+        if ok_fast and fast_hit then
+            log_event("deny", "semantic", fast_hit.type, nil, fast_hit.value, start_ms)
+            return deny(fast_hit.type)
+        elseif ok_fast then
+            return
+        end
     end
 
     -- 6. HTTP 请求走私检测（在语义检测前，畸形请求不进流水线）

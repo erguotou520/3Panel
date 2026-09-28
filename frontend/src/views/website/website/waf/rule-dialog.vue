@@ -1,5 +1,9 @@
 <template>
-    <el-drawer v-model="drawerVisible" :title="isEdit ? $t('commons.button.edit') : $t('commons.button.create')" size="30%">
+    <el-drawer
+        v-model="drawerVisible"
+        :title="isEdit ? $t('commons.button.edit') : $t('commons.button.create')"
+        size="30%"
+    >
         <el-form ref="formRef" label-position="top" :model="form">
             <el-form-item :label="$t('commons.table.name')" prop="name" :rules="rules.required">
                 <el-input v-model="form.name" />
@@ -46,7 +50,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { reactive, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
 import { createWAFRule, updateWAFRule } from '@/api/modules/waf';

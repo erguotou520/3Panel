@@ -64,6 +64,12 @@
                             <el-option label="log" value="log" />
                         </el-select>
                     </el-form-item>
+                    <el-form-item :label="$t('website.wafFalsePositive')">
+                        <el-select v-model="logReq.falsePositive" clearable class="p-w-120">
+                            <el-option :label="$t('website.wafFalsePositiveMarked')" :value="true" />
+                            <el-option :label="$t('website.wafFalsePositiveUnmarked')" :value="false" />
+                        </el-select>
+                    </el-form-item>
                     <el-form-item :label="$t('website.wafCCByUri')">
                         <el-switch v-model="cc.byUri" />
                     </el-form-item>
@@ -107,18 +113,29 @@
                 <template #header>
                     <div class="card-header">
                         <span>{{ $t('website.wafRules') }}</span>
-                        <el-button type="primary" plain @click="openRuleDialog()">{{ $t('commons.button.create') }}</el-button>
+                        <el-button type="primary" plain @click="openRuleDialog()">
+                            {{ $t('commons.button.create') }}
+                        </el-button>
                     </div>
                 </template>
                 <el-table :data="rules">
                     <el-table-column prop="name" :label="$t('commons.table.name')" min-width="120" />
                     <el-table-column prop="scope" :label="$t('website.wafScope')" width="90" />
                     <el-table-column prop="matchType" :label="$t('website.wafMatchType')" width="100" />
-                    <el-table-column prop="matchValue" :label="$t('website.wafMatchValue')" min-width="160" show-overflow-tooltip />
+                    <el-table-column
+                        prop="matchValue"
+                        :label="$t('website.wafMatchValue')"
+                        min-width="160"
+                        show-overflow-tooltip
+                    />
                     <el-table-column prop="matchOp" :label="$t('website.wafMatchOp')" width="90" />
                     <el-table-column prop="action" :label="$t('website.wafAction')" width="90">
                         <template #default="{ row }">
-                            <el-tag :type="row.action === 'allow' ? 'success' : row.action === 'deny' ? 'danger' : 'warning'">
+                            <el-tag
+                                :type="
+                                    row.action === 'allow' ? 'success' : row.action === 'deny' ? 'danger' : 'warning'
+                                "
+                            >
                                 {{ row.action }}
                             </el-tag>
                         </template>
@@ -130,8 +147,12 @@
                     </el-table-column>
                     <el-table-column :label="$t('commons.table.operate')" width="140" fixed="right">
                         <template #default="{ row }">
-                            <el-button link type="primary" @click="openRuleDialog(row)">{{ $t('commons.button.edit') }}</el-button>
-                            <el-button link type="danger" @click="onDelRule(row)">{{ $t('commons.button.delete') }}</el-button>
+                            <el-button link type="primary" @click="openRuleDialog(row)">
+                                {{ $t('commons.button.edit') }}
+                            </el-button>
+                            <el-button link type="danger" @click="onDelRule(row)">
+                                {{ $t('commons.button.delete') }}
+                            </el-button>
                         </template>
                     </el-table-column>
                 </el-table>
@@ -147,17 +168,73 @@
                         </div>
                     </div>
                 </template>
+                <el-form inline class="mb-2">
+                    <el-form-item :label="$t('website.wafAttackType')">
+                        <el-input v-model="logReq.attackType" clearable class="p-w-150" />
+                    </el-form-item>
+                    <el-form-item label="IP">
+                        <el-input v-model="logReq.ip" clearable class="p-w-150" />
+                    </el-form-item>
+                    <el-form-item :label="$t('website.wafAction')">
+                        <el-select v-model="logReq.action" clearable class="p-w-120">
+                            <el-option label="deny" value="deny" />
+                            <el-option label="challenge" value="challenge" />
+                            <el-option label="log" value="log" />
+                        </el-select>
+                    </el-form-item>
+                    <el-form-item>
+                        <el-date-picker
+                            v-model="logTimeRange"
+                            type="datetimerange"
+                            range-separator="-"
+                            :start-placeholder="$t('commons.search.timeStart')"
+                            :end-placeholder="$t('commons.search.timeEnd')"
+                        />
+                    </el-form-item>
+                    <el-form-item>
+                        <el-button type="primary" @click="searchLogs">{{ $t('commons.button.search') }}</el-button>
+                        <el-button @click="resetLogSearch">{{ $t('commons.button.reset') }}</el-button>
+                    </el-form-item>
+                </el-form>
                 <el-table :data="logs">
+                    <el-table-column type="expand" width="44">
+                        <template #default="{ row }">
+                            <el-descriptions :column="1" border class="m-2">
+                                <el-descriptions-item label="Query">{{ row.query || '-' }}</el-descriptions-item>
+                                <el-descriptions-item label="User-Agent">{{ row.userAgent || '-' }}</el-descriptions-item>
+                                <el-descriptions-item :label="$t('website.wafDetail')">
+                                    {{ row.detail || '-' }}
+                                </el-descriptions-item>
+                                <el-descriptions-item :label="$t('website.wafRequestBody')">
+                                    {{ row.requestBody || '-' }}
+                                </el-descriptions-item>
+                            </el-descriptions>
+                        </template>
+                    </el-table-column>
                     <el-table-column prop="createdAt" :label="$t('commons.table.date')" width="170" />
                     <el-table-column prop="attackType" :label="$t('website.wafAttackType')" width="110" />
                     <el-table-column prop="action" :label="$t('website.wafAction')" width="80" />
                     <el-table-column prop="ip" label="IP" width="130" />
+                    <el-table-column prop="area" label="GeoIP" width="140" show-overflow-tooltip />
                     <el-table-column prop="method" :label="$t('home.method')" width="80" />
                     <el-table-column prop="path" :label="$t('website.wafPath')" min-width="200" show-overflow-tooltip />
-                    <el-table-column prop="ruleName" :label="$t('website.wafRuleName')" width="130" show-overflow-tooltip />
-                    <el-table-column :label="$t('commons.table.operate')" width="160" fixed="right">
+                    <el-table-column
+                        prop="ruleName"
+                        :label="$t('website.wafRuleName')"
+                        width="130"
+                        show-overflow-tooltip
+                    />
+                    <el-table-column :label="$t('commons.table.operate')" width="270" fixed="right">
                         <template #default="{ row }">
-                            <el-button link type="primary" @click="onLogRule(row, 'allow')">{{ $t('website.wafAddAllow') }}</el-button>
+                            <el-button link type="primary" @click="onLogRule(row, 'allow')">
+                                {{ $t('website.wafAddAllow') }}
+                            </el-button>
+                            <el-tag v-if="row.falsePositive" type="success" size="small">
+                                {{ $t('website.wafFalsePositiveMarked') }}
+                            </el-tag>
+                            <el-button v-else link type="warning" @click="onFalsePositive(row)">
+                                {{ $t('website.wafFalsePositive') }}
+                            </el-button>
                         </template>
                     </el-table-column>
                 </el-table>
@@ -180,7 +257,20 @@
 import { onMounted, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
-import { deleteWAFRule, createRuleFromWAFLog, exportWAFLogs, getWAFCCConfig, getWAFOption, operateWebsiteWAF, searchWAFLogs, searchWAFRules, statWAFLogs, updateWAFOption, updateWAFCCConfig } from '@/api/modules/waf';
+import {
+    deleteWAFRule,
+    createRuleFromWAFLog,
+    exportWAFLogs,
+    getWAFCCConfig,
+    getWAFOption,
+    markWAFFalsePositive,
+    operateWebsiteWAF,
+    searchWAFLogs,
+    searchWAFRules,
+    statWAFLogs,
+    updateWAFOption,
+    updateWAFCCConfig,
+} from '@/api/modules/waf';
 import RuleDialog from './rule-dialog.vue';
 
 const props = defineProps({ websiteId: { type: Number, default: 0 }, wafEnabled: { type: Boolean, default: false } });
@@ -191,10 +281,27 @@ const rules = ref<any[]>([]);
 const logs = ref<any[]>([]);
 const logTotal = ref(0);
 const ruleDialogRef = ref();
-const logReq = ref({ websiteId: props.websiteId, page: 1, pageSize: 10 });
+const logReq = ref<any>({
+    websiteId: props.websiteId,
+    attackType: '',
+    ip: '',
+    action: '',
+    page: 1,
+    pageSize: 10,
+});
+const logTimeRange = ref<Date[]>([]);
 const stat = ref<any>({ attackType: [], topIP: [], trend: [] });
 const cc = ref<any>({ websiteId: props.websiteId, limit: 0, window: 60, action: 'deny', byUri: false, enabled: false });
-const option = ref<any>({ websiteId: props.websiteId, botEnabled: false, allowGoodBots: true, blockBadBots: true, probeEnabled: false, probeMaxURIs: 60, probeWindow: 60, probeMaxRPS: 120 });
+const option = ref<any>({
+    websiteId: props.websiteId,
+    botEnabled: false,
+    allowGoodBots: true,
+    blockBadBots: true,
+    probeEnabled: false,
+    probeMaxURIs: 60,
+    probeWindow: 60,
+    probeMaxRPS: 120,
+});
 
 const loadRules = async () => {
     const res = await searchWAFRules({ websiteId: props.websiteId });
@@ -204,6 +311,17 @@ const loadLogs = async () => {
     const res = await searchWAFLogs(logReq.value);
     logs.value = res.data?.items || [];
     logTotal.value = res.data?.total || 0;
+};
+const searchLogs = () => {
+    logReq.value.page = 1;
+    logReq.value.startTime = logTimeRange.value?.[0] ? Math.floor(new Date(logTimeRange.value[0]).getTime() / 1000) : 0;
+    logReq.value.endTime = logTimeRange.value?.[1] ? Math.floor(new Date(logTimeRange.value[1]).getTime() / 1000) : 0;
+    loadLogs();
+};
+const resetLogSearch = () => {
+    logReq.value = { websiteId: props.websiteId, attackType: '', ip: '', action: '', page: 1, pageSize: 10 };
+    logTimeRange.value = [];
+    loadLogs();
 };
 const loadStat = async () => {
     const res = await statWAFLogs({ websiteId: props.websiteId });
@@ -259,6 +377,13 @@ const onDelRule = (row: any) => {
 const onLogRule = (row: any, action: string) => {
     createRuleFromWAFLog(row.id, action).then(() => {
         MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+        loadRules();
+    });
+};
+const onFalsePositive = (row: any) => {
+    markWAFFalsePositive(row.id).then(() => {
+        MsgSuccess(i18n.global.t('website.wafFalsePositiveDone'));
+        loadLogs();
         loadRules();
     });
 };

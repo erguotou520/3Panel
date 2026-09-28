@@ -46,6 +46,7 @@ var repeatKeys = map[string]struct {
 	"add_header":       {},
 	"set_real_ip_from": {},
 	"error_page":       {},
+	"lua_shared_dict":  {},
 }
 
 func IsRepeatKey(key string) bool {

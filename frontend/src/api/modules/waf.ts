@@ -26,6 +26,7 @@ export interface WAFLog {
     attackType: string;
     action: string;
     ip: string;
+    area: string;
     method: string;
     path: string;
     query: string;
@@ -33,6 +34,9 @@ export interface WAFLog {
     detail: string;
     requestBody: string;
     durationMs: number;
+    falsePositive: boolean;
+    dispositionRemark: string;
+    dispositionAt?: string;
     createdAt: string;
 }
 
@@ -40,6 +44,7 @@ export interface WAFRuleSearch {
     scope?: string;
     websiteId?: number;
     action?: string;
+    falsePositive?: boolean;
 }
 
 export interface WAFLogSearch {
@@ -91,6 +96,10 @@ export const exportWAFLogs = (req: WAFLogSearch) => {
 
 export const createRuleFromWAFLog = (logId: number, action: string) => {
     return http.post(`/waf/logs/rule`, { logId, action });
+};
+
+export const markWAFFalsePositive = (logId: number, ttl = 86400, remark = '') => {
+    return http.post(`/waf/logs/false-positive`, { logId, ttl, remark });
 };
 
 export interface WAFCCConfig {

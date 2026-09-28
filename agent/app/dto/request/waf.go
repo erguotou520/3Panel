@@ -33,8 +33,8 @@ type WAFRuleUpdate struct {
 }
 
 type WAFRuleOp struct {
-	ID      uint   `json:"id" validate:"required"`
-	Enabled *bool  `json:"enabled"`
+	ID      uint  `json:"id" validate:"required"`
+	Enabled *bool `json:"enabled"`
 }
 
 type WAFWebsiteOp struct {
@@ -68,20 +68,27 @@ type WAFWebhookUpdate struct {
 }
 
 type WAFLogSearch struct {
-	WebsiteID  uint   `form:"websiteId" json:"websiteId"`
-	AttackType string `form:"attackType" json:"attackType"`
-	IP         string `form:"ip" json:"ip"`
-	RuleID     string `form:"ruleId" json:"ruleId"`
-	Action     string `form:"action" json:"action"`
-	StartTime  int64  `form:"startTime" json:"startTime"`
-	EndTime    int64  `form:"endTime" json:"endTime"`
-	Page       int    `form:"page" json:"page"`
-	PageSize   int    `form:"pageSize" json:"pageSize"`
-	Order      string `form:"order" json:"order"`
-	Format     string `form:"format" json:"format"`
+	WebsiteID     uint   `form:"websiteId" json:"websiteId"`
+	AttackType    string `form:"attackType" json:"attackType"`
+	IP            string `form:"ip" json:"ip"`
+	RuleID        string `form:"ruleId" json:"ruleId"`
+	Action        string `form:"action" json:"action"`
+	FalsePositive *bool  `form:"falsePositive" json:"falsePositive"`
+	StartTime     int64  `form:"startTime" json:"startTime"`
+	EndTime       int64  `form:"endTime" json:"endTime"`
+	Page          int    `form:"page" json:"page"`
+	PageSize      int    `form:"pageSize" json:"pageSize"`
+	Order         string `form:"order" json:"order"`
+	Format        string `form:"format" json:"format"`
 }
 
 type WAFLogRuleOp struct {
 	LogID  uint   `json:"logId" validate:"required"`
 	Action string `json:"action" validate:"required,oneof=allow deny log"`
+}
+
+type WAFFalsePositiveOp struct {
+	LogID  uint   `json:"logId" validate:"required"`
+	TTL    int    `json:"ttl" validate:"omitempty,min=60,max=2592000"`
+	Remark string `json:"remark"`
 }

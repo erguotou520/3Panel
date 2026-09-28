@@ -1,7 +1,31 @@
 # 3panel WAF 功能文档
 
 > 目标：对标并超越 1Panel 商业版 WAF 与雷池（SafeLine），不是开源工具的简单封装，而是自研语义 + ML 混合检测引擎。
-> 状态：设计阶段，未实现。
+> 状态：实现中。P0 核心链路已具备，但性能、检出率/误报率基准和真实 3Panel OpenResty 环境验收尚未达标，不得标记为发布完成。
+> 范围：仅覆盖 3Panel 管理的 OpenResty 服务，不接管或修改用户自行部署的 Nginx。
+
+## 0. 当前实现与验证状态（2026-09-28）
+
+已实现：站点级数据面热启停、SQLi/XSS/RCE/LFI/SSRF/危险上传检测，以及 Log4Shell、SSTI、XXE、Java/PHP 反序列化、模板/代码注入和高危暴露路径检测；全局/站点名单、TTL、allow/deny/log/challenge、CC、机器人与扫描行为检测、请求走私检测、日志检索/统计/导出/一键加白、误报标记并自动生成 24 小时站点 IP+路径组合放行规则、GeoIP 归属地、Webhook，以及规则文件原子更新。Go 控制面将无 TTL 的 exact 名单规则预编译为哈希表，Lua 请求面直接查表，其他规则保留解释执行。首次为站点安装 Lua 入口需要一次 OpenResty reload；安装完成后的日常启停只更新数据面，不 reload。前端在“网站”菜单下提供独立 WAF 入口，并保留单站点设置中的 WAF 页签。
+
+安全与运行约束：请求阶段从共享内存读取规则；规则文件由后台定时器刷新；事件先进入共享内存队列，再由定时器批量落盘。日志来源 IP 与规则匹配统一使用经过 OpenResty `real_ip` 处理后的 `remote_addr`，不直接信任客户端传入的 `X-Forwarded-For`。包含密码、令牌、Cookie 等敏感字段的日志值整体遮蔽，超长字段截断。
+
+当前自动验证：Go WAF service/exporter 测试、Lua 单元测试、Docker OpenResty 端到端测试。端到端测试包含无需 reload 的关闭/重新开启验证。可执行命令：
+
+```bash
+cd agent && go test ./utils/waf ./app/service -count=1
+cd agent/utils/waf/lua && luajit waf_test.lua
+cd agent/utils/waf && bash e2e_smoke.sh
+cd agent/utils/waf && RUN_BENCHMARK=1 bash e2e_smoke.sh
+# 使用已知攻击日志全量回放；可加 --deduplicate 查看去重样本检出率
+python3 agent/utils/waf/replay_detect_log.py /path/to/detect_log.xlsx
+```
+
+已知攻击日志基线：`detect_log.xlsx` 共 103,179 条、56,166 个不同载荷、22,495 个不同路径。初始引擎对去重样本检出率为 12.30%；补充 P1 攻击族、SQLi 数据库指纹、折叠前路径穿越与高危备份暴露后，全量检出率为 40.32%（41,600 / 103,179），去重检出率为 46.92%（32,312 / 68,861）。继续按未命中样本补签名后（Struts2 OGNL、ThinkPHP、APISIX Lua 注入、Fastjson AutoType、Shellshock、Goby 命令探针、MySQL 版本注释与 `DBMS_PIPE` 盲注、OAST 回连、Windows 敏感路径、字面 `\n` 归一化等），去重检出率提升到 89.57%（61,682 / 68,861）。该表只有路径和攻击载荷，没有完整 Header/Cookie/Body 原文，不能把剩余未命中全部归因于检测引擎，但当前结果也明确不足以证明 `>= 99%`。回放工具支持 `--show-misses N` 输出未命中样本，用于后续分类补规则。
+
+未命中分布（去重口径，共 7,179 条）以 SQLi（约 3,900）、RCE（约 1,520）、代码注入（约 400）为主：其中相当一部分是同一模板换随机数/路径的重复形态（如 jeecg 系未授权字典接口、cgi-bin 命令执行、OAST 换域名），另有 `phpmyadmin`、`reset-password` 一类仅凭路径无法判定攻击意图的探测。后续提升空间主要在按路径模板聚合的虚拟补丁规则，而不是继续堆叠单条 payload 特征。
+
+未通过的发布门槛：将普通请求的候选与暴露路径检查改为 OpenResty PCRE JIT 后，本地 Docker `wrk` 多轮对照中吞吐下降由约 30% 降到约 12%~24%；短压测波动较大，只能作为优化基线，不能替代文档要求的 P99 延迟增量 `< 5%`。生产同款 `1panel/openresty:1.31.1.1-2-4-noble` 镜像已在隔离容器中通过之前的 19 项端到端测试；本轮新增的预编译规则用例在本地 OpenResty 镜像中使总数达到 20 项并全部通过，但生产同款镜像本轮拉取遇到镜像仓库单层长时间重试，新用例尚未在该镜像重跑。OWASP 检出率 `>= 99%`、误报率 `<= 0.1%`、控制面 API 到数据面的完整链路以及浏览器验证仍需完成。P1-P3 未实现项目继续以本文清单为准。
 
 ## 1. 定位与差异化
 

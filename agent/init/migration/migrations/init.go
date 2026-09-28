@@ -1905,6 +1905,13 @@ var AddWAFTables = &gormigrate.Migration{
 	},
 }
 
+var AddWAFLogDisposition = &gormigrate.Migration{
+	ID: "20260928-add-waf-log-disposition",
+	Migrate: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.WAFLog{})
+	},
+}
+
 var AddFirewallRuleTable = &gormigrate.Migration{
 	ID: "20260819-add-firewall-v2-tables",
 	Migrate: func(tx *gorm.DB) error {

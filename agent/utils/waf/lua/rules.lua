@@ -9,9 +9,11 @@ local CACHE_TTL = 5 -- 秒，文件 mtime 轮询间隔
 
 local cache = {
     data = nil,
-    mtime = 0,
+    raw = nil,
     checked = 0,
+    shared_checked = 0,
 }
+local refresh_started = false
 
 -- 名单文件格式：
 -- {
@@ -19,22 +21,69 @@ local cache = {
 --   sites  = { ["1"] = { rules = {...} } },
 -- }
 
-local function load_rules()
-    local now = ngx.now()
-    if cache.data and now - cache.checked < CACHE_TTL then
-        return cache.data
-    end
-    cache.checked = now
-    local path = config.get_rules_path()
+local function refresh_rules(premature, path, content_key, lock_key)
+    if premature then return end
     local f = io.open(path, "r")
-    if not f then
+    if f then
+        local content = f:read("*a")
+        f:close()
+        if config.json_decode(content) then
+            ngx.shared.waf_dict:set(content_key, content)
+        end
+    end
+    ngx.shared.waf_dict:delete(lock_key)
+end
+
+local function periodic_refresh(premature, path, content_key, lock_key)
+    if premature then return end
+    if ngx.shared.waf_dict:add(lock_key, true, CACHE_TTL) then
+        refresh_rules(false, path, content_key, lock_key)
+    end
+    local ok, err = ngx.timer.at(1, periodic_refresh, path, content_key, lock_key)
+    if not ok then
+        ngx.log(ngx.ERR, "[waf] cannot schedule rules refresh: ", err)
+    end
+end
+
+function _M.start_refresh()
+    if refresh_started then return true end
+    refresh_started = true
+    local path = config.get_rules_path()
+    local content_key = "waf:rules:" .. path
+    local lock_key = content_key .. ":refresh"
+    local ok, err = ngx.timer.at(0, periodic_refresh, path, content_key, lock_key)
+    if not ok then
+        refresh_started = false
+        ngx.log(ngx.ERR, "[waf] cannot start rules refresh: ", err)
+        return false
+    end
+    return true
+end
+
+local function load_rules()
+    _M.start_refresh()
+    local now = ngx.now()
+    local path = config.get_rules_path()
+    local content_key = "waf:rules:" .. path
+    local lock_key = content_key .. ":refresh"
+    if now - cache.checked >= CACHE_TTL then
+        cache.checked = now
+        if ngx.shared.waf_dict:add(lock_key, true, CACHE_TTL) then
+            local ok = ngx.timer.at(0, refresh_rules, path, content_key, lock_key)
+            if not ok then ngx.shared.waf_dict:delete(lock_key) end
+        end
+    end
+    if cache.data and now - cache.shared_checked < 1 then
         return cache.data
     end
-    local content = f:read("*a")
-    f:close()
-    local data = config.json_decode(content)
-    if data then
-        cache.data = data
+    cache.shared_checked = now
+    local raw = ngx.shared.waf_dict:get(content_key)
+    if raw and raw ~= cache.raw then
+        local data = config.json_decode(raw)
+        if data then
+            cache.raw = raw
+            cache.data = data
+        end
     end
     return cache.data
 end
@@ -59,6 +108,10 @@ match_ops.wildcard = function(v, p)
 end
 match_ops.regex = function(v, p)
     if not v then return false end
+    if ngx.re and ngx.re.find then
+        local from = ngx.re.find(v, p, "jo")
+        return from ~= nil
+    end
     local ok, res = pcall(function() return v:match(p) ~= nil end)
     return ok and res
 end
@@ -123,13 +176,47 @@ end
 local function rule_expired(rule)
     local exp = rule.expires_at
     if not exp or exp == "" then return false end
-    local y, mo, d, h, mi, s = tostring(exp):match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)")
+    local text = tostring(exp)
+    local y, mo, d, h, mi, s, zone = text:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)[%.%d]*(Z)$")
+    if not y then
+        y, mo, d, h, mi, s, zone = text:match("^(%d%d%d%d)%-(%d%d)%-(%d%d)T(%d%d):(%d%d):(%d%d)[%.%d]*([%+%-]%d%d:%d%d)$")
+    end
     if not y then return false end
-    local t = os.time({
-        year = tonumber(y), month = tonumber(mo), day = tonumber(d),
-        hour = tonumber(h), min = tonumber(mi), sec = tonumber(s),
-    })
+    y, mo, d = tonumber(y), tonumber(mo), tonumber(d)
+    h, mi, s = tonumber(h), tonumber(mi), tonumber(s)
+    -- Gregorian civil date -> Unix epoch, independent of the server's local timezone.
+    local adjusted_year = mo <= 2 and y - 1 or y
+    local era = math.floor(adjusted_year / 400)
+    local yoe = adjusted_year - era * 400
+    local shifted_month = mo + (mo > 2 and -3 or 9)
+    local doy = math.floor((153 * shifted_month + 2) / 5) + d - 1
+    local doe = yoe * 365 + math.floor(yoe / 4) - math.floor(yoe / 100) + doy
+    local t = (era * 146097 + doe - 719468) * 86400 + h * 3600 + mi * 60 + s
+    if zone ~= "Z" then
+        local sign, zh, zm = zone:match("^([%+%-])(%d%d):(%d%d)$")
+        local offset = (tonumber(zh) * 60 + tonumber(zm)) * 60
+        t = t - (sign == "+" and offset or -offset)
+    end
     return ngx.time() >= t
+end
+
+function _M.get_site_state()
+    local data = load_rules()
+    if not data then
+        return nil
+    end
+    local site = data.sites and data.sites[tostring(config.get_site_id())]
+    return {
+        site = site,
+        global_rules = data.global and data.global.rules or {},
+        global_compiled = data.global and data.global.compiled or {},
+    }
+end
+
+function _M.site_enabled()
+    local state = _M.get_site_state()
+    if not state then return false end
+    return state.site == nil or state.site.enabled ~= false
 end
 
 -- 在单层名单内评估：命中 allow 立即返回；deny 类命中按 priority 取最小（数值越小越优先）
@@ -150,24 +237,77 @@ local function eval_list(list, dims)
     return deny_hit
 end
 
+local function prefer_result(current, rule)
+    if not rule then return current end
+    local candidate = {hit = true, action = rule.action, rule = rule}
+    if not current or candidate.action == "allow" then return candidate end
+    if current.action == "allow" then return current end
+    if (rule.priority or 100) < (current.rule.priority or 100) then return candidate end
+    return current
+end
+
+local function eval_compiled(compiled, dims)
+    if not compiled then return nil end
+    local result
+    local function take(group, value)
+        if group and value then result = prefer_result(result, group[value]) end
+    end
+    take(compiled.ip, dims.ip)
+    take(compiled.path, dims.path)
+    take(compiled.path, dims.raw_path)
+    take(compiled.method, dims.method)
+    take(compiled.ua, dims.ua)
+    take(compiled.referer, dims.referer)
+    take(compiled.cookie, dims.cookie)
+    return result
+end
+
+local function eval_layer(compiled, list, dims)
+    local fast = eval_compiled(compiled, dims)
+    local slow = eval_list(list, dims)
+    if fast and fast.action == "allow" then return fast end
+    if slow and slow.action == "allow" then return slow end
+    if not fast then return slow end
+    if not slow then return fast end
+    return (fast.rule.priority or 100) <= (slow.rule.priority or 100) and fast or slow
+end
+
+local function compiled_empty(compiled)
+    return not compiled or (not next(compiled.ip or {}) and not next(compiled.path or {})
+        and not next(compiled.method or {}) and not next(compiled.ua or {})
+        and not next(compiled.referer or {}) and not next(compiled.cookie or {}))
+end
+
+function _M.has_rules(state)
+    if not state then return false end
+    local site_rules = state.site and state.site.rules or {}
+    local site_compiled = state.site and state.site.compiled or {}
+    local global_rules = state.global_rules or {}
+    return #site_rules > 0 or #global_rules > 0
+        or not compiled_empty(site_compiled) or not compiled_empty(state.global_compiled)
+end
+
 -- 返回命中的名单结果：
 --   {hit=true, action="allow"|"deny"|"challenge"|"log", rule={...}}
 -- 优先级：站点级名单整体覆盖全局名单；层内白名单(allow) > 黑名单(deny/challenge/log)
-function _M.check()
-    local rules = load_rules()
-    if not rules then
+function _M.check(state)
+    state = state or _M.get_site_state()
+    if not state then return nil end
+    local site_rules = state.site and state.site.rules or {}
+    local site_compiled = state.site and state.site.compiled or {}
+    local global_rules = state.global_rules or {}
+    if not _M.has_rules(state) then
         return nil
     end
     local dims = build_dim_values()
-    local sid = tostring(config.get_site_id())
     -- 站点级优先：站点名单有任何命中（allow 或 deny 类）即返回，不再看全局
-    if rules.sites and rules.sites[sid] then
-        local site_res = eval_list(rules.sites[sid].rules or {}, dims)
+    if state.site then
+        local site_res = eval_layer(site_compiled, site_rules, dims)
         if site_res then
             return site_res
         end
     end
-    return eval_list(rules.global and rules.global.rules or {}, dims)
+    return eval_layer(state.global_compiled, global_rules, dims)
 end
 
 -- 站点级扫描探测阈值：rules.json 中 sites[sid].probe = {enabled, maxURIs, window, maxRPS}
