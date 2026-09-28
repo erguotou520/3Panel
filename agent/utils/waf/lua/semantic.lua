@@ -7,6 +7,18 @@ local _M = {}
 -- SQL 语法结构指纹：识别「输入能构成合法 SQL 片段」而非命中关键字
 local SQL_LOGIC_OPS = {["or"]=true, ["and"]=true, ["xor"]=true}
 
+-- SQL 注释剥离：/**/、/*!50000*/、-- 与 # 是最常见的绕过手段。
+-- 剥离后 SQL 关键字重新贴合，前沿断言 %f[%w] 才能成立。
+-- MySQL 版本注释 /*!50000union*/ 本身是攻击证据，由调用方在剥离前单独判定。
+local function strip_sql_comments(s)
+    -- 注意 Lua pattern 没有正则的惰性分组：/ %* . - %* / 中 . - 是"惰性重复任意字符"，
+    -- 对 /**/ 会匹配空串再吃掉 **/，对 /*!50000select*/ 则吃到第一个 */。
+    s = s:gsub("/%*.-%*/", " ")   -- /**/ 与 /*!50000xxx*/
+    s = s:gsub("%-%-[^\n]*", " ")   -- 行注释 --
+    s = s:gsub("#.*$", "")         -- MySQL 行注释 #
+    return s
+end
+
 local function looks_like_sql_tautology(s)
     -- ' OR '1'='1 / " OR 1=1 -- 等结构
     if s:find("1%s*=%s*1") or s:find("a%s*=%s*a") or s:find("1%s*=%s*'1'") then
@@ -22,14 +34,28 @@ local function looks_like_sql_tautology(s)
     end
     -- 引号 + and/or + 数字等式（' and 1=2 --），无需注释尾
     if s:find("['\"]%s+and%s+%d+%s*=%s*%d+") or s:find("['\"]%s+or%s+%d+%s*=%s*%d+") then return true end
+    -- 引号紧贴逻辑运算符与引号等式：N'And 'N'='N / desc'AND '1'='1
+    -- 攻击者常省略空格，%s+ 版本覆盖不到，这里允许 %s* 并区分单词边界
+    if s:find("['\"]%s*and%s+['\"]?%w+['\"]?%s*=%s*['\"]?%w+") then return true end
+    if s:find("['\"]%s*or%s+['\"]?%w+['\"]?%s*=%s*['\"]?%w+") then return true end
     -- 裸布尔盲注探针：1 AND 1=2 / 2 or 3=4
     if s:match("^%s*%d+%s+and%s+%d+%s*=%s*%d+%s*$") or s:match("^%s*%d+%s+or%s+%d+%s*=%s*%d+%s*$") then return true end
     -- 引号内同构数字等式：'1'='2' / 'a'='a'
     if s:find("['\"%d]%s*=%s*['\"]?%w+['\"]?%s*and%s+") then return true end
+    -- Oracle 字符串拼接比较：createTime'||1/0||'，用 1/0 强制报错做布尔盲注
+    if s:find("['\"]%s*|%|%s*%d+%s*/%s*%d+%s*|%|%s*['\"]") then return true end
+    if s:find("['\"]%s*|%|%s*[%w%s]-%s*/%s*%d+%s*|%|") then return true end
     -- 空引号配对：""or""="" / ''or''=''，双引号闭合后紧跟 or/and
     if s:find('""%s+or%s+""%s*=') or s:find("''%s+or%s+''%s*=") then return true end
     -- 布尔探针包在引号内：2147483647 or 1=2
     if s:find("^%s*%-?%d+%s+or%s+%d+%s*=%s*%d+") or s:find("^%s*%-?%d+%s+and%s+%d+%s*=%s*%d+") then return true end
+    -- 算术化盲注：-7140 OR 1418*1418=1418 —— 等式一侧是乘积而非字面数字。
+    -- 覆盖 /%s* 与引号前缀的变体：-1" OR 1337*1337=1337 -- 、N' OR N*N=N
+    if s:find("or%s+%d+%s*%*%s*%d+%s*=%s*%d+") or s:find("and%s+%d+%s*%*%s*%d+%s*=%s*%d+") then return true end
+    if s:find("or%s+%d+%s*%+%s*%d+%s*=%s*%d+") or s:find("and%s+%d+%s*%+%s*%d+%s*=%s*%d+") then return true end
+    if s:find("or%s+%d+%s*%-%s*%d+%s*=%s*%d+") or s:find("and%s+%d+%s*%-%s*%d+%s*=%s*%d+") then return true end
+    -- 被参数名或引号包裹的算术盲注：cls_mode_login expr 111+111 前的 expr 变体
+    if s:find("%f[%w]expr%s+%d+%s*[%+%-*]%s*%d+") then return true end
     -- MySQL 版本注释绕过：/*!50000union*/ /*!50000select*/，以及 /**/ 拼接
     -- 不能用 %f[%w] 前沿：union 紧跟在 /*!50000 的数字后面，前沿不成立
     if s:find("/%*!%d+") then
@@ -43,13 +69,21 @@ end
 local function looks_like_sql_union(s)
     -- UNION [ALL] SELECT 结构（Lua pattern 不支持 ? 与 |，逐条写）
     if s:find("%f[%w]union%f[^%w]%s*all%s+%f[%w]select%f[^%w]") then return true end
-    return s:find("%f[%w]union%f[^%w]%s*%f[%w]select%f[^%w]") ~= nil
+    if s:find("%f[%w]union%f[^%w]%s*%f[%w]select%f[^%w]") then return true end
+    -- 括号包裹形态：)union(select(...),null)  —— 前面是 -1) 而非空白/注释，前沿不成立
+    if s:find("union%s*%(%s*select") or s:find("union%s+all%s*%(%s*select") then return true end
+    if s:find("union%s*%(%s*%(") or s:find("union%s+all%s*%(%s*%(") then return true end
+    return false
 end
 
 local function looks_like_sql_injection_expr(s)
     -- SELECT <列表> FROM：列表需含 *、逗号、数字或函数调用，避免误杀自然语言（"select your seats from the map"）
     local list = s:match("%f[%w]select%s+(.-)%s+%f[%w]from%f[^%w]")
     if list and (list:find("%*") or list:find(",") or list:find("%d") or list:find("%f[%w]count%s*%(")) then return true end
+    -- 括包子查询：(SELECT md5(2014346458)) / (select user from users)
+    if s:find("%(%s*select%s") and (s:find("md5%s*%(") or s:find("%f[%w]from%f[^%w]") or s:find(",") or s:find("%d")) then return true end
+    -- select 后紧跟括号：select(N)、union(select(...))
+    if s:find("%f[%w]select%s*%(%s*%a+") then return true end
     if s:find("%f[%w]insert%f[^%w]") and s:find("%f[%w]into%f[^%w]") then return true end
     if s:find("%f[%w]update%f[^%w]") and s:find("%f[%w]set%f[^%w]") then return true end
     if s:find("%f[%w]delete%f[^%w]") and s:find("%f[%w]from%f[^%w]") then return true end
@@ -60,12 +94,31 @@ local function looks_like_sql_injection_expr(s)
     if s:find("%f[%w]gtid_subset%s*%(") or s:find("%f[%w]waitfor%s+delay%f[^%w]") then return true end
     if s:find("@@[%w_]+") and (s:find("select", 1, true) or s:find("and", 1, true)) then return true end
     if s:find("%f[%w]hashbytes%s*%(") or s:find("sys%.fn_varbintohexstr%s*%(") then return true end
+    -- concat(9876*9876,0x3a,9876*9876)：算术结果拼接，JimuReport getTotalData 注入
+    if s:find("concat%s*%(%s*%d+%s*%*%s*%d+") then return true end
+    -- GROUP BY ... HAVING 报错注入：GROUP BY CONCAT(0x7e,md5(N),0x7e,FLOOR(RAND(0)*2)) HAVING
+    if s:find("group%s+by%s+concat") or (s:find("group%s+by") and s:find("having%s+min")) then return true end
+    if s:find("floor%s*%(%s*rand") then return true end
+    -- Oracle decode(length(N),a,b,c) 函数式盲注
+    if s:find("decode%s*%(%s*length%s*%(") then return true end
+    -- H2 CREATE ALIAS sleepN FOR "java.lang.Thread.sleep"; CALL sleepN(0)
+    if s:find("create%s+alias") and s:find("java%.lang%.thread%.sleep") then return true end
+    if s:find("create%s+alias%s+sleep%w*%s+for") then return true end
+    if s:find("call%s+sleep%w*%s*%(") then return true end
+    -- INTO OUTFILE 写文件：');select ... into outfile 'C:\\Program Files...'
+    if s:find("into%s+outfile") or s:find("into%s+dumpfile") or s:find("into%s+outdir") then return true end
+    -- 序列化容器里嵌 SQL：<hash>aads|a:2:{s:3:\"num\";s:107:\"*/SELECT ...
+    if s:find("|a:%d+:{s:%d+:") and s:find("select", 1, true) then return true end
+    if s:find("|a:%d+:{") and (s:find("0x2d3127") or s:find("union", 1, true)) then return true end
     -- Oracle DBMS_PIPE 时间盲注
     if s:find("dbms_pipe%.receive_message") then return true end
     -- CHAR()/CHR() 拼接 + IN/SELECT：' AND 5094 IN (SELECT (CHAR(113)...)
     if s:find("char%s*%(%d+%)") and (s:find("%f[%w]in%s*%(%s*select") or s:find("%f[%w]concat%s*%(")) then return true end
     -- IF(...)=... SELECT ... ELSE DROP / CAST('~'||(SELECT (CASE WHEN
     if s:find("cast%s*%(%s*['\"]~['\"]") or (s:find("%f[%w]case%s+when%f[^%w]") and s:find("%f[%w]select%f[^%w]")) then return true end
+    -- cast(md5(N)as int) 强制类型转换报错注入；剥离 /**/ 后 as 前后都有空格
+    if s:find("cast%s*%(%s*%a+%s*%(%s*%d+") or s:find("cast%s*%(%s*md5%s*%(") then return true end
+    if s:find("md5%s*%(%s*%d+%s*%)%s*as%s+%a+") then return true end
     if s:find("%f[%w]concat%s*%(") and (s:find("password", 1, true) or s:find("user%s*%(") or s:find("username", 1, true)) then return true end
     -- jeecg 系 SQL 注入：引号拼接 from sys_xxx 表名 / 未授权字典接口取 password,salt
     if s:find("['\"]%s+from%s+sys_%w+") then return true end
@@ -78,7 +131,15 @@ function _M.detect_sqli(value)
     if not value or value == "" then return false end
     local s = normalize.normalize(value)
     if #s < 4 then return false end
-    return looks_like_sql_tautology(s) or looks_like_sql_union(s) or looks_like_sql_injection_expr(s)
+    if looks_like_sql_tautology(s) or looks_like_sql_union(s) or looks_like_sql_injection_expr(s) then
+        return true
+    end
+    -- 注释绕过（/**/ 拼接、MySQL 版本注释）：先在原串上判，再对剥离注释后的串重跑。
+    -- 剥离后关键字重新贴合，%f[%w] 前沿才成立，否则 9/**/and 6955=6955 这类全部漏检。
+    if not s:find("/%*") and not s:find("%-%-") and not s:find("#") then return false end
+    return looks_like_sql_tautology(strip_sql_comments(s))
+        or looks_like_sql_union(strip_sql_comments(s))
+        or looks_like_sql_injection_expr(strip_sql_comments(s))
 end
 
 -- ============ XSS ============
@@ -139,7 +200,11 @@ function _M.detect_rce(value)
     raw = raw:gsub("%${%s*ifs%s*%}", " ")
     s = s:gsub("%${%s*ifs%s*%}", " ")
     if raw:find("%f[%w]expr%s+%d+%s*[%+%-]%s*%d+") or raw:find("%f[%w]expr%s+%d+%s+%d+") then return true end
+    -- 参数名在前的 expr 变体：cls_mode_login expr 927+927 / Published expr 1+1
+    if s:find("%f[%a]expr%s+%d+%s*[%+%-*]%s*%d+") or s:find("%f[%a]expr%s+%d+%s+%d+") then return true end
     if s:find("%$%(expr") or s:find("`expr") then return true end
+    -- echo md5(N);  —— 命令执行后的回显校验
+    if s:find("echo%s+md5%s*%(%s*%d+") then return true end
     if s:find("%f[%w]touch%s+/") or s:find("%f[%w]sh%s+%-c%s+") or s:find("%f[%w]cmd%s+/c%s+") then return true end
     if s:find("xp_cmdshell", 1, true) or s:find("type%s+c:[/\\]windows[/\\]win%.ini") then return true end
     if s:find("ping%s+%d+%.%d+%.%d+%.%d+%s*|") then return true end
@@ -156,6 +221,9 @@ function _M.detect_rce(value)
     if s:find("%f[%w]sh%s+%-c%s+") and s:find("'", 1, true) then return true end
     -- sh -c id / sh -c 任意命令（无引号时也成立）
     if s:find("%f[%w][%w/]*sh%s+%-c%s+%S") then return true end
+    -- /bin/sleep、Shellshock 变形：() { _; } >_[$($())] { echo; /bin/sleep 5; }
+    if s:find("/bin/sleep") or s:find("/bin/date") then return true end
+    if s:find("%(%s*%)%s*{[^}]*;[^}]*}%s*{") then return true end
     -- nc -e 反连、md5sum/nslookup/sleep 等命令执行后的回显校验
     if s:find("%f[%w]nc%s+%-e") or s:find("%f[%w]md5sum") or s:find("%f[%w]nslookup%s+%S")
         or s:find("%f[%w]netcat%s+%-e") then return true end
@@ -282,6 +350,12 @@ function _M.detect_code_injection(value)
     if (s:find("printf%s*%(") or s:find("%f[%w]print%s*%(") or s:find("print_r%s*%(") or s:find("var_dump%s*%(") or s:find("die%s*%("))
         and (s:find("md5%s*%(") or s:find("%d+%s*[%+%*%s]%s*%d+")) then return true end
     if s:find("concat%s*%(%s*md5%s*%(") then return true end
+    -- (SELECT md5(2014346458)) 校验型探测，select 的列表里只有函数调用
+    if s:find("%(%s*select%s+md5%s*%(%s*%d+%s*%)%s*%)") then return true end
+    -- sql= 'select md5(N)' 形态（Discuz! 风格）
+    if s:find("sql%s*=%s*['\"]%s*select%s+md5") or s:find("['\"]%s*select%s+md5%s*%(%s*%d+") then return true end
+    -- md5(N),password,salt：凭据字段外泄的联合查询
+    if s:find("md5%s*%(%s*%d+%s*%)%s*,%s*password") or s:find("password%s*,%s*salt") then return true end
     -- Struts2 OGNL 探针（含 \43_memberAccess 编码变体、class.classLoader 探测）
     if s:find("memberaccess.allowstaticmethodaccess", 1, true) then return true end
     if s:find("key_velocity.struts2", 1, true) then return true end
@@ -292,6 +366,10 @@ function _M.detect_code_injection(value)
     if s:find("__construct%s*%(%s*%)") or s:find("__destruct%s*%(%s*%)") then return true end
     -- APISIX batch-requests Lua 注入 / Java 反射链
     if s:find("os%.execute") then return true end
+    -- 裸 Java 类名作为 gadget 探针：java.lang.Comparable / java.util.PriorityQueue
+    -- 单独一个类名证据弱，但配合 gadget 链类名即为反序列化探测
+    if s:match("^java%.lang%.comparable$") or s:match("^java%.lang%.%a+$")
+        or s:match("^java%.util%.%a+$") then return true end
     if s:find("getclass%s*%(%s*%)%s*%.%s*forname") or s:find("%d+%.getclass") then return true end
     if s:find("defineclass", 1, true) and s:find("class%.forname") then return true end
     if s:find("initialcontext", 1, true) and s:find("lookup%s*%(") then return true end
@@ -307,6 +385,15 @@ function _M.detect_code_injection(value)
         local arg = s:match("%f[%w]" .. fn .. "%s*%(%s*['\"]?(%a+)")
         if arg and SHELL_PROBE_WORDS[arg] then return true end
     end
+    -- PHP assert(base64_decode('...'))：ThinkPHP 一句话木的经典变体
+    if s:find("assert%s*%(%s*base%d*_decode%s*%(") then return true end
+    -- NodeJS 原型链逃逸：this.constructor.constructor('return process')().mainModule.require
+    if s:find("this%.constructor%.constructor") and s:find("mainmodule") then return true end
+    if s:find("constructor%s*%(%s*['\"]return%s+process") then return true end
+    -- PowerShell webshell 下载执行：$a("http://1.2.3.4/wp.txt","moshou.php")
+    if s:find("%$%a%s*%(%s*['\"]%a+://[^'\"]+['\"]%s*,") then return true end
+    -- JSP EL 注入：test".system(id)."
+    if s:match("['\"]%s*%.%s*%a+%s*%(%s*%a+") and s:find("['\"]%s*%.%s*['\"]") then return true end
     return false
 end
 
@@ -342,6 +429,16 @@ function _M.detect_deserialization(value)
     }) do
         if s:find(gadget, 1, true) then return true end
     end
+    -- log4shell 之外的 Java 反序列化 gadget：TemplatesImpl / JNDI 工厂 / logback JDBC
+    for _, gadget in ipairs({
+        "com.sun.org.apache.xalan.internal.xsltc.trax.templatesimpl",
+        "com.newrelic.agent.deps.ch.qos.logback.core.db.drivermanager",
+        "org.apache.tomcat.util.net.jsynapsefactory",
+        "com.mchange.v2.c3p0.impl.pocimpl.serializer",
+    }) do
+        if s:find(gadget, 1, true) then return true end
+    end
+    if s:find("hexasciiserializedmap", 1, true) or s:find("hashasciiserializedmap", 1, true) then return true end
     if s:match("o:%d+:[%\"']") or s:find("guzzlehttp\\", 1, true) then return true end
     return s:find("aced0005", 1, true) ~= nil or s:find("\\xac\\xed\\x0\\x5", 1, true) ~= nil
 end
@@ -362,6 +459,9 @@ local EXPOSURE_PATHS = {
     "/bsh%.servlet%.bshservlet", "/phpunit/phpunit/src/util/php/eval%-stdin%.php",
     "/wls%-wsat/", "/mgmt/tm/util/bash", "/jmreport/testconnection",
     "/device%.rsp", "s=captcha", "/actuator;/", "/excu_shell",
+    -- ASPX/JSP 木马（Behinder /  Godzilla / 冰蝎 命名习惯）
+    "/(jsp|aspx|ashx|jspx)%.[a]sp?x?$", "/(shell|webshell|cmd|upfile)%.[a]sp?x?$",
+    "/(jsp|aspx)%s*%.%s*jspx?$",
 }
 
 function _M.detect_exposure(value)
@@ -378,6 +478,14 @@ function _M.detect_exposure(value)
         if s:find(marker) then return true end
     end
     if s:find("/shell[%w_%-]*%.php") or s:find("/webshell[%w_%-]*%.php") or s:find("/phpspy%.php") or s:find("/c99%.php") or s:find("/r57%.php") then return true end
+    -- ASPX/JSP 木马与探针文件
+    for _, stem in ipairs({"shell", "webshell", "cmd", "upfile", "jspspy", "phpspy", "godzilla", "behinder", "c99shell", "c99", "r57", "antSword", "wso"}) do
+        if s:find("/" .. stem .. "[%w_%-]*%.jsp") or s:find("/" .. stem .. "[%w_%-]*%.aspx")
+            or s:find("/" .. stem .. "[%w_%-]*%.ashx") or s:find("/" .. stem .. "[%w_%-]*%.jspx") then
+            return true
+        end
+    end
+    if s:find("/%x%x%.asp") or s:find("/%x%x%.jsp") or s:find("/%x%x%.aspx") then return true end
     -- H3C magic center 未授权访问 API；锚定结尾或查询串，避免误伤 /center/api/session/list 正常接口
     if s:find("/center/api/session$") or s:find("/center/api/session%?") then return true end
     if s:find("/%.git/head") then return true end
@@ -392,7 +500,7 @@ end
 
 local function has_attack_candidate(lower)
     if ngx and ngx.re and ngx.re.find then
-        local from = ngx.re.find(lower, [[[%<'"`;|$\\{}]|\.\.|://|\b(?:union|select|insert|update|delete|drop|sleep|waitfor|gtid_subset|hashbytes|concat|javascript|jndi|phpinfo|printf|print_r|var_dump|md5|processbuilder|ognlcontext|groovyshell|file_put_contents|base64_decode|expr|echo|touch|ping|xp_cmdshell|alert|prompt|eval|onmouseover)\b|@@|(?:javax\.naming|sun\.awt\.datatransfer|jdk\.nashorn|org\.apache\.commons\.beanutils)|/(?:etc|proc|usr/bin)/|/actuator/(?:env|heapdump|gateway/routes)|/phpmyadmin|/druid/(?:login\.html|websession\.html)|/apisix/admin/routes|/\.git/(?:config|head)|/\.env|/server-status|/swagger-ui|/web\.config|/web-inf/web\.xml|/jmx-console|/manager/html|/\.ds_store|/meta-inf/maven/|/bsh\.servlet\.bshservlet|/phpunit/phpunit/src/util/php/eval-stdin\.php|/(?:shell[\w-]*|webshell[\w-]*|phpspy|c99|r57)\.php|/[^/?]+\.sql$|/(?:backup|db|database|root|site|test|web|webapps|website|www|wwwroot)\.(?:zip|rar)$|/(?:config|db)\.php\.bak$|/[^/?]+\.config\.bak$|/wls-wsat/|/mgmt/tm/util/bash|/jmreport/testconnection|device\.rsp|s=captcha|/actuator;/|/center/api/session(?:[/?]|$)|/excu_shell|invokefunction|__construct|__destruct|call_user_func|memberaccess|classloader|updatexml|extractvalue|os\.execute|print\s*\(|system\s*\(|passthru|shell_exec|initialcontext|defineclass|%3c|%3e|%27|%24\{|\{\{|\band\s+\d+\s*[=<>]|\bor\s+\d+\s*=|__class__|__mro__|[?&]cmd=|dbms_pipe|char\(\d|/%*!|case\s+when|cast\(|sh\s+-c\s+\S|nc\s+-e|md5sum|nslookup|oast|interactsh|dnslog|windows/win\.ini|program files|documents and settings|appdata|sys_user]], "jo")
+        local from = ngx.re.find(lower, [[[%<'"`;|$\\{}]|\.\.|://|\b(?:union|select|insert|update|delete|drop|sleep|waitfor|gtid_subset|hashbytes|concat|javascript|jndi|phpinfo|printf|print_r|var_dump|md5|processbuilder|ognlcontext|groovyshell|file_put_contents|base64_decode|expr|echo|touch|ping|xp_cmdshell|alert|prompt|eval|onmouseover)\b|@@|(?:javax\.naming|sun\.awt\.datatransfer|jdk\.nashorn|org\.apache\.commons\.beanutils)|/(?:etc|proc|usr/bin)/|/actuator/(?:env|heapdump|gateway/routes)|/phpmyadmin|/druid/(?:login\.html|websession\.html)|/apisix/admin/routes|/\.git/(?:config|head)|/\.env|/server-status|/swagger-ui|/web\.config|/web-inf/web\.xml|/jmx-console|/manager/html|/\.ds_store|/meta-inf/maven/|/bsh\.servlet\.bshservlet|/phpunit/phpunit/src/util/php/eval-stdin\.php|/(?:shell[\w-]*|webshell[\w-]*|phpspy|c99|r57)\.php|/[^/?]+\.sql$|/(?:backup|db|database|root|site|test|web|webapps|website|www|wwwroot)\.(?:zip|rar)$|/(?:config|db)\.php\.bak$|/[^/?]+\.config\.bak$|/wls-wsat/|/mgmt/tm/util/bash|/jmreport/testconnection|device\.rsp|s=captcha|/actuator;/|/center/api/session(?:[/?]|$)|/excu_shell|invokefunction|__construct|__destruct|call_user_func|memberaccess|classloader|updatexml|extractvalue|os\.execute|print\s*\(|system\s*\(|passthru|shell_exec|initialcontext|defineclass|%3c|%3e|%27|%24\{|\{\{|\band\s+\d+\s*[=<>]|\bor\s+\d+\s*=|__class__|__mro__|[?&]cmd=|dbms_pipe|char\(\d|/%*!|case\s+when|cast\(|sh\s+-c\s+\S|nc\s+-e|md5sum|nslookup|oast|interactsh|dnslog|windows/win\.ini|program files|documents and settings|appdata|sys_user|java\.lang\.[a-z]+|java\.util\.[a-z]+|templatesimpl|logback\.core|this\.constructor\.constructor|assert\s*\(\s*base\d*_decode|/bin/sleep|create\s+alias|\.aspx|\.ashx|\.jspx|\.jsp|\|a:\d+:\{|group\s+by|decode\s*\(\s*length|/\*\*]], "jo")
         return from ~= nil
     end
     return _M.detect_exposure(lower)
@@ -477,6 +585,21 @@ local function has_attack_candidate(lower)
         or lower:find("documents and settings", 1, true)
         or lower:find("appdata/", 1, true)
         or lower:find("sys_user", 1, true)
+        or lower:find("java.lang.", 1, true)
+        or lower:find("java.util.", 1, true)
+        or lower:find("templatesimpl", 1, true)
+        or lower:find("logback.core", 1, true)
+        or lower:find("this.constructor.constructor", 1, true)
+        or lower:find("assert(base", 1, true)
+        or lower:find("/bin/sleep", 1, true)
+        or lower:find("create alias", 1, true)
+        or lower:find(".aspx", 1, true)
+        or lower:find(".ashx", 1, true)
+        or lower:find(".jsp", 1, true)
+        or lower:find("|a:", 1, true)
+        or lower:find("group by", 1, true)
+        or lower:find("decode(length", 1, true)
+        or lower:find("/**/", 1, true)
         or lower:match("%f[%w]or%s+%d+%s*=")
 end
 

