@@ -9,6 +9,7 @@
         <LayoutContent :title="$t('website.waf')" v-loading="loading">
             <template #leftToolBar>
                 <el-select
+                    v-if="activeTab === 'site'"
                     v-model="websiteId"
                     filterable
                     class="p-w-300"
@@ -24,7 +25,7 @@
                 </el-select>
             </template>
             <template #main>
-                <el-tabs model-value="site">
+                <el-tabs v-model="activeTab">
                     <el-tab-pane :label="$t('website.waf')" name="site">
                         <Waf
                             v-if="selectedWebsite"
@@ -50,6 +51,9 @@ import { Website } from '@/api/interface/website';
 import Waf from '@/views/website/website/waf/index.vue';
 import IPListSetting from '@/views/website/website/waf/iplist-setting.vue';
 
+// 站点页签是站点级配置，IP 名单页签是全局配置 —— 两者混在一个页面，
+// 页签切换时要把站点选择器一并收起来，否则会出现"选了站点但当前页用不上"。
+const activeTab = ref<'site' | 'iplist'>('site');
 const loading = ref(false);
 const websites = ref<Website.WebsiteDTO[]>([]);
 const websiteId = ref(0);
