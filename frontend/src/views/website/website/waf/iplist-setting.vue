@@ -87,7 +87,7 @@
                 <el-form-item :label="$t('website.wafReportUrl')">
                     <el-input
                         v-model="form.reportUrl"
-                        :placeholder="'https://waf-reporter.erguotou.workers.dev/report'"
+                        :placeholder="'https://3panel-waf-reporter.erguotou.me/report'"
                         :disabled="!form.reportEnabled"
                     />
                 </el-form-item>

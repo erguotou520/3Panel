@@ -5,6 +5,12 @@ compatibility_date = "2026-09-29"
 # 但保留 CORS 便于面板端排障时用 curl/浏览器验证。
 workers_dev = true
 
+# 自定义域名：面板侧上报与健康检查都走这个地址。
+# workers.dev 地址仍保留可用，作为域名解析异常时的排查参照。
+[[routes]]
+pattern = "3panel-waf-reporter.erguotou.me"
+custom_domain = true
+
 # 上报去重记录（实例 IP 类型 三元组）与候选池各用一个 KV。
 # 两者都可以用同一个 namespace（key 前缀已隔离），分开只是为了
 # 未来可能给候选池单独设访问控制。
