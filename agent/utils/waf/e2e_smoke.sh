@@ -152,9 +152,25 @@ if [ "${RUN_BENCHMARK:-0}" = "1" ] && command -v wrk >/dev/null 2>&1; then
 EOF
   sleep 2
   duration="${BENCH_DURATION:-5s}"
-  baseline=$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18081/ | awk '/Requests\/sec/ {print $2}')
-  empty_lua=$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18082/ | awk '/Requests\/sec/ {print $2}')
-  protected=$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18080/ | awk '/Requests\/sec/ {print $2}')
+  # 交错测量 + 取中位数。
+  #
+  # 两个问题让早先的单轮串行测量完全不可信：
+  #  1. 噪声：Docker Desktop 调度抖动大，曾出现 empty_lua 比 baseline
+  #     还快 43% 的物理上不可能的数值。
+  #  2. 漂移：三个配置串行测，期间机器负载（别的进程、CPU 降频）会变，
+  #     后测的配置天然吃亏。
+  # 交错让三个配置面对尽量相同的负载条件；中位数压掉离群值。
+  rounds="${BENCH_ROUNDS:-5}"
+  declare -a B E P
+  for _ in $(seq 1 "$rounds"); do
+    B+=("$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18081/ | awk '/Requests\/sec/ {print $2}')")
+    E+=("$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18082/ | awk '/Requests\/sec/ {print $2}')")
+    P+=("$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18080/ | awk '/Requests\/sec/ {print $2}')")
+  done
+  med() { printf '%s\n' "$@" | sort -n | awk '{a[NR]=$1} END {print a[int((NR+1)/2)]}'; }
+  baseline=$(med "${B[@]}")
+  empty_lua=$(med "${E[@]}")
+  protected=$(med "${P[@]}")
   overhead=$(awk -v b="$baseline" -v p="$protected" 'BEGIN { if (b > 0) printf "%.2f", (b-p)*100/b; else print "nan" }')
   lua_overhead=$(awk -v b="$baseline" -v p="$empty_lua" 'BEGIN { if (b > 0) printf "%.2f", (b-p)*100/b; else print "nan" }')
   waf_overhead=$(awk -v e="$empty_lua" -v p="$protected" 'BEGIN { if (e > 0) printf "%.2f", (e-p)*100/e; else print "nan" }')
