@@ -91,6 +91,18 @@ async function handleReport(request, env, ctx) {
     return json({ error: 'invalid report' }, 400);
   }
 
+  // 误报样本走独立前缀存储，且**不参与候选升格**。
+  // 它的用途是给上游做负样本反馈与规则调优。
+  if (report.falsePositive) {
+    const key = `fp:${report.ip}:${report.panelId}`;
+    if (await env.REPORTS.get(key)) {
+      return json({ ok: true, duplicate: true, falsePositive: true });
+    }
+    await env.REPORTS.put(key, JSON.stringify(report), { expirationTtl: CANDIDATE_TTL });
+    await ctx.waitUntil(Promise.resolve());
+    return json({ ok: true, falsePositive: true, counted: false });
+  }
+
   // 速率限制：按上报方 IP 计（而非 panelId —— 后者自报，可随意伪造）。
   if (!(await allowReport(env, reporterIP))) {
     return json({ error: 'rate limited' }, 429);
@@ -225,6 +237,10 @@ function normalize(input, fallbackIP) {
 
   const panelId = str(input.panelId, 64);
   const attackType = str(input.attackType, 32);
+  // falsePositive 表示「用户确认这个请求不该被拦」。
+  // 它是负样本，绝不能进入攻击候选池 —— 否则用户点两下「误报」
+  // 就等于把正常流量推成攻击源，反而会害到别人。
+  const falsePositive = input.falsePositive === true || input.falsePositive === 'true';
   // ip 是「被检测到的攻击源 IP」，由面板从 WAF 日志的 remote_addr 取得，
   // 与本 Worker 看到的请求来源（面板服务器 IP）无关，因此不能做等值校验。
   //
@@ -245,6 +261,7 @@ function normalize(input, fallbackIP) {
     method: str(input.method, 16),
     website: str(input.website, 128), // 站点标识（面板生成的哈希，非域名）
     reporter: fallbackIP,            // 上报面板的出口 IP，仅供审计
+    falsePositive,
     ts: Date.now(),
   };
 }

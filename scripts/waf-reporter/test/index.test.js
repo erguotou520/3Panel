@@ -321,3 +321,57 @@ test('限流不影响不同上报方', async () => {
   );
   assert.equal(res.status, 200);
 });
+
+// 误报样本是负样本：IP 确实发了请求，但不该被拦。
+// 它的安全属性必须与攻击样本完全隔离 —— 若误报能进入候选池，
+// 用户点两下「误报」就等于把正常流量推成攻击源，反而害到别人。
+test('误报样本不参与候选升格', async () => {
+  const env = newEnv();
+  // 三个不同 panel 都报同一个 IP 为误报
+  for (const p of ['p1', 'p2', 'p3']) {
+    const res = await worker.fetch(
+      req({ panelId: p, attackType: 'sqli', ip: '203.0.113.30', falsePositive: true }, '9.9.9.9'),
+      env, { waitUntil() {} }
+    );
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.falsePositive, true);
+    assert.equal(body.counted, false, '误报不得计入候选');
+  }
+  // 候选池里绝不能出现这个 IP
+  const all = Object.keys(env.CANDIDATES._dump());
+  assert.equal(all.length, 0, `误报不得进候选池，实际 ${JSON.stringify(all)}`);
+  // candidates.txt 也不得包含
+  const res = await worker.fetch(req({}, '', { method: 'GET', path: '/candidates.txt' }), env, { waitUntil() {} });
+  assert.ok(!(await res.text()).includes('203.0.113.30'));
+});
+
+test('同一 IP 既误报又被当作攻击时，攻击样本仍可正常升格', async () => {
+  const env = newEnv();
+  // 先误报
+  await worker.fetch(
+    req({ panelId: 'p1', attackType: 'sqli', ip: '198.51.100.9', falsePositive: true }, '9.9.9.9'),
+    env, { waitUntil() {} }
+  );
+  // 再由三个实例报为真实攻击
+  for (const p of ['a', 'b', 'c']) {
+    await worker.fetch(
+      req({ panelId: p, attackType: 'sqli', ip: '198.51.100.9' }, '9.9.9.9'),
+      env, { waitUntil() {} }
+    );
+  }
+  const c = env.CANDIDATES._dump()['c:198.51.100.9'];
+  assert.ok(c, '真实攻击样本应正常升格');
+  assert.equal(JSON.parse(c).reports, 3);
+});
+
+test('字符串形式的 falsePositive 也被识别', async () => {
+  const env = newEnv();
+  const res = await worker.fetch(
+    req({ panelId: 'p1', attackType: 'sqli', ip: '203.0.113.31', falsePositive: 'true' }, '9.9.9.9'),
+    env, { waitUntil() {} }
+  );
+  const body = await res.json();
+  assert.equal(body.falsePositive, true);
+  assert.equal(body.counted, false);
+});

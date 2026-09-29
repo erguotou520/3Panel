@@ -725,6 +725,27 @@ func (w WAFService) MarkFalsePositive(req request.WAFFalsePositiveOp) error {
 		_ = global.DB.Save(&log).Error
 		return err
 	}
+	// 误报样本一并入上报队列。
+	//
+	// 这是质量最高的候选信号：用户亲自确认「这个请求不该被拦」，
+	// 比自动收集的 deny 事件准确得多。用于上游反馈与规则调优，
+	// 任何上报都只是候选，不会因此改动本机的拦截行为。
+	if log.Layer == "subscription" {
+		// 订阅黑名单命中不是误报报告的内容：该 IP 是被公开源标记的，
+		// 用户觉得误报说明上游数据有偏差，应反馈给上游而不是当攻击样本上报。
+		global.LOG.Debugf("[waf] skip false-positive report for subscription block: log %d", log.ID)
+	} else {
+		enqueueReports([]WAFReportEvent{{
+			IP:            log.IP,
+			AttackType:    log.AttackType,
+			URL:           log.Path,
+			Payload:       log.Detail,
+			Method:        log.Method,
+			UA:            log.UserAgent,
+			Website:       wafSiteHash(log.WebsiteName),
+			FalsePositive: true,
+		}})
+	}
 	return nil
 }
 

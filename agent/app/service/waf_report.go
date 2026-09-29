@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/3panel-dev/3panel/agent/app/model"
@@ -29,6 +30,12 @@ type WAFReportEvent struct {
 	Method     string `json:"method"`
 	UA         string `json:"ua"`
 	Website    string `json:"website"`
+	// FalsePositive 标记这条上报来自用户主动的误报标记。
+	//
+	// 语义：IP 确实发起了这个请求，但**不应该被拦截** —— 与「被攻击」
+	// 是两回事。它是给上游/规则调优的高质量负样本，
+	// 绝不能被当成攻击证据进入任何封禁逻辑。
+	FalsePositive bool `json:"falsePositive,omitempty"`
 }
 
 var reportClient = &http.Client{Timeout: 10 * time.Second}
@@ -37,14 +44,15 @@ var reportClient = &http.Client{Timeout: 10 * time.Second}
 // 失败只记日志：上报是可选的旁路，不能影响拦截主流程。
 func postReport(reportURL, panelID string, ev WAFReportEvent) error {
 	body, err := json.Marshal(map[string]string{
-		"panelId":    panelID,
-		"ip":         ev.IP,
-		"attackType": ev.AttackType,
-		"url":        ev.URL,
-		"payload":    ev.Payload,
-		"method":     ev.Method,
-		"ua":         ev.UA,
-		"website":    ev.Website,
+		"panelId":       panelID,
+		"ip":            ev.IP,
+		"attackType":    ev.AttackType,
+		"url":           ev.URL,
+		"payload":       ev.Payload,
+		"method":        ev.Method,
+		"ua":            ev.UA,
+		"website":       ev.Website,
+		"falsePositive": strconv.FormatBool(ev.FalsePositive),
 	})
 	if err != nil {
 		return err
