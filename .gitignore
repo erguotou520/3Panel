@@ -88,7 +88,3 @@ superpowers
 .codex/
 .workbuddy/
 .Trash-0
-
-.dev.vars*
-!.dev.vars.example
-!.env.example
