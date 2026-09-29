@@ -13,6 +13,7 @@ local challenge = require("waf.challenge")
 local bot = require("waf.bot")
 local smug = require("waf.smug")
 local probe = require("waf.probe")
+local iplist = require("waf.iplist")
 
 local ngx_say = ngx.say
 local ngx_exit = ngx.exit
@@ -123,6 +124,20 @@ local function access_main()
             log_event("log", "rules", "blacklist", res.rule, "hit monitor rule", start_ms)
             -- 仅记录，不拦截
         end
+    end
+
+    -- 1.5 订阅 IP 黑名单
+    --
+    -- 位置关键：排在名单引擎之后 —— 用户的 allow 规则一旦命中就已在上面
+    -- return 了，订阅名单永远看不到它。这是误伤用户的唯一自救通道，
+    -- 顺序颠倒等于把它堵死。
+    --
+    -- 名单未下载 / 解析失败时 in_list 返回 false（不拦截），而不是报错：
+    -- 没有名单只是不拦这一层，不能因此打挂站点。
+    local ok_iplist, in_blacklist = pcall(iplist.in_list, client_ip())
+    if ok_iplist and in_blacklist then
+        log_event("deny", "subscription", "ip_blacklist", nil, "source ip in subscription blocklist", start_ms)
+        return deny("ip_blacklist")
     end
 
     -- 2. 机器人识别（善意 bot 放行等同白名单；扫描器指纹拦截）

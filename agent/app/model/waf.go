@@ -94,3 +94,20 @@ type WAFLog struct {
 func (w WAFLog) TableName() string {
 	return "waf_logs"
 }
+
+// WAFIPListSetting 是全局 IP 黑名单订阅与攻击上报配置（单例，ID 恒为 1）。
+type WAFIPListSetting struct {
+	ID         uint `gorm:"primarykey" json:"id"`
+	Enabled    bool `json:"enabled" gorm:"not null;default:false"`
+	AutoUpdate bool `json:"autoUpdate" gorm:"not null;default:true"`
+	// IntervalHours 为自动更新间隔，最小 2 小时（CI 每天只跑两次）。
+	IntervalHours int `json:"intervalHours" gorm:"not null;default:12"`
+	// ReportEnabled 控制是否向社区 Worker 上报拦截事件，默认关闭。
+	ReportEnabled bool   `json:"reportEnabled" gorm:"not null;default:false"`
+	ReportURL     string `json:"reportUrl" gorm:"type:varchar(512)"`
+	// PanelID 是本实例的稳定哈希，只在首次生成后固化。
+	// 上报端用它做去重，若每次都变则单个实例能伪装成多个。
+	PanelID string `json:"-" gorm:"type:varchar(64)"`
+}
+
+func (WAFIPListSetting) TableName() string { return "waf_iplist_settings" }

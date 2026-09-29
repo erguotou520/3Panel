@@ -55,6 +55,11 @@ type IWAFService interface {
 	CleanExpiredRules()
 	CleanExpiredLogs()
 	IngestLogs()
+	SyncIPListIfDue()
+	GetIPListStatus() (map[string]interface{}, error)
+	UpdateIPListSetting(req model.WAFIPListSetting) error
+	SyncIPList() (map[string]interface{}, error)
+	ReportEvent(ev WAFReportEvent) error
 }
 
 // wafHostConfDir resolves the host website-data directory mounted at /www in

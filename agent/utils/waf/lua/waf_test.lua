@@ -1038,6 +1038,75 @@ end, function()
     return T.status ~= 403
 end)
 
+-- ==================== 订阅 IP 黑名单接入 ====================
+-- 关键性质：用户 allow 白名单必须优先于订阅黑名单。
+-- 订阅源含被扫描的受害 IP 与部分 IDC 段，误伤时用户唯一的自救通道
+-- 就是加白名单；若顺序颠倒，这条路被堵死。
+local function iplist_scenario(name, wl_blob, rules_data, setup, expect)
+    reset_state()
+    reset_modules()
+    write_rules(rules_data)
+    T.vars.waf_rules_path = RULES_FILE
+    T.vars.waf_site_id = "1"
+    T.vars.waf_log_path = "/tmp/waf_test_events.log"
+    os.remove("/tmp/waf_test_events.log")
+    T.now = T.now + 10
+    local ipl = require("waf.iplist")
+    ipl._reset()
+    ipl._set_reader(function() return wl_blob end)
+    setup()
+    local access_main = package.loaded["waf.access"]
+    run(function() access_main() end)
+    check(name, expect())
+end
+
+local SUB_BLOB = build_wlfile({v4("9.9.9.0/24")})
+
+-- 订阅名单内的 IP 被拦
+iplist_scenario("subscription blocklist denies", SUB_BLOB, {global = {rules = {}}}, function()
+    T.vars.remote_addr = "9.9.9.9"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api"
+    T.method = "GET"
+end, function()
+    return ngx.status == 403 and T.exited == 403
+end)
+
+-- 名单外的 IP 放行
+iplist_scenario("subscription blocklist allows others", SUB_BLOB, {global = {rules = {}}}, function()
+    T.vars.remote_addr = "8.8.8.8"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api"
+    T.method = "GET"
+end, function()
+    return ngx.status ~= 403
+end)
+
+-- 最重要的一条：白名单优先于订阅黑名单
+iplist_scenario("user allow beats subscription blocklist", SUB_BLOB, {global = {rules = {
+    {id = 1, name = "my-allow", priority = 5, match_type = "ip", match_value = "9.9.9.9", match_op = "exact", action = "allow", enabled = true},
+}}}, function()
+    T.vars.remote_addr = "9.9.9.9"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api"
+    T.method = "GET"
+end, function()
+    return ngx.status ~= 403
+end)
+
+-- 订阅文件损坏/缺失时不能打挂站点
+iplist_scenario("corrupt subscription file is survivable", "GARBAGE-NOT-A-WLFILE", {global = {rules = {}}}, function()
+    T.vars.remote_addr = "9.9.9.9"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api"
+    T.method = "GET"
+end, function()
+    return ngx.status ~= 403 and T.exited == nil
+end)
+
+require("waf.iplist")._reset()
+require("waf.iplist")._set_reader(nil)
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

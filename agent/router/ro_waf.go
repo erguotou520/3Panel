@@ -21,6 +21,10 @@ func (a *WAFRouter) InitRouter(Router *gin.RouterGroup) {
 		wafRouter.GET("/option", baseApi.GetWAFOption)
 		wafRouter.POST("/option/update", baseApi.UpdateWAFOption)
 
+		wafRouter.GET("/iplist", baseApi.GetWAFIPListSetting)
+		wafRouter.POST("/iplist/update", baseApi.UpdateWAFIPListSetting)
+		wafRouter.POST("/iplist/sync", baseApi.SyncWAFIPList)
+
 		wafRouter.POST("/rules/search", baseApi.SearchWAFRules)
 		wafRouter.POST("/rules", baseApi.CreateWAFRule)
 		wafRouter.POST("/rules/update", baseApi.UpdateWAFRule)

@@ -6,6 +6,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/api/v2/helper"
 	"github.com/3panel-dev/3panel/agent/app/dto"
 	"github.com/3panel-dev/3panel/agent/app/dto/request"
+	"github.com/3panel-dev/3panel/agent/app/model"
 	"github.com/gin-gonic/gin"
 )
 
@@ -331,4 +332,47 @@ func (b *BaseApi) MarkWAFFalsePositive(c *gin.Context) {
 		return
 	}
 	helper.Success(c)
+}
+
+// GetWAFIPListSetting 查询 IP 黑名单订阅与上报配置。
+// @Tags WAF
+// @Summary 查询 IP 黑名单订阅配置
+// @Router /waf/iplist [get]
+func (b *BaseApi) GetWAFIPListSetting(c *gin.Context) {
+	st, err := wafService.GetIPListStatus()
+	if err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.SuccessWithData(c, st)
+}
+
+// UpdateWAFIPListSetting 保存 IP 黑名单订阅与上报配置。
+// @Tags WAF
+// @Summary 保存 IP 黑名单订阅配置
+// @Router /waf/iplist/update [post]
+func (b *BaseApi) UpdateWAFIPListSetting(c *gin.Context) {
+	var req model.WAFIPListSetting
+	if err := c.ShouldBindJSON(&req); err != nil {
+		helper.BadRequest(c, err)
+		return
+	}
+	if err := wafService.UpdateIPListSetting(req); err != nil {
+		helper.BadRequest(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// SyncWAFIPList 立即拉取一次订阅。
+// @Tags WAF
+// @Summary 立即更新 IP 黑名单
+// @Router /waf/iplist/sync [post]
+func (b *BaseApi) SyncWAFIPList(c *gin.Context) {
+	result, err := wafService.SyncIPList()
+	if err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.SuccessWithData(c, result)
 }

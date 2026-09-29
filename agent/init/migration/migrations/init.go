@@ -1912,6 +1912,13 @@ var AddWAFLogDisposition = &gormigrate.Migration{
 	},
 }
 
+var AddWAFIPListSettings = &gormigrate.Migration{
+	ID: "20260929-add-waf-iplist-settings",
+	Migrate: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.WAFIPListSetting{})
+	},
+}
+
 var AddFirewallRuleTable = &gormigrate.Migration{
 	ID: "20260819-add-firewall-v2-tables",
 	Migrate: func(tx *gorm.DB) error {

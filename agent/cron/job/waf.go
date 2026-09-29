@@ -17,5 +17,8 @@ func (w *waf) Run() {
 	svc.IngestLogs()
 	svc.CleanExpiredRules()
 	svc.CleanExpiredLogs()
+	// IP 黑名单订阅：内部按配置间隔与随机抖动决定是否真的拉取，
+	// 这里每分钟调用一次即可。
+	svc.SyncIPListIfDue()
 	global.LOG.Debug("waf scheduled task has completed")
 }

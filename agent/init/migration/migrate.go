@@ -114,6 +114,7 @@ func agentDBMigrations() []*gormigrate.Migration {
 		migrations.MigrateFirewallPortWhitelistSources,
 		migrations.AddWAFTables,
 		migrations.AddWAFLogDisposition,
+		migrations.AddWAFIPListSettings,
 	}
 }
 

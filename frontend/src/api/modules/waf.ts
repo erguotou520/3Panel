@@ -155,3 +155,44 @@ export const updateWAFWebhook = (req: WAFWebhookSetting) => {
 export const operateWebsiteWAF = (websiteId: number, operate: 'enable' | 'disable') => {
     return http.post(`/waf/website/op`, { websiteId, operate });
 };
+
+// ==================== IP 黑名单订阅 ====================
+
+export interface WAFIPListStatus {
+    enabled: boolean;
+    autoUpdate: boolean;
+    intervalHours: number;
+    /** 是否已成功下载过名单 */
+    installed: boolean;
+    sha256?: string;
+    generatedAt?: string;
+    countV4?: number;
+    countV6?: number;
+    size?: number;
+    /** 最后一次成功下载所用的镜像 */
+    source?: string;
+    /** 制品超过 48h 未更新视为过期 */
+    stale?: boolean;
+    reportEnabled: boolean;
+    reportUrl: string;
+}
+
+export interface WAFIPListUpdate {
+    enabled: boolean;
+    autoUpdate: boolean;
+    intervalHours: number;
+    reportEnabled: boolean;
+    reportUrl: string;
+}
+
+export const getWAFIPListStatus = () => {
+    return http.get<WAFIPListStatus>(`/waf/iplist`);
+};
+
+export const updateWAFIPListSetting = (req: WAFIPListUpdate) => {
+    return http.post(`/waf/iplist/update`, req);
+};
+
+export const syncWAFIPList = () => {
+    return http.post<{ changed: boolean; source?: string; error?: string; countV4?: number }>(`/waf/iplist/sync`);
+};

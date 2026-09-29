@@ -24,13 +24,20 @@
                 </el-select>
             </template>
             <template #main>
-                <Waf
-                    v-if="selectedWebsite"
-                    :key="selectedWebsite.id"
-                    :website-id="selectedWebsite.id"
-                    :waf-enabled="selectedWebsite.wafEnabled"
-                />
-                <el-empty v-else :description="$t('menu.website')" />
+                <el-tabs model-value="site">
+                    <el-tab-pane :label="$t('website.waf')" name="site">
+                        <Waf
+                            v-if="selectedWebsite"
+                            :key="selectedWebsite.id"
+                            :website-id="selectedWebsite.id"
+                            :waf-enabled="selectedWebsite.wafEnabled"
+                        />
+                        <el-empty v-else :description="$t('menu.website')" />
+                    </el-tab-pane>
+                    <el-tab-pane :label="$t('website.wafIPList')" name="iplist">
+                        <IPListSetting />
+                    </el-tab-pane>
+                </el-tabs>
             </template>
         </LayoutContent>
     </div>
@@ -41,6 +48,7 @@ import { computed, onMounted, ref } from 'vue';
 import { listWebsites } from '@/api/modules/website';
 import { Website } from '@/api/interface/website';
 import Waf from '@/views/website/website/waf/index.vue';
+import IPListSetting from '@/views/website/website/waf/iplist-setting.vue';
 
 const loading = ref(false);
 const websites = ref<Website.WebsiteDTO[]>([]);

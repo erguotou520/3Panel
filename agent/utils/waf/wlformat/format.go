@@ -65,6 +65,9 @@ type Meta struct {
 	CountV6     int          `json:"countV6"`
 	Sources     []MetaSource `json:"sources"`
 	Mirrors     []string     `json:"mirrors"`
+	// Source 仅在客户端落盘的本地副本里填写，标明这份数据来自哪个镜像。
+	// 制品本身不含此字段：同一份数据在所有镜像上内容一致。
+	Source string `json:"source,omitempty"`
 }
 
 // MetaSource 记录单个上游源的抓取结果。
