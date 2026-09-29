@@ -17,12 +17,12 @@ import (
 	"github.com/3panel-dev/3panel/agent/buserr"
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/3panel-dev/3panel/agent/utils/alert_push"
 	"github.com/3panel-dev/3panel/agent/utils/clam"
 	"github.com/3panel-dev/3panel/agent/utils/cmd"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/controller"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/jinzhu/copier"
 	"github.com/robfig/cron/v3"
 )

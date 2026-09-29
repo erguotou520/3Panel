@@ -80,4 +80,3 @@ func TestHasEnabledStaticNginxModulesDoesNotMutateInput(t *testing.T) {
 		t.Fatalf("input was normalized in place: %v", modules[0].Packages)
 	}
 }
-

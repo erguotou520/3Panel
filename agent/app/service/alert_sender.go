@@ -9,8 +9,9 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/repo"
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
+	alert "github.com/3panel-dev/3panel/agent/platform/alert"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	alertUtil "github.com/3panel-dev/3panel/agent/utils/alert"
-	alert "github.com/3panel-dev/3panel/agent/platform/alert"; multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 )
 
 type AlertSender struct {

@@ -8,8 +8,8 @@ import (
 
 	"github.com/3panel-dev/3panel/agent/cmd/server/conf"
 	"github.com/3panel-dev/3panel/agent/global"
-	"github.com/3panel-dev/3panel/agent/utils/files"
 	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
+	"github.com/3panel-dev/3panel/agent/utils/files"
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/viper"
 	"gopkg.in/yaml.v3"

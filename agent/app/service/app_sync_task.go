@@ -17,10 +17,10 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/i18n"
+	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 	"github.com/3panel-dev/3panel/agent/utils/appicon"
 	"github.com/3panel-dev/3panel/agent/utils/common"
 	"github.com/3panel-dev/3panel/agent/utils/req_helper"
-	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
 )
 
 type appSyncContext struct {

@@ -11,8 +11,8 @@ import (
 	"github.com/3panel-dev/3panel/agent/app/service"
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
-	"github.com/3panel-dev/3panel/agent/utils/alert_push"
 	multinode "github.com/3panel-dev/3panel/agent/platform/multinode"
+	"github.com/3panel-dev/3panel/agent/utils/alert_push"
 )
 
 func Init() {
