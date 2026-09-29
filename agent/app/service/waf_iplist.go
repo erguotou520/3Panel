@@ -193,39 +193,27 @@ func (w WAFService) ReportEvent(ev WAFReportEvent) error {
 	return postReport(s.ReportURL, s.PanelID, ev)
 }
 
-// pushReports 把本轮入库的拦截事件上报到社区 Worker。
+// pushReports 把本轮入库的拦截事件追加到待上报队列。
 //
-// 隐私边界：只发送 URL、攻击类型、UA 与命中参数，不发送
+// 为什么不直接 HTTP 上报：每次拦截都发一次请求，既有隐私暴露
+// （攻击流量实时可见）又有性能隐患（50 条串行 × 10s 超时 = 最坏 500s，
+// 会拖住日志入库的 goroutine）。改为「攒批 + 定时发送」。
+//
+// 隐私边界：只入队 URL、攻击类型、UA 与命中参数，不入队
 // requestBody / query / cookie / 任何请求头。这些字段可能被
 // sanitize_log_value 处理过，但保守起见这里根本不取。
 //
-// 只上报 action=deny 的事件：log/challenge 是观察不是拦截，
+// 只入队 action=deny 的事件：log/challenge 是观察不是拦截，
 // 上报它们会污染「这个 IP 确实在攻击」的判断。
 func (w WAFService) pushReports(logs []model.WAFLog) {
 	setting := w.getIPListSetting()
 	if !setting.ReportEnabled || setting.ReportURL == "" {
 		return
 	}
-	// 上报是旁路：即使全量失败也不能拖慢日志入库，
-	// 也不该让一条 HTTP 失败刷满日志。
-	var batch []model.WAFLog
+	var events []WAFReportEvent
 	for _, l := range logs {
 		if l.Action == model.WAFActionDeny && l.IP != "" {
-			batch = append(batch, l)
-		}
-	}
-	if len(batch) == 0 {
-		return
-	}
-	// 单轮最多上报若干条：一次日志轮转可能积累上千条，
-	// 全发会拖垮 Worker 配额，也会让上报请求长期占用。
-	const maxReportPerRound = 50
-	if len(batch) > maxReportPerRound {
-		batch = batch[:maxReportPerRound]
-	}
-	go func(items []model.WAFLog) {
-		for _, l := range items {
-			ev := WAFReportEvent{
+			events = append(events, WAFReportEvent{
 				IP:         l.IP, // 攻击源 IP：WAF 日志的 remote_addr
 				AttackType: l.AttackType,
 				URL:        l.Path,
@@ -233,14 +221,40 @@ func (w WAFService) pushReports(logs []model.WAFLog) {
 				Method:     l.Method,
 				UA:         l.UserAgent,
 				Website:    wafSiteHash(l.WebsiteName),
-			}
-			if err := w.ReportEvent(ev); err != nil {
-				// 只记一次汇总，避免刷屏
-				global.LOG.Debugf("[waf] report event failed: %v", err)
-				return
-			}
+			})
 		}
-	}(batch)
+	}
+	if len(events) == 0 {
+		return
+	}
+	enqueueReports(events)
+}
+
+// SyncReports 发送队列中的上报。由 cron 每天调用一次。
+//
+// 队列持久化在磁盘上：中途重启不丢，下次启动后继续发。
+// 重复发送无害 —— Worker 按 (panelId, ip, attackType) 去重。
+func (w WAFService) SyncReports() {
+	setting := w.getIPListSetting()
+	if !setting.ReportEnabled || setting.ReportURL == "" {
+		return
+	}
+	pending := peekReports(reportQueueMax)
+	if len(pending) == 0 {
+		return
+	}
+	sent := 0
+	for _, ev := range pending {
+		if err := postReport(setting.ReportURL, setting.PanelID, ev); err != nil {
+			// 失败即停止：队列保持原样，下一轮重试。
+			// 中途成功的已确认删除，不会重复发。
+			global.LOG.Warnf("[waf] report %d/%d sent, stopped: %v", sent, len(pending), err)
+			return
+		}
+		sent++
+	}
+	dropReports(sent)
+	global.LOG.Infof("[waf] reported %d events", sent)
 }
 
 // wafSiteHash 把站点标识转成短哈希。

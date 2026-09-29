@@ -63,6 +63,10 @@ func Run() {
 	if _, err := global.Cron.AddJob("*/1 * * * *", job.NewWAFJob()); err != nil {
 		global.LOG.Errorf("can not add waf corn job: %s", err.Error())
 	}
+	// 上报队列每天一次。分钟数避开整点，减少与其它定时任务撞在同一秒。
+	if _, err := global.Cron.AddJob("17 4 * * *", job.NewWAFReportJob()); err != nil {
+		global.LOG.Errorf("can not add waf report corn job: %s", err.Error())
+	}
 
 	var cronJobs []model.Cronjob
 	if err := global.DB.Where("status = ?", constant.StatusEnable).Find(&cronJobs).Error; err != nil {

@@ -60,6 +60,7 @@ type IWAFService interface {
 	UpdateIPListSetting(req model.WAFIPListSetting) error
 	SyncIPList() (map[string]interface{}, error)
 	ReportEvent(ev WAFReportEvent) error
+	SyncReports()
 }
 
 // wafHostConfDir resolves the host website-data directory mounted at /www in
