@@ -30,7 +30,7 @@ func TestExportRulesScopesAndPriority(t *testing.T) {
 		{WebsiteID: 10, BotEnabled: false, ProbeEnabled: false}, // 全关不导出
 	}
 
-	if err := ExportRules(rules, ccs, opts, map[uint]bool{7: true, 11: false}, dir); err != nil {
+	if err := ExportRules(rules, ccs, opts, map[uint]bool{7: true, 11: false}, dir, true); err != nil {
 		t.Fatalf("ExportRules: %v", err)
 	}
 
@@ -137,6 +137,32 @@ found:
 	for name := range files {
 		if _, err := os.Stat(filepath.Join(HostWAFDir(dir), name)); err != nil {
 			t.Fatalf("deployed file %s missing: %v", name, err)
+		}
+	}
+}
+
+// TestExportIPListFlag 确认订阅开关被如实写入 rules.json。
+// 数据面靠这个字段决定是否查名单，漏写等于开关失灵。
+func TestExportIPListFlag(t *testing.T) {
+	for _, enabled := range []bool{true, false} {
+		dir := t.TempDir()
+		if err := ExportRules(nil, nil, nil, map[uint]bool{1: true}, dir, enabled); err != nil {
+			t.Fatalf("ExportRules(enabled=%v): %v", enabled, err)
+		}
+		raw, err := os.ReadFile(filepath.Join(HostWAFDir(dir), "rules.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got struct {
+			Global struct {
+				IPListEnabled bool `json:"ipListEnabled"`
+			} `json:"global"`
+		}
+		if err := json.Unmarshal(raw, &got); err != nil {
+			t.Fatal(err)
+		}
+		if got.Global.IPListEnabled != enabled {
+			t.Errorf("ipListEnabled = %v, want %v", got.Global.IPListEnabled, enabled)
 		}
 	}
 }

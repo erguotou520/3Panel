@@ -1,6 +1,8 @@
 package service
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"math/rand"
 	"path/filepath"
@@ -189,4 +191,64 @@ func (w WAFService) ReportEvent(ev WAFReportEvent) error {
 		return nil
 	}
 	return postReport(s.ReportURL, s.PanelID, ev)
+}
+
+// pushReports 把本轮入库的拦截事件上报到社区 Worker。
+//
+// 隐私边界：只发送 URL、攻击类型、UA 与命中参数，不发送
+// requestBody / query / cookie / 任何请求头。这些字段可能被
+// sanitize_log_value 处理过，但保守起见这里根本不取。
+//
+// 只上报 action=deny 的事件：log/challenge 是观察不是拦截，
+// 上报它们会污染「这个 IP 确实在攻击」的判断。
+func (w WAFService) pushReports(logs []model.WAFLog) {
+	setting := w.getIPListSetting()
+	if !setting.ReportEnabled || setting.ReportURL == "" {
+		return
+	}
+	// 上报是旁路：即使全量失败也不能拖慢日志入库，
+	// 也不该让一条 HTTP 失败刷满日志。
+	var batch []model.WAFLog
+	for _, l := range logs {
+		if l.Action == model.WAFActionDeny && l.IP != "" {
+			batch = append(batch, l)
+		}
+	}
+	if len(batch) == 0 {
+		return
+	}
+	// 单轮最多上报若干条：一次日志轮转可能积累上千条，
+	// 全发会拖垮 Worker 配额，也会让上报请求长期占用。
+	const maxReportPerRound = 50
+	if len(batch) > maxReportPerRound {
+		batch = batch[:maxReportPerRound]
+	}
+	go func(items []model.WAFLog) {
+		for _, l := range items {
+			ev := WAFReportEvent{
+				IP:         l.IP, // 攻击源 IP：WAF 日志的 remote_addr
+				AttackType: l.AttackType,
+				URL:        l.Path,
+				Payload:    l.Detail,
+				Method:     l.Method,
+				UA:         l.UserAgent,
+				Website:    wafSiteHash(l.WebsiteName),
+			}
+			if err := w.ReportEvent(ev); err != nil {
+				// 只记一次汇总，避免刷屏
+				global.LOG.Debugf("[waf] report event failed: %v", err)
+				return
+			}
+		}
+	}(batch)
+}
+
+// wafSiteHash 把站点标识转成短哈希。
+// 上报里不出现真实域名：那是可被反查的运营信息。
+func wafSiteHash(name string) string {
+	if name == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(name))
+	return hex.EncodeToString(sum[:4])
 }

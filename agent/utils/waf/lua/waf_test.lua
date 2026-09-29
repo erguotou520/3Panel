@@ -1062,8 +1062,8 @@ end
 
 local SUB_BLOB = build_wlfile({v4("9.9.9.0/24")})
 
--- 订阅名单内的 IP 被拦
-iplist_scenario("subscription blocklist denies", SUB_BLOB, {global = {rules = {}}}, function()
+-- 订阅名单内的 IP 被拦（需显式开启）
+iplist_scenario("subscription blocklist denies", SUB_BLOB, {global = {rules = {}, ipListEnabled = true}}, function()
     T.vars.remote_addr = "9.9.9.9"
     T.vars.uri = "/api"
     T.vars.request_uri = "/api"
@@ -1073,7 +1073,7 @@ end, function()
 end)
 
 -- 名单外的 IP 放行
-iplist_scenario("subscription blocklist allows others", SUB_BLOB, {global = {rules = {}}}, function()
+iplist_scenario("subscription blocklist allows others", SUB_BLOB, {global = {rules = {}, ipListEnabled = true}}, function()
     T.vars.remote_addr = "8.8.8.8"
     T.vars.uri = "/api"
     T.vars.request_uri = "/api"
@@ -1082,8 +1082,30 @@ end, function()
     return ngx.status ~= 403
 end)
 
+-- P0-1 回归：关闭订阅后必须完全跳过订阅检查。
+-- 曾出现过用户在前端关掉开关、数据面照拦的缺陷 —— 开关是假的。
+-- 这里名单里有该 IP，但 ipListEnabled 缺省/false，必须放行。
+iplist_scenario("disabled subscription does not block", SUB_BLOB, {global = {rules = {}}}, function()
+    T.vars.remote_addr = "9.9.9.9"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api"
+    T.method = "GET"
+end, function()
+    return ngx.status ~= 403
+end)
+
+iplist_scenario("explicitly disabled subscription does not block", SUB_BLOB,
+    {global = {rules = {}, ipListEnabled = false}}, function()
+    T.vars.remote_addr = "9.9.9.9"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api"
+    T.method = "GET"
+end, function()
+    return ngx.status ~= 403
+end)
+
 -- 最重要的一条：白名单优先于订阅黑名单
-iplist_scenario("user allow beats subscription blocklist", SUB_BLOB, {global = {rules = {
+iplist_scenario("user allow beats subscription blocklist", SUB_BLOB, {global = {ipListEnabled = true, rules = {
     {id = 1, name = "my-allow", priority = 5, match_type = "ip", match_value = "9.9.9.9", match_op = "exact", action = "allow", enabled = true},
 }}}, function()
     T.vars.remote_addr = "9.9.9.9"
@@ -1095,7 +1117,7 @@ end, function()
 end)
 
 -- 订阅文件损坏/缺失时不能打挂站点
-iplist_scenario("corrupt subscription file is survivable", "GARBAGE-NOT-A-WLFILE", {global = {rules = {}}}, function()
+iplist_scenario("corrupt subscription file is survivable", "GARBAGE-NOT-A-WLFILE", {global = {rules = {}, ipListEnabled = true}}, function()
     T.vars.remote_addr = "9.9.9.9"
     T.vars.uri = "/api"
     T.vars.request_uri = "/api"

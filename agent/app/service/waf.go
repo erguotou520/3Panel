@@ -269,7 +269,9 @@ func (w WAFService) SyncRules() error {
 	for _, website := range websites {
 		enabledSites[website.ID] = website.WafEnabled
 	}
-	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir)
+	// 订阅黑名单开关随规则一起下发：数据面读到 false 就不再查名单。
+	ipSetting := w.getIPListSetting()
+	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir, ipSetting.Enabled)
 }
 
 func (w WAFService) loadAllRules() []model.WAFRule {
@@ -827,6 +829,7 @@ func (w WAFService) IngestLogs() {
 			return
 		}
 		w.pushWebhooks(logs)
+		w.pushReports(logs)
 	}
 	// 处理完删除轮转文件
 	_ = os.Remove(tmpPath)

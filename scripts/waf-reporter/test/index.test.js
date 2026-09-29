@@ -71,13 +71,38 @@ test('GET 不被接受，避免爬虫/预取污染', async () => {
   assert.equal(res.status, 405);
 });
 
-test('伪造 IP 被拒绝：上报的 ip 必须等于真实来源', async () => {
+// ip 是攻击源（面板从 remote_addr 取得），与上报请求的来源地址无关，
+// 因此不做等值校验 —— 那是早先的实现错误，会让上报 100% 失效。
+// 真正的约束是「必须有合法 ip」，以及候选池不自动进全局名单。
+test('ip 缺失时拒绝（而不是回退到面板自身 IP）', async () => {
   const env = newEnv();
   const res = await worker.fetch(
-    req({ panelId: 'p1', attackType: 'sqli', ip: '1.2.3.4' }, '9.9.9.9'),
+    req({ panelId: 'p1', attackType: 'sqli' }, '9.9.9.9'),
     env, { waitUntil() {} }
   );
-  assert.equal(res.status, 400, '不得让他人 IP 进候选池');
+  assert.equal(res.status, 400, '缺少攻击源 IP 不得进候选池');
+});
+
+test('记录上报面板的出口 IP 供审计', async () => {
+  const env = newEnv();
+  await worker.fetch(
+    req({ panelId: 'p1', attackType: 'sqli', ip: '203.0.113.9' }, '9.9.9.9'),
+    env, { waitUntil() {} }
+  );
+  const rec = JSON.parse(env.REPORTS._dump()['r:p1:203.0.113.9:sqli']);
+  assert.equal(rec.ip, '203.0.113.9', '应记录攻击源 IP');
+  assert.equal(rec.reporter, '9.9.9.9', '应另行记录上报面板 IP');
+});
+
+test('攻击源 IP 与面板 IP 不同的正常上报被接受', async () => {
+  const env = newEnv();
+  const res = await worker.fetch(
+    req({ panelId: 'p1', attackType: 'rce', ip: '198.51.100.7' }, '9.9.9.9'),
+    env, { waitUntil() {} }
+  );
+  assert.equal(res.status, 200, '两者本就不该相同');
+  const body = await res.json();
+  assert.equal(body.ok, true);
 });
 
 test('同一实例重复上报只计一次', async () => {

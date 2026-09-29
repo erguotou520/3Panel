@@ -62,8 +62,11 @@ async function handleReport(request, env, ctx) {
     return json({ error: 'method not allowed' }, 405);
   }
 
-  const ip = clientIP(request);
-  if (!ip) {
+  // 这里是 3panel 面板服务器的出口 IP，不是攻击者 IP。
+  // 面板部署在云上时它与被攻击站点毫无关系，只作审计留痕，
+  // 绝不能拿它去校验上报的 ip（早先正是这么写的，导致上报 100% 失效）。
+  const reporterIP = clientIP(request);
+  if (!reporterIP) {
     return json({ error: 'no client ip' }, 400);
   }
 
@@ -74,7 +77,7 @@ async function handleReport(request, env, ctx) {
     return json({ error: 'invalid json' }, 400);
   }
 
-  const report = normalize(payload, ip);
+  const report = normalize(payload, reporterIP);
   if (!report) {
     return json({ error: 'invalid report' }, 400);
   }
@@ -195,11 +198,14 @@ function normalize(input, fallbackIP) {
 
   const panelId = str(input.panelId, 64);
   const attackType = str(input.attackType, 32);
-  // 被攻击者 IP 必须是合法 IP，且与请求来源一致：
-  // 否则攻击者可以伪造 payload 里的 IP，把无辜地址推入候选池。
-  const ip = normalizeIP(input.ip) || fallbackIP;
-  if (!panelId || !attackType) return null;
-  if (ip !== fallbackIP) return null;
+  // ip 是「被检测到的攻击源 IP」，由面板从 WAF 日志的 remote_addr 取得，
+  // 与本 Worker 看到的请求来源（面板服务器 IP）无关，因此不能做等值校验。
+  //
+  // 安全前提：panelId 未经验签，任何人都能伪造上报。当前设计依赖
+  // 「候选池只作参考、不自动进全局名单」来限制危害；若改成自动封禁，
+  // 必须先加 HMAC 签名（每实例独立密钥，Worker 持有验证材料）。
+  const ip = normalizeIP(input.ip);
+  if (!panelId || !attackType || !ip) return null;
 
   return {
     v: REPORT_VERSION,
@@ -211,6 +217,7 @@ function normalize(input, fallbackIP) {
     ua: str(input.ua, 256),
     method: str(input.method, 16),
     website: str(input.website, 128), // 站点标识（面板生成的哈希，非域名）
+    reporter: fallbackIP,            // 上报面板的出口 IP，仅供审计
     ts: Date.now(),
   };
 }

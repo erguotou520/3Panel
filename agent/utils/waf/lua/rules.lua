@@ -210,6 +210,9 @@ function _M.get_site_state()
         site = site,
         global_rules = data.global and data.global.rules or {},
         global_compiled = data.global and data.global.compiled or {},
+        -- 订阅黑名单总开关。缺省为 false：老版本 rules.json 没有这个字段，
+        -- 此时按「未启用」处理，不能因为升级遗漏就默认开始拦 IP。
+        global_iplist_enabled = (data.global and data.global.ipListEnabled) == true,
     }
 end
 

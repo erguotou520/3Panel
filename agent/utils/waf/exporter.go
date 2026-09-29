@@ -85,6 +85,9 @@ type exportedRules struct {
 	Global struct {
 		Rules    []ruleDTO       `json:"rules"`
 		Compiled compiledRuleSet `json:"compiled"`
+		// IPListEnabled 为订阅黑名单总开关。数据面据此决定是否查名单 ——
+		// 关闭后必须完全跳过，否则「关闭」只是界面上的一个摆设。
+		IPListEnabled bool `json:"ipListEnabled"`
 	} `json:"global"`
 	Sites map[string]siteEntry `json:"sites"`
 }
@@ -144,9 +147,10 @@ func (c *compiledRuleSet) add(rule ruleDTO) bool {
 }
 
 // ExportRules 将 DB 中的名单与 CC/机器人/探测配置导出为数据面 rules.json（全局 + 站点两层）
-func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options []model.WAFOption, enabledSites map[uint]bool, hostWebsiteDir string) error {
+func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options []model.WAFOption, enabledSites map[uint]bool, hostWebsiteDir string, iplistEnabled bool) error {
 	data := exportedRules{Sites: map[string]siteEntry{}}
 	data.Global.Compiled = newCompiledRuleSet()
+	data.Global.IPListEnabled = iplistEnabled
 	for websiteID, enabled := range enabledSites {
 		key := fmt.Sprintf("%d", websiteID)
 		data.Sites[key] = siteEntry{Enabled: enabled, Compiled: newCompiledRuleSet()}

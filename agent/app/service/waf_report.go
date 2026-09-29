@@ -19,9 +19,10 @@ import (
 //
 // 隐私边界：不含 header / cookie / 请求体。只带检测引擎判定命中的
 // 那一个参数值（Payload），以及定位问题必需的 URL 与攻击类型。
-// 用户 IP 不由面板填写 —— Worker 强制校验上报 IP 等于请求来源 IP，
-// 避免被伪造后用来推别人进全局名单。
+// IP 是被 WAF 拦截的攻击源（remote_addr），不是面板自身 IP —— 面板通常
+// 部署在云上，其出口 IP 与攻击来源毫无关系。
 type WAFReportEvent struct {
+	IP         string `json:"ip"`
 	AttackType string `json:"attackType"`
 	URL        string `json:"url"`
 	Payload    string `json:"payload"`
@@ -37,6 +38,7 @@ var reportClient = &http.Client{Timeout: 10 * time.Second}
 func postReport(reportURL, panelID string, ev WAFReportEvent) error {
 	body, err := json.Marshal(map[string]string{
 		"panelId":    panelID,
+		"ip":         ev.IP,
 		"attackType": ev.AttackType,
 		"url":        ev.URL,
 		"payload":    ev.Payload,

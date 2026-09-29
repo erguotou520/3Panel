@@ -132,12 +132,17 @@ local function access_main()
     -- return 了，订阅名单永远看不到它。这是误伤用户的唯一自救通道，
     -- 顺序颠倒等于把它堵死。
     --
+    -- 必须读 ipListEnabled 开关：关闭订阅后要完全跳过这一段，
+    -- 否则「关闭」只是界面上的摆设，用户关了却照拦。
+    --
     -- 名单未下载 / 解析失败时 in_list 返回 false（不拦截），而不是报错：
     -- 没有名单只是不拦这一层，不能因此打挂站点。
+    if state.global_iplist_enabled then
     local ok_iplist, in_blacklist = pcall(iplist.in_list, client_ip())
     if ok_iplist and in_blacklist then
         log_event("deny", "subscription", "ip_blacklist", nil, "source ip in subscription blocklist", start_ms)
         return deny("ip_blacklist")
+    end
     end
 
     -- 2. 机器人识别（善意 bot 放行等同白名单；扫描器指纹拦截）
