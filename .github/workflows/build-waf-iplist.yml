@@ -37,11 +37,17 @@ jobs:
           # 源清单在 agent/cmd/wlbuild/main.go 内维护。
           # 单个源失败不影响整体（meta.json 会记 err），
           # 但全部源失败时 wlbuild 会拒绝产出空名单。
+          #
+          # -candidates 启用上报候选源（WAF 上报 Worker 的 /candidates.txt）。
+          # 它的 panelId 无鉴权，单独并入等于把全局黑名单的写权限送给任何人；
+          # wlbuild 会对每个候选做跨源佐证 —— 只有已被至少 1 个独立公开源
+          # 收录的才采纳。因此该通道的净贡献恒为 0 条新网段，纯审计价值。
           cd agent
           go run ./cmd/wlbuild \
             -out ../dist/wl_v2.bin \
             -meta ../dist/meta.json \
-            -self-pool ../scripts/ip_group.json
+            -self-pool ../scripts/ip_group.json \
+            -candidates
 
       - name: Install Cloudsmith CLI
         run: |

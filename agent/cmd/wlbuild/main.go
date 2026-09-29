@@ -37,6 +37,17 @@ type source struct {
 	JSONPool string
 	// Country 预留：blackip 支持按 ISO 3166-1 alpha-2 筛选。
 	Country string
+	// Reported 标记该源为「3panel 实例自报的候选池」，与独立公开源不同：
+	// 它无鉴权、不可独立信任，必须经跨源佐证才能进名单（见 wlformat.Corroborate）。
+	Reported bool
+}
+
+// Kind 返回写入 meta.json 的来源性质标签。
+func (s source) Kind() string {
+	if s.Reported {
+		return "reported"
+	}
+	return "public"
 }
 
 // 这些源都经过实测：格式混合（有的给单 IP、有的给 CIDR、有的带表头注释），
@@ -66,6 +77,21 @@ var sources = []source{
 	// 为其它源所无。它是 JSON 数组而非纯文本，由 JSONPool 标记并走单独解析。
 	// 路径由 -self-pool 指定，默认为仓库内的 scripts/ip_group.json。
 	{Name: "ip-group", JSONPool: "scripts/ip_group.json"},
+	// 上报候选池：Worker 聚合所有 3panel 实例的拦截上报，输出已被 >= 3 个
+	// panelId 报过的 IP。默认不参与（-candidates 关闭），因为它不是独立情报源：
+	// panelId 由客户端自报、无任何鉴权，单独并入等于把全局黑名单的写权限
+	// 送给任何能发 HTTP 请求的人。开启后仍需通过跨源佐证，详见 reportSource。
+	{Name: "waf-reporter", Reported: true, URL: "https://3panel-waf-reporter.erguotou.me/candidates.txt"},
+}
+
+// reportSource 返回上报候选源在 sources 中的下标，用于把佐证源与公开源分开。
+func reportSource() int {
+	for i, s := range sources {
+		if s.Reported {
+			return i
+		}
+	}
+	return -1
 }
 
 var mirrors = []string{
@@ -81,21 +107,50 @@ func main() {
 		srcDir   = flag.String("src-dir", "", "从该目录读 <name>.txt 而非联网；用于离线复现与对拍")
 		timeout  = flag.Duration("timeout", 90*time.Second, "单个源的超时")
 		selfPool = flag.String("self-pool", "scripts/ip_group.json", "自维护 IP 池（JSON 数组）路径；缺失或为空则整轮失败")
+		useCands = flag.Bool("candidates", false, "启用上报候选源（WAF 上报 Worker 的 /candidates.txt）；需再满足跨源佐证才会进名单")
+		candMin  = flag.Int("candidate-min-sources", 1, "上报候选被采纳所需的独立公开源收录数（>= 1；越大约束越紧）")
+		candPath = flag.String("candidates-file", "", "从该路径读上报候选而非联网；-candidates 关闭时忽略")
+		candList = flag.String("candidates-url", "", "覆盖上报候选源 URL")
 	)
 	flag.Parse()
+
+	if *candMin < 1 {
+		// 0 等于关掉佐证，候选源退化成任意 IP 注入通道。这里不提供该取值。
+		fatalf("-candidate-min-sources must be >= 1, got %d", *candMin)
+	}
+	repIdx := reportSource()
+	if repIdx < 0 {
+		fatalf("no source marked Reported: the corroboration gate has nothing to gate")
+	}
+	if *candList != "" {
+		sources[repIdx].URL = *candList
+	}
 
 	client := &http.Client{Timeout: *timeout, Transport: &http.Transport{
 		MaxIdleConnsPerHost: 4,
 	}}
 
+	// 佐证必须在合并前做：Merge 会把「被某源以 /24 收录的候选 IP」和
+	// 「该候选自己的 /32」折叠成同一条前缀，佐证信息就此丢失。
+	// 因此这里分两轮 —— 先把所有公开源抓完建索引，再处理候选。
 	var perSource [][]netip.Prefix
 	var metaSources []wlformat.MetaSource
+	var publicIdx [][]netip.Prefix
 	totalSkipped := 0
 	totalRaw := 0
 
+	var (
+		corrob      *wlformat.SourceCover
+		corrobStats *wlformat.CorroborateStats
+	)
+
 	for _, s := range sources {
-		nets, skipped, err := fetchSource(client, s, *srcDir, *selfPool)
-		ms := wlformat.MetaSource{Name: s.Name, URL: s.URL, Entries: len(nets)}
+		if s.Reported {
+			// 留到公开源全部就绪后再处理。
+			continue
+		}
+		nets, skipped, err := fetchSource(client, s, *srcDir, *selfPool, "")
+		ms := wlformat.MetaSource{Name: s.Name, URL: s.URL, Kind: s.Kind(), Entries: len(nets)}
 		if err != nil {
 			// 自维护池在仓库内、随版本走，缺失或为空属于构建问题而非上游故障。
 			// 其它远端源允许降级（记录 err 后继续），这里必须让整轮失败 ——
@@ -109,6 +164,7 @@ func main() {
 			fmt.Fprintf(os.Stderr, "  [ok]   %-18s %6d entries (%d skipped)\n", s.Name, len(nets), skipped)
 		}
 		perSource = append(perSource, nets)
+		publicIdx = append(publicIdx, nets)
 		metaSources = append(metaSources, ms)
 		totalSkipped += skipped
 		totalRaw += len(nets)
@@ -118,10 +174,62 @@ func main() {
 		fatalf("all sources failed, refusing to publish an empty blocklist")
 	}
 
+	// 第二轮：上报候选。索引只含公开源 —— 把候选自己塞进索引等于让它给自己背书。
+	if *useCands {
+		s := sources[repIdx]
+		corrob = wlformat.NewCover(publicIdx)
+		candNets, _, err := fetchSource(client, s, *srcDir, *selfPool, *candPath)
+		ms := wlformat.MetaSource{Name: s.Name, URL: s.URL, Kind: s.Kind()}
+		if err != nil {
+			// 候选通道是旁路，它挂了不影响全局名单的完整性，因此降级而非 fatal，
+			// meta 里记 err 即可审计。空候选池则是合法状态（还没有实例攒够
+			// 3 个 panelId），不当作错误。
+			ms.Err = err.Error()
+			fmt.Fprintf(os.Stderr, "  [warn] %-18s %v\n", s.Name, err)
+		} else {
+			kept, st, err := corrob.Corroborate(candNets, *candMin)
+			if err != nil {
+				fatalf("corroborate: %v", err)
+			}
+			corrobStats = &st
+			// meta 里区分「公开源条数」与「佐证后采纳条数」：
+			// Entries 记采纳数，RawEntries 保留上游规模，便于对拍。
+			ms.Entries = st.Accepted
+			ms.RawEntries = st.Total
+			candNets = kept
+			fmt.Fprintf(os.Stderr, "  [ok]   %-18s %6d candidates -> %d accepted / %d rejected (min %d sources)\n",
+				s.Name, st.Total, st.Accepted, st.Rejected, *candMin)
+			if st.RejectedNoCover > 0 {
+				fmt.Fprintf(os.Stderr, "         %d rejected: not corroborated by %d independent source(s) (fabricated panelId?)\n",
+					st.RejectedNoCover, *candMin)
+			}
+		}
+		perSource = append(perSource, candNets)
+		metaSources = append(metaSources, ms)
+		totalRaw += len(candNets)
+	}
+
+	// metaSources 的追加顺序与 sources 一致：上报源在 sources 里排最后，
+	// 这里也最后追加，故无需再排序。
+
 	v4, v6, stats := wlformat.Summarize(perSource, totalSkipped)
 	fmt.Fprintf(os.Stderr, "merged: raw=%d -> v4=%d v6=%d (collapsed %.2fx)\n",
 		stats.RawEntries, stats.V4, stats.V6,
 		float64(stats.RawEntries)/float64(max(stats.V4+stats.V6, 1)))
+
+	if *useCands {
+		// 佐证的数学性质：min>=1 时每个被采纳的候选都已落在某个公开源的
+		// 覆盖内，追加到并集不改变折叠结果 —— 候选通道的净贡献恒为 0 条。
+		// 真的差出 1 条，说明佐证被绕过了，产物即成注入通道，必须停。
+		without := append([][]netip.Prefix{}, publicIdx...)
+		beforeV4, beforeV6, _ := wlformat.Summarize(without, 0)
+		if len(beforeV4) != len(v4) || len(beforeV6) != len(v6) {
+			fatalf("corroborated candidates changed the blocklist (%d/%d -> %d/%d): "+
+				"the corroboration gate is not sound, refusing to publish",
+				len(beforeV4), len(beforeV6), len(v4), len(v6))
+		}
+		fmt.Fprintf(os.Stderr, "corroboration: net new ranges from reported candidates = 0 (expected)\n")
+	}
 
 	blob, err := wlformat.Encode(v4, v6)
 	if err != nil {
@@ -136,14 +244,15 @@ func main() {
 
 	sum := sha256.Sum256(blob)
 	meta := wlformat.Meta{
-		Version:     wlformat.Version,
-		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
-		SHA256:      hex.EncodeToString(sum[:]),
-		Size:        int64(len(blob)),
-		CountV4:     len(v4),
-		CountV6:     len(v6),
-		Sources:     metaSources,
-		Mirrors:     mirrors,
+		Version:       wlformat.Version,
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339),
+		SHA256:        hex.EncodeToString(sum[:]),
+		Size:          int64(len(blob)),
+		CountV4:       len(v4),
+		CountV6:       len(v6),
+		Sources:       metaSources,
+		Mirrors:       mirrors,
+		Corroboration: corrobStats,
 	}
 	mb, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -175,18 +284,17 @@ func main() {
 	fmt.Fprintf(os.Stderr, "self-check ok: strictly ascending, non-overlapping\n")
 }
 
-func fetchSource(client *http.Client, s source, srcDir, selfPool string) ([]netip.Prefix, int, error) {
+// fetchSource 抓取一个源。localOverride 非空时直接读该文件，
+// 用于上报候选的离线对拍（-candidates-file），优先于 srcDir。
+func fetchSource(client *http.Client, s source, srcDir, selfPool, localOverride string) ([]netip.Prefix, int, error) {
 	if s.JSONPool != "" {
 		return fetchJSONPool(selfPool)
 	}
+	if localOverride != "" {
+		return parseListFile(localOverride)
+	}
 	if srcDir != "" {
-		f, err := os.Open(filepath.Join(srcDir, s.Name+".txt"))
-		if err != nil {
-			return nil, 0, err
-		}
-		defer f.Close()
-		nets, skipped, err := wlformat.ParseList(f)
-		return nets, skipped, err
+		return parseListFile(filepath.Join(srcDir, s.Name+".txt"))
 	}
 	req, err := http.NewRequest(http.MethodGet, s.URL, nil)
 	if err != nil {
@@ -205,6 +313,15 @@ func fetchSource(client *http.Client, s source, srcDir, selfPool string) ([]neti
 	// 限制读取体积，避免被重定向到大文件时把内存吃满。
 	nets, skipped, err := wlformat.ParseList(io.LimitReader(resp.Body, 64<<20))
 	return nets, skipped, err
+}
+
+func parseListFile(path string) ([]netip.Prefix, int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer f.Close()
+	return wlformat.ParseList(f)
 }
 
 // fetchJSONPool 读取 JSON 字符串数组形式的 IP 池。

@@ -65,6 +65,10 @@ type Meta struct {
 	CountV6     int          `json:"countV6"`
 	Sources     []MetaSource `json:"sources"`
 	Mirrors     []string     `json:"mirrors"`
+	// Corroboration 记录上报候选池的佐证结果。仅当本轮启用了候选源时非 nil。
+	// 放在 Meta 而非 MetaSource 里，是因为它描述的是「候选 vs 公开源」这一
+	// 跨源关系，而不是某个源自己的抓取结果。
+	Corroboration *CorroborateStats `json:"corroboration,omitempty"`
 	// Source 仅在客户端落盘的本地副本里填写，标明这份数据来自哪个镜像。
 	// 制品本身不含此字段：同一份数据在所有镜像上内容一致。
 	Source string `json:"source,omitempty"`
@@ -75,6 +79,15 @@ type MetaSource struct {
 	Name    string `json:"name"`
 	URL     string `json:"url"`
 	Entries int    `json:"entries"`
+	// RawEntries 是上游原样给到的条目数（未经佐证/去重）。
+	// 公开源与 Entries 相同；上报候选源上二者相差即为被佐证拒绝的数量。
+	RawEntries int `json:"rawEntries,omitempty"`
+	// Kind 区分来源性质，默认（缺省 / "public"）为独立公开源。
+	//
+	// "reported" 表示该源是 3panel 实例自报的候选池，不是独立第三方情报。
+	// 它无法自证清白（panelId 无鉴权），只能作为公开源的旁证，
+	// 且不参与佐证索引本身 —— 否则它会给自己背书。
+	Kind string `json:"kind,omitempty"`
 	// Err 非空表示该源本次抓取失败，聚合时按缺失处理。
 	Err string `json:"err,omitempty"`
 }

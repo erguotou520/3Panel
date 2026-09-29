@@ -300,6 +300,65 @@ func TestMetaJSONRoundTrip(t *testing.T) {
 	}
 }
 
+// TestMetaCorroborationRoundTrip 保证佐证审计信息能穿过 meta.json。
+// 审计者要能只凭 meta 就判断「上报通道本轮有没有起作用、拦下了多少伪造」，
+// 序列化时丢掉任何一项都等于这个机制不可审计。
+func TestMetaCorroborationRoundTrip(t *testing.T) {
+	m := Meta{
+		Version: Version,
+		Sources: []MetaSource{
+			{Name: "cins", Kind: "public", Entries: 100},
+			{Name: "waf-reporter", Kind: "reported", Entries: 7, RawEntries: 30},
+			{Name: "waf-reporter", Kind: "reported", Err: "http 503"},
+		},
+		Corroboration: &CorroborateStats{
+			Total: 30, Accepted: 7, Rejected: 23,
+			RejectedNoCover: 22, RejectedNotHost: 1,
+			Histogram: map[string]int{"0": 22, "1": 6, "2": 2},
+		},
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back Meta
+	if err := json.Unmarshal(b, &back); err != nil {
+		t.Fatal(err)
+	}
+	c := back.Corroboration
+	if c == nil {
+		t.Fatal("corroboration lost in round trip")
+	}
+	if c.Total != 30 || c.Accepted != 7 || c.Rejected != 23 {
+		t.Errorf("counts: %+v", c)
+	}
+	if c.RejectedNoCover != 22 || c.RejectedNotHost != 1 {
+		t.Errorf("reject reasons: %+v", c)
+	}
+	if c.Histogram["0"] != 22 || c.Histogram["2"] != 2 {
+		t.Errorf("histogram: %v", c.Histogram)
+	}
+	// 上报源必须与公开源可区分，且 rawEntries 与 entries 的差额即被拒数。
+	if back.Sources[1].Kind != "reported" || back.Sources[1].RawEntries != 30 {
+		t.Errorf("reported source: %+v", back.Sources[1])
+	}
+	if back.Sources[2].Err == "" {
+		t.Error("candidate source failure not recorded in meta")
+	}
+	if diff := back.Sources[1].RawEntries - back.Sources[1].Entries; diff != 23 {
+		t.Errorf("rawEntries-entries = %d, want 23", diff)
+	}
+	// 未启用候选源时该字段必须整个消失，不能是空对象。
+	m2 := Meta{Version: Version, Sources: back.Sources}
+	b2, err := json.Marshal(m2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(b2, []byte("corroboration")) {
+		t.Errorf("omitted corroboration still serialized: %s", b2)
+	}
+}
+
 // TestAgainstFixture 用 CI 产出的真实制品做端到端校验。
 // fixture 缺失时跳过，保证单测在未下载制品的环境仍能跑。
 func TestAgainstFixture(t *testing.T) {
