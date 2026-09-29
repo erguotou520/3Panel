@@ -285,3 +285,39 @@ test('/candidates.txt 只输出达到阈值的 IP', async () => {
   assert.ok(text.includes('203.0.113.5'), '达阈值 IP 应输出');
   assert.ok(!text.includes('198.51.100.9'), '单实例 IP 绝不能进全局名单');
 });
+
+// panelId 未经鉴权，限流是压制批量刷量的主要手段：
+// 真实的 3panel 只报告自己站点被攻击的 IP（高度分散），
+// 而刷量者会在短时间内吐出成百上千个互不相干的目标 IP。
+// 限流按上报方 IP 计，不按 panelId —— 后者自报，可随意伪造。
+test('同一上报方超出速率上限后被限流', async () => {
+  const env = newEnv();
+  env.REPORTS.__limit = 3; // 测试里把上限调到 3
+  for (let i = 0; i < 3; i++) {
+    const res = await worker.fetch(
+      req({ panelId: `flood-${i}`, attackType: 'sqli', ip: `203.0.113.${i}` }, '9.9.9.9'),
+      env, { waitUntil() {} }
+    );
+    assert.equal(res.status, 200, `第 ${i + 1} 条应放行`);
+  }
+  const res = await worker.fetch(
+    req({ panelId: 'flood-x', attackType: 'sqli', ip: '203.0.113.99' }, '9.9.9.9'),
+    env, { waitUntil() {} }
+  );
+  assert.equal(res.status, 429, '超出上限应 429');
+});
+
+test('限流不影响不同上报方', async () => {
+  const env = newEnv();
+  env.REPORTS.__limit = 2;
+  for (let i = 0; i < 2; i++) {
+    await worker.fetch(req({ panelId: 'a', attackType: 'sqli', ip: '1.1.1.1' }, '9.9.9.9'),
+      env, { waitUntil() {} });
+  }
+  // 另一个上报方 IP 不受影响
+  const res = await worker.fetch(
+    req({ panelId: 'b', attackType: 'sqli', ip: '2.2.2.2' }, '8.8.4.4'),
+    env, { waitUntil() {} }
+  );
+  assert.equal(res.status, 200);
+});

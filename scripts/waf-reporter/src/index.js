@@ -24,6 +24,15 @@ const MAX_BODY = 16 * 1024;
 
 // 每个 IP 需要多少个不同实例上报才升格为候选。
 const CANDIDATE_MIN_REPORTS = 3;
+// 单个上报方在一个窗口内最多能贡献多少条不同的上报。
+//
+// panelId 未经鉴权，任何人都能构造。本身没有价值 —— 拦住的是
+// 批量刷量的行为特征：真实的 3panel 只会报告自己站点被攻击的 IP，
+// 报告的 IP 高度分散；而刷量者会在短时间内吐出成百上千个互不相干的
+// 目标 IP（为了尽快把某些 IP 凑到升格阈值）。这个扇出模式无法伪装，
+// 因此限流能有效压低滥用收益。
+const REPORT_RATE_LIMIT = 200;
+const REPORT_RATE_WINDOW = 3600; // 秒
 // 候选的有效期（秒），过期自动清理。
 const CANDIDATE_TTL = 30 * 24 * 3600;
 
@@ -82,6 +91,11 @@ async function handleReport(request, env, ctx) {
     return json({ error: 'invalid report' }, 400);
   }
 
+  // 速率限制：按上报方 IP 计（而非 panelId —— 后者自报，可随意伪造）。
+  if (!(await allowReport(env, reporterIP))) {
+    return json({ error: 'rate limited' }, 429);
+  }
+
   // 以 (来源实例, 被攻击者 IP, 攻击类型) 为键去重。
   // 同一个实例对同一个 IP 的重复扫描只计一次，否则单个实例就能刷够阈值。
   const dedupKey = `r:${report.panelId}:${report.ip}:${report.attackType}`;
@@ -128,6 +142,19 @@ async function handleReport(request, env, ctx) {
 
   ctx.waitUntil(Promise.resolve());
   return json({ ok: true, distinctPanels: distinct, promoted });
+}
+
+// allowReport 返回该上报方当前是否还有配额。
+// KV 的 get/put 非原子，高并发下可能略超限；对限流而言这是可接受的。
+async function allowReport(env, reporterIP) {
+  // 测试可经 __limit 调低上限，生产走常量。
+  const limit = env.REPORTS.__limit || REPORT_RATE_LIMIT;
+  const bucket = Math.floor(Date.now() / (REPORT_RATE_WINDOW * 1000));
+  const key = `rl:${reporterIP}:${bucket}`;
+  const current = Number(await env.REPORTS.get(key) || 0);
+  if (current >= limit) return false;
+  await env.REPORTS.put(key, String(current + 1), { expirationTtl: REPORT_RATE_WINDOW * 2 });
+  return true;
 }
 
 /** 运维查看当前状态。 */
