@@ -1,0 +1,15 @@
+{
+    "name": "waf-reporter",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "tail": "wrangler tail",
+        "status": "curl -s https://waf-reporter.<你的子域>.workers.dev/status",
+        "test": "node --test \"test/*.test.js\""
+    },
+    "devDependencies": {
+        "wrangler": "^4.0.0"
+    }
+}

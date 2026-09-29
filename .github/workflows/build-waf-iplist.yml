@@ -1,0 +1,77 @@
+name: build-waf-iplist
+
+# 每天两次聚合 IP 黑名单。多源合并、去重、CDR 折叠都在这里完成，
+# 面板侧只下载制品并解码 —— 用户网络未必能直连 raw.githubusercontent.com，
+# 让每个实例自己抓源等于赌运气。
+on:
+  schedule:
+    # UTC 01:13 / 13:13。刻意避开整点：整点是所有定时任务的默认值，
+    # 大量 job 同时打上游源容易被限流。
+    - cron: "13 1,13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write  # 发布 Release 附件
+  id-token: write   # Cloudsmith OIDC 上传
+
+# 上一轮没跑完就不要开新一轮：制品是全量替换的，
+# 两轮并发会出现"新的 meta 配旧的 bin"。
+concurrency:
+  group: waf-iplist
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache-dependency-path: agent/go.sum
+
+      - name: Aggregate sources
+        run: |
+          mkdir -p dist
+          # 源清单在 agent/cmd/wlbuild/main.go 内维护。
+          # 单个源失败不影响整体（meta.json 会记 err），
+          # 但全部源失败时 wlbuild 会拒绝产出空名单。
+          cd agent
+          go run ./cmd/wlbuild \
+            -out ../dist/wl_v2.bin \
+            -meta ../dist/meta.json \
+            -self-pool ../scripts/ip_group.json
+
+      - name: Install Cloudsmith CLI
+        run: |
+          install_output="$(curl -fsSL https://install.cloudsmith.com/raw/versions/latest/cli.sh | sh)"
+          bin_dir="$(printf '%s\n' "$install_output" | sed -n 's/^bin_dir=//p')"
+          [ -n "$bin_dir" ] || { echo "Cloudsmith CLI installation did not return bin_dir" >&2; exit 1; }
+          echo "$bin_dir" >> "$GITHUB_PATH"
+
+      - name: Publish to Cloudsmith
+        env:
+          CLOUDSMITH_API_KEY: ${{ secrets.CS_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${CLOUDSMITH_API_KEY:-}" ] || { echo "CS_TOKEN is not configured" >&2; exit 1; }
+          publish() { cloudsmith push generic 3panel/3panel "$1" --filepath "$2" --republish; }
+          publish dist/wl_v2.bin "waf-iplist/latest/wl_v2.bin"
+          publish dist/meta.json  "waf-iplist/latest/meta.json"
+
+      - name: Publish GitHub Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: waf-iplist-latest
+          name: WAF IP 黑名单制品
+          body: |
+            由 `build-waf-iplist` 自动生成，请勿手工编辑。
+
+            - `wl_v2.bin` — 折叠去重后的区间表（`3PWL` v2 格式）
+            - `meta.json` — sha256、条目数、来源明细与镜像地址
+
+            客户端应先取 `meta.json` 比对 sha256，未变化则跳过下载。
+          files: |
+            dist/wl_v2.bin
+            dist/meta.json

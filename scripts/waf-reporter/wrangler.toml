@@ -1,0 +1,29 @@
+name = "waf-reporter"
+main = "src/index.js"
+compatibility_date = "2026-09-29"
+# 攻击上报的 IP 全部来自公网攻击者，不需要浏览器直连，
+# 但保留 CORS 便于面板端排障时用 curl/浏览器验证。
+workers_dev = true
+
+# 上报去重记录（实例 IP 类型 三元组）与候选池各用一个 KV。
+# 两者都可以用同一个 namespace（key 前缀已隔离），分开只是为了
+# 未来可能给候选池单独设访问控制。
+[[kv_namespaces]]
+binding = "REPORTS"
+id = "7331cc8b8f2f49a9b141d0563e21f426"
+
+[[kv_namespaces]]
+binding = "CANDIDATES"
+id = "9663ac4ed2bb4d729699cd87554b1401"
+
+[vars]
+# 一个 IP 需要多少个不同 3panel 实例上报才升格为候选。
+# 3 是权衡结果：太低则单个被攻陷的实例可自行推黑，
+# 太高则国内小流量部署难以积累到阈值。
+CANDIDATE_MIN_REPORTS = "3"
+
+# 候选与去重记录都按 CANDIDATE_TTL 自动过期，无需清理任务。
+# 注意：Cloudflare KV 的 minimum expiration_ttl 为 60 秒，这里远大于该值。
+
+[observability]
+enabled = true

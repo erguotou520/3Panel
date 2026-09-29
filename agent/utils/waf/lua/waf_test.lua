@@ -179,7 +179,7 @@ _G.ngx = ngx
 package.preload["cjson.safe"] = function() return {encode = json.encode, decode = json.decode} end
 
 -- ==================== 模块加载 / 重置 ====================
-local MODULES = {"config", "iputils", "normalize", "semantic", "expr", "rules", "waflog", "cc", "challenge", "bot", "smug", "probe", "access"}
+local MODULES = {"config", "iputils", "normalize", "semantic", "expr", "rules", "waflog", "cc", "challenge", "bot", "smug", "probe", "iplist", "access"}
 
 local function reset_modules()
     for _, name in ipairs(MODULES) do package.loaded["waf." .. name] = nil end
@@ -498,6 +498,97 @@ check("lfi windows win.ini", sem.detect_lfi("C:/windows/win.ini"))
 check("lfi windows backslash", sem.detect_lfi("C:\\Documents and Settings\\All Users\\Application Data"))
 check("lfi program files", sem.detect_lfi("C:\\Program Files (x86)\\Kingdee\\K3Cloud\\Web.config"))
 check("lfi normal windows path", not sem.detect_lfi("C:/Program Files/Windows Media Player"))
+
+-- ==================== iplist（IP 黑名单区间表） ====================
+local iplist = require("waf.iplist")
+
+-- 用与 Go 侧 wlformat 相同的编码规则生成测试数据。
+-- 这里刻意手写 varint 打包而不是 require 制品：
+-- 单元测试必须能在没有 testdata 制品的环境跑，
+-- 且这样一旦 Go 侧改了格式，本测试会先失败而不是静默漂移。
+local function build_wlfile(v4ranges, v6ranges)
+    local out = {"3PWL", string.char(2), string.char(0, 0, 0, 0)}
+    local function u32(n)
+        out[#out + 1] = string.char(n % 256,
+            math.floor(n / 256) % 256, math.floor(n / 65536) % 256, math.floor(n / 16777216) % 256)
+    end
+    u32(#v4ranges); u32(#(v6ranges or {}))
+    local function varint(v)
+        while v > 127 do
+            out[#out + 1] = string.char((v % 128) + 128)
+            v = math.floor(v / 128)
+        end
+        out[#out + 1] = string.char(v % 128)
+    end
+    local prev = -1
+    for _, r in ipairs(v4ranges) do
+        local s, e = r[1], r[2]
+        varint(s - prev); varint(e - s + 1); prev = e
+    end
+    for _, r in ipairs(v6ranges or {}) do
+        out[#out + 1] = r[1]; out[#out + 1] = r[2]
+    end
+    return table.concat(out)
+end
+
+local function v4(s) -- "1.2.3.0/24" -> {start, end}
+    local a, b, c, d, bits = s:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)/(%d+)$")
+    local base = tonumber(a) * 16777216 + tonumber(b) * 65536 + tonumber(c) * 256 + tonumber(d)
+    local len = 2 ^ (32 - tonumber(bits))
+    return { base, base + len - 1 }
+end
+
+check("iplist ipv4_to_num", iplist.ipv4_to_num("1.2.3.4") == 16909060)
+check("iplist ipv4_to_num 0.0.0.0", iplist.ipv4_to_num("0.0.0.0") == 0)
+check("iplist ipv4_to_num max", iplist.ipv4_to_num("255.255.255.255") == 4294967295)
+check("iplist ipv4_to_num invalid", iplist.ipv4_to_num("999.1.1.1") == nil)
+check("iplist ipv4_to_num short", iplist.ipv4_to_num("1.2.3") == nil)
+check("iplist ipv4_to_num nonstring", iplist.ipv4_to_num(42) == nil)
+
+local blob = build_wlfile({
+    v4("1.2.3.0/24"),
+    v4("8.8.8.8/32"),
+    v4("114.92.40.232/32"),
+    v4("223.0.0.0/8"),
+})
+iplist._reset()
+iplist._set_reader(function() return blob end)
+check("iplist count", iplist.count() == 4, tostring(iplist.count()))
+check("iplist hit range start", iplist.in_list("1.2.3.0"))
+check("iplist hit range mid", iplist.in_list("1.2.3.200"))
+check("iplist hit range end", iplist.in_list("1.2.3.255"))
+check("iplist hit single", iplist.in_list("8.8.8.8"))
+check("iplist hit cn ip", iplist.in_list("114.92.40.232"))
+check("iplist hit big range", iplist.in_list("223.255.1.1"))
+check("iplist miss just below", not iplist.in_list("1.2.2.255"))
+check("iplist miss just above", not iplist.in_list("1.2.4.0"))
+check("iplist miss public dns", not iplist.in_list("8.8.4.4"))
+check("iplist miss private", not iplist.in_list("192.168.1.1"))
+check("iplist miss loopback", not iplist.in_list("127.0.0.1"))
+check("iplist miss nil", not iplist.in_list(nil))
+check("iplist miss garbage", not iplist.in_list("not-an-ip"))
+
+-- 坏数据必须降级为"不拦截"，而不是打挂站点
+iplist._reset()
+iplist._set_reader(function() return "GARBAGE" end)
+check("iplist bad data no crash", iplist.in_list("1.2.3.4") == false)
+iplist._reset()
+iplist._set_reader(function() return nil end)
+check("iplist missing file no crash", iplist.in_list("1.2.3.4") == false)
+
+-- v6 往返
+check("iplist v6 pack", (function()
+    local p = iplist.pack_v6("2001:db8::1")
+    return p and #p == 16
+end)())
+check("iplist v6 pack compressed", (function()
+    local p = iplist.pack_v6("::1")
+    return p and #p == 16
+end)())
+check("iplist v6 pack reject v4", iplist.pack_v6("1.2.3.4") == nil)
+check("iplist v6 pack reject junk", iplist.pack_v6("zz::1") == nil)
+iplist._reset()
+iplist._set_reader(nil)
 
 -- ==================== expr ====================
 local expr = require("waf.expr")
