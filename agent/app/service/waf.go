@@ -185,7 +185,8 @@ func wafInjectServer(website *model.Website, enable bool) error {
 	config := nginxFull.SiteConfig
 	serverBlock := config.Config.FindServers()[0]
 
-	accessConf := fmt.Sprintf("%s/access.lua", wafutils.WAFDir)
+	accessConf := fmt.Sprintf("%s/entry.lua", wafutils.WAFDir)
+	legacyAccessConf := fmt.Sprintf("%s/access.lua", wafutils.WAFDir)
 	rulesFile := fmt.Sprintf("%s/rules.json", wafutils.WAFDir)
 	logFile := fmt.Sprintf("%s/waf_events.log", wafutils.WAFDir)
 	if enable {
@@ -228,8 +229,10 @@ func wafInjectServer(website *model.Website, enable bool) error {
 		serverBlock.UpdateDirective("set", []string{"$waf_log_path", logFile})
 		serverBlock.UpdateDirective("set", []string{"$waf_challenge_secret", base64.RawURLEncoding.EncodeToString(secret)})
 		serverBlock.UpdateDirective("access_by_lua_file", []string{accessConf})
+		serverBlock.RemoveDirective("access_by_lua_file", []string{legacyAccessConf})
 	} else {
 		serverBlock.RemoveDirective("access_by_lua_file", []string{accessConf})
+		serverBlock.RemoveDirective("access_by_lua_file", []string{legacyAccessConf})
 		serverBlock.RemoveDirective("set", []string{"$waf_site_id", fmt.Sprintf("%d", website.ID)})
 		serverBlock.RemoveDirective("set", []string{"$waf_rules_path", rulesFile})
 		serverBlock.RemoveDirective("set", []string{"$waf_log_path", logFile})

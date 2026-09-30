@@ -660,6 +660,52 @@ function _M.inspect(value, uri)
     return nil
 end
 
+-- URI-only fast gate for requests without query/body. Token lookup is cheaper
+-- than crossing into the large PCRE candidate matcher on every ordinary page
+-- and API path. Any encoded or syntax-bearing path still uses the full engine.
+local URI_PLAIN_FIRST_SEGMENT = {
+    actuator=true, phpmyadmin=true, ["swagger-ui"]=true, ["server-status"]=true,
+    druid=true, apisix=true, ["jmx-console"]=true, manager=true,
+    ["wls-wsat"]=true, mgmt=true, jmreport=true, center=true,
+    etc=true, proc=true, usr=true, windows=true, winnt=true,
+    shell=true, webshell=true, excu_shell=true, invokefunction=true,
+}
+
+function _M.inspect_uri(value)
+    if not value or value == "" or value == "/" then return nil end
+    -- A plain path cannot express encoding, traversal, SQL/XSS syntax or shell
+    -- metacharacters. Scan bytes in JIT-compiled Lua instead of invoking a
+    -- pattern engine; only known high-risk first segments need deeper work.
+    local plain = value:byte(1) == 47 -- '/'
+    local first_end
+    for i = 2, #value do
+        local b = value:byte(i)
+        local allowed = (b >= 48 and b <= 57) or (b >= 65 and b <= 90)
+            or (b >= 97 and b <= 122) or b == 47 or b == 95 or b == 45
+        if not allowed then plain = false; break end
+        if b == 47 and not first_end then first_end = i - 1 end
+    end
+    if plain then
+        local first = value:sub(2, first_end or -1):lower()
+        if URI_PLAIN_FIRST_SEGMENT[first] then
+            return _M.inspect(value, value)
+        end
+        return nil
+    end
+    local lower = value:lower()
+    if lower:find("[%%<'\"`;|$\\{}:?&=]") or lower:find("..", 1, true) then
+        return _M.inspect(value, value)
+    end
+    -- Executable/server-side and backup artefacts need the full exposure rules;
+    -- common static suffixes such as .js/.css/.png stay on the fast path.
+    if lower:find("/%.git/") or lower:find("/%.env")
+        or lower:find("%.php") or lower:find("%.jsp") or lower:find("%.asp")
+        or lower:find("%.sql$") or lower:find("%.bak$") or lower:find("%.config") then
+        return _M.inspect(value, value)
+    end
+    return nil
+end
+
 _M.attack_types = {"sqli", "xss", "rce", "lfi", "ssrf", "upload", "log4shell", "code_injection", "ssti", "deserialization", "xxe", "exposure"}
 
 return _M

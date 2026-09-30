@@ -10,10 +10,9 @@ local CACHE_TTL = 5 -- 秒，文件 mtime 轮询间隔
 local cache = {
     data = nil,
     raw = nil,
-    checked = 0,
-    shared_checked = 0,
 }
 local refresh_started = false
+local state_cache = {}
 
 -- 名单文件格式：
 -- {
@@ -21,23 +20,36 @@ local refresh_started = false
 --   sites  = { ["1"] = { rules = {...} } },
 -- }
 
+local function install_raw(raw)
+    if not raw or raw == cache.raw then return cache.data ~= nil end
+    local data = config.json_decode(raw)
+    if not data then return false end
+    cache.raw = raw
+    cache.data = data
+    state_cache = {}
+    return true
+end
+
 local function refresh_rules(premature, path, content_key, lock_key)
     if premature then return end
     local f = io.open(path, "r")
     if f then
         local content = f:read("*a")
         f:close()
-        if config.json_decode(content) then
+        if install_raw(content) then
             ngx.shared.waf_dict:set(content_key, content)
         end
     end
-    ngx.shared.waf_dict:delete(lock_key)
 end
 
 local function periodic_refresh(premature, path, content_key, lock_key)
     if premature then return end
     if ngx.shared.waf_dict:add(lock_key, true, CACHE_TTL) then
         refresh_rules(false, path, content_key, lock_key)
+    else
+        -- Another worker owns the file read. Copy its published snapshot into
+        -- this worker's local Lua cache here, never from the request path.
+        install_raw(ngx.shared.waf_dict:get(content_key))
     end
     local ok, err = ngx.timer.at(1, periodic_refresh, path, content_key, lock_key)
     if not ok then
@@ -51,7 +63,10 @@ function _M.start_refresh()
     local path = config.get_rules_path()
     local content_key = "waf:rules:" .. path
     local lock_key = content_key .. ":refresh"
-    local ok, err = ngx.timer.at(0, periodic_refresh, path, content_key, lock_key)
+    -- Populate this worker before serving its first protected request. Later
+    -- refreshes stay entirely on the timer path.
+    refresh_rules(false, path, content_key, lock_key)
+    local ok, err = ngx.timer.at(1, periodic_refresh, path, content_key, lock_key)
     if not ok then
         refresh_started = false
         ngx.log(ngx.ERR, "[waf] cannot start rules refresh: ", err)
@@ -62,29 +77,6 @@ end
 
 local function load_rules()
     _M.start_refresh()
-    local now = ngx.now()
-    local path = config.get_rules_path()
-    local content_key = "waf:rules:" .. path
-    local lock_key = content_key .. ":refresh"
-    if now - cache.checked >= CACHE_TTL then
-        cache.checked = now
-        if ngx.shared.waf_dict:add(lock_key, true, CACHE_TTL) then
-            local ok = ngx.timer.at(0, refresh_rules, path, content_key, lock_key)
-            if not ok then ngx.shared.waf_dict:delete(lock_key) end
-        end
-    end
-    if cache.data and now - cache.shared_checked < 1 then
-        return cache.data
-    end
-    cache.shared_checked = now
-    local raw = ngx.shared.waf_dict:get(content_key)
-    if raw and raw ~= cache.raw then
-        local data = config.json_decode(raw)
-        if data then
-            cache.raw = raw
-            cache.data = data
-        end
-    end
     return cache.data
 end
 
@@ -200,20 +192,47 @@ local function rule_expired(rule)
     return ngx.time() >= t
 end
 
+local function compiled_empty(compiled)
+    return not compiled or (not next(compiled.ip or {}) and not next(compiled.path or {})
+        and not next(compiled.method or {}) and not next(compiled.ua or {})
+        and not next(compiled.referer or {}) and not next(compiled.cookie or {}))
+end
+
 function _M.get_site_state()
-    local data = load_rules()
+    load_rules()
+    return _M.get_site_state_cached(config.get_site_id())
+end
+
+function _M.get_site_state_cached(site_id)
+    local data = cache.data
     if not data then
         return nil
     end
-    local site = data.sites and data.sites[tostring(config.get_site_id())]
-    return {
+    site_id = tostring(site_id or 0)
+    local cached = state_cache[site_id]
+    if cached and cached.data == data then
+        return cached.state
+    end
+    local site = data.sites and data.sites[site_id]
+    -- has_any 在此处算一次。早先每请求调用 has_rules() 都会对
+    -- compiled 的 6 张表各做一次 next()，两层共 12 次；它对同一份
+    -- state 恒定不变，缓存后每请求零成本。
+    local global_rules_ = data.global and data.global.rules or {}
+    local global_compiled_ = data.global and data.global.compiled or {}
+    local site_rules_ = site and site.rules or {}
+    local site_compiled_ = site and site.compiled or {}
+    local state = {
         site = site,
-        global_rules = data.global and data.global.rules or {},
-        global_compiled = data.global and data.global.compiled or {},
+        has_any = #site_rules_ > 0 or #global_rules_ > 0
+            or not compiled_empty(site_compiled_) or not compiled_empty(global_compiled_),
+        global_rules = global_rules_,
+        global_compiled = global_compiled_,
         -- 订阅黑名单总开关。缺省为 false：老版本 rules.json 没有这个字段，
         -- 此时按「未启用」处理，不能因为升级遗漏就默认开始拦 IP。
         global_iplist_enabled = (data.global and data.global.ipListEnabled) == true,
     }
+    state_cache[site_id] = { data = data, state = state }
+    return state
 end
 
 function _M.site_enabled()
@@ -275,14 +294,10 @@ local function eval_layer(compiled, list, dims)
     return (fast.rule.priority or 100) <= (slow.rule.priority or 100) and fast or slow
 end
 
-local function compiled_empty(compiled)
-    return not compiled or (not next(compiled.ip or {}) and not next(compiled.path or {})
-        and not next(compiled.method or {}) and not next(compiled.ua or {})
-        and not next(compiled.referer or {}) and not next(compiled.cookie or {}))
-end
-
 function _M.has_rules(state)
     if not state then return false end
+    -- get_site_state 已预计算；外部构造的 state（测试）走原逻辑。
+    if state.has_any ~= nil then return state.has_any end
     local site_rules = state.site and state.site.rules or {}
     local site_compiled = state.site and state.site.compiled or {}
     local global_rules = state.global_rules or {}

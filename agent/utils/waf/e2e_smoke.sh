@@ -3,12 +3,20 @@
 # 用法: bash agent/utils/waf/e2e_smoke.sh
 set -u
 LUA_DIR="$(cd "$(dirname "$0")/lua" && pwd)"
-ROOT=/tmp/waf_e2e
+ROOT="$(mktemp -d /tmp/waf_e2e.XXXXXX)"
 IMG="${WAF_IMAGE:-openresty/openresty:alpine}"
 WAF_DIR=/www/waf
-NAME=waf-e2e
+NAME="waf-e2e-$$"
 RULES_FILE="$ROOT/waf/rules.json"
 pass=0; fail=0
+
+cleanup() {
+  if [ "${KEEP_CONTAINER:-0}" != "1" ]; then
+    docker rm -f "$NAME" >/dev/null 2>&1
+    rm -rf "$ROOT"
+  fi
+}
+trap cleanup EXIT
 
 check() {
   local name="$1" expected="$2" actual="$3"
@@ -16,7 +24,13 @@ check() {
 }
 
 docker rm -f "$NAME" >/dev/null 2>&1
-rm -rf "$ROOT"; mkdir -p "$ROOT/waf" "$ROOT/logs"
+# Keep the bind-mount root inode stable. Docker Desktop may still hold the old
+# root briefly after container removal; deleting and recreating ROOT can then
+# mount a stale, empty directory and make nginx fail to open /logs/error.log.
+mkdir -p "$ROOT"
+mkdir -p "$ROOT/waf" "$ROOT/logs"
+find "$ROOT/waf" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+find "$ROOT/logs" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 cp "$LUA_DIR"/*.lua "$ROOT/waf/"
 
 # 白名单放行 docker 网关网段（容器内 remote_addr 是网关而非 127.0.0.1）
@@ -54,7 +68,7 @@ http {
     set \$waf_site_id 1;
     set \$waf_rules_path $WAF_DIR/rules.json;
     set \$waf_log_path /logs/waf_events.log;
-    access_by_lua_file $WAF_DIR/access.lua;
+    access_by_lua_file $WAF_DIR/entry.lua;
     location / { default_type text/plain; content_by_lua_block { ngx.say("ok") } }
   }
   server {
@@ -147,11 +161,25 @@ check "site-enable-hot"    403 "$(req "http://127.0.0.1:18080/login?id=1%20OR%20
 
 if [ "${RUN_BENCHMARK:-0}" = "1" ] && command -v wrk >/dev/null 2>&1; then
   # Benchmark the P0 detection hot path without optional CC/bot/probe policies.
-  cat > "$RULES_FILE" <<'EOF'
-{"global":{"rules":[]},"sites":{"1":{"enabled":true,"rules":[]}}}
-EOF
+  bench_policy="${BENCH_POLICY:-none}"
+  bench_cc_limit="${BENCH_CC_LIMIT:-100000000}"
+  case "$bench_policy" in
+    cc)
+      printf '%s\n' "{\"global\":{\"rules\":[]},\"sites\":{\"1\":{\"enabled\":true,\"rules\":[],\"cc\":{\"limit\":$bench_cc_limit,\"window\":60,\"action\":\"log\",\"byUri\":false}}}}" > "$RULES_FILE"
+      ;;
+    bot)
+      printf '%s\n' '{"global":{"rules":[]},"sites":{"1":{"enabled":true,"rules":[],"bot":{"enabled":true,"allowGoodBots":true,"blockBadBots":true}}}}' > "$RULES_FILE"
+      ;;
+    cc_bot)
+      printf '%s\n' "{\"global\":{\"rules\":[]},\"sites\":{\"1\":{\"enabled\":true,\"rules\":[],\"cc\":{\"limit\":$bench_cc_limit,\"window\":60,\"action\":\"log\",\"byUri\":false},\"bot\":{\"enabled\":true,\"allowGoodBots\":true,\"blockBadBots\":true}}}}" > "$RULES_FILE"
+      ;;
+    *)
+      printf '%s\n' '{"global":{"rules":[]},"sites":{"1":{"enabled":true,"rules":[]}}}' > "$RULES_FILE"
+      ;;
+  esac
   sleep 2
   duration="${BENCH_DURATION:-5s}"
+  bench_path="${BENCH_PATH:-/}"
   # 交错测量 + 取中位数。
   #
   # 两个问题让早先的单轮串行测量完全不可信：
@@ -163,9 +191,9 @@ EOF
   rounds="${BENCH_ROUNDS:-5}"
   declare -a B E P
   for _ in $(seq 1 "$rounds"); do
-    B+=("$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18081/ | awk '/Requests\/sec/ {print $2}')")
-    E+=("$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18082/ | awk '/Requests\/sec/ {print $2}')")
-    P+=("$(wrk -t2 -c50 -d"$duration" http://127.0.0.1:18080/ | awk '/Requests\/sec/ {print $2}')")
+    B+=("$(wrk -t2 -c50 -d"$duration" "http://127.0.0.1:18081$bench_path" | awk '/Requests\/sec/ {print $2}')")
+    E+=("$(wrk -t2 -c50 -d"$duration" "http://127.0.0.1:18082$bench_path" | awk '/Requests\/sec/ {print $2}')")
+    P+=("$(wrk -t2 -c50 -d"$duration" "http://127.0.0.1:18080$bench_path" | awk '/Requests\/sec/ {print $2}')")
   done
   med() { printf '%s\n' "$@" | sort -n | awk '{a[NR]=$1} END {print a[int((NR+1)/2)]}'; }
   baseline=$(med "${B[@]}")
@@ -203,5 +231,4 @@ if [ "${events:-0}" -ge 8 ]; then pass=$((pass+1)); else fail=$((fail+1)); echo 
 if grep -q '"attackType":"sqli"' "$ROOT/logs/waf_events.log" 2>/dev/null; then pass=$((pass+1)); else fail=$((fail+1)); echo "FAIL: no sqli event in log"; fi
 
 echo "--- $pass passed, $fail failed"
-if [ "${KEEP_CONTAINER:-0}" != "1" ]; then docker rm -f "$NAME" >/dev/null 2>&1; fi
 [ "$fail" = "0" ]

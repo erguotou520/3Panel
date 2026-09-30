@@ -17,6 +17,7 @@ local iplist = require("waf.iplist")
 
 local ngx_say = ngx.say
 local ngx_exit = ngx.exit
+local rules_started = false
 
 local function client_ip()
     -- OpenResty 是受保护站点的流量入口。未经 real_ip 模块可信代理校验的
@@ -32,7 +33,10 @@ local function deny(attack_type, rule, detail)
 end
 
 local function log_event(action, layer, attack_type, rule, detail, start_ms, body)
-    local ok, err = pcall(waflog.emit, {
+    -- emit 只写共享内存队列，不涉及 IO；这里不再 pcall（见文件头说明）。
+    local now_ms = ngx.now() * 1000
+    local request_start_ms = ngx.req.start_time and ngx.req.start_time() * 1000 or now_ms
+    waflog.emit({
         websiteId = config.get_site_id(),
         ruleId = rule and rule.id or "",
         ruleName = rule and rule.name or "",
@@ -46,11 +50,8 @@ local function log_event(action, layer, attack_type, rule, detail, start_ms, bod
         userAgent = config.sanitize_log_value(ngx.var.http_user_agent),
         detail = config.sanitize_log_value(detail),
         requestBody = config.sanitize_log_value(body),
-        durationMs = math.floor((ngx.now() * 1000 - start_ms) * 100) / 100,
+        durationMs = math.floor((now_ms - request_start_ms) * 100) / 100,
     })
-    if not ok then
-        ngx.log(ngx.ERR, "[waf] log emit failed: ", err)
-    end
 end
 
 local function detect_request(start_ms)
@@ -95,21 +96,27 @@ local function detect_request(start_ms)
 end
 
 local function access_main()
-    local start_ms = config.now_ms()
+    -- Request timing is read only when an event is actually logged. Calling
+    -- ngx.now() for every clean request is measurable at high QPS.
+    local start_ms = nil
 
     -- The directive stays installed after first enablement. Daily enable/disable is
     -- a rules.json data-plane switch, so toggling one site needs no nginx reload.
-    local state_ok, state = pcall(rules.get_site_state)
-    if not state_ok or not state or (state.site and state.site.enabled == false) then
+    -- Do not wrap the complete hot path in pcall: LuaJIT cannot compile across
+    -- that boundary. Individual parsers still validate untrusted data.
+    if not rules_started then
+        rules.start_refresh()
+        rules_started = true
+    end
+    local state = rules.get_site_state_cached(ngx.var.waf_site_id)
+    if not state or (state.site and state.site.enabled == false) then
         return
     end
 
     -- 1. 名单引擎
     local res
     if rules.has_rules(state) then
-        local ok
-        ok, res = pcall(rules.check, state)
-        if not ok then res = nil end
+        res = rules.check(state)
     end
     if res then
         if res.action == "allow" then
@@ -138,8 +145,8 @@ local function access_main()
     -- 名单未下载 / 解析失败时 in_list 返回 false（不拦截），而不是报错：
     -- 没有名单只是不拦这一层，不能因此打挂站点。
     if state.global_iplist_enabled then
-    local ok_iplist, in_blacklist = pcall(iplist.in_list, client_ip())
-    if ok_iplist and in_blacklist then
+    local in_blacklist = iplist.in_list(client_ip())
+    if in_blacklist then
         log_event("deny", "subscription", "ip_blacklist", nil, "source ip in subscription blocklist", start_ms)
         return deny("ip_blacklist")
     end
@@ -147,11 +154,11 @@ local function access_main()
 
     -- 2. 机器人识别（善意 bot 放行等同白名单；扫描器指纹拦截）
     local bot_conf = state.site and state.site.bot
-    local ok_bot, bot_verdict = true, nil
-    if bot_conf then ok_bot, bot_verdict = pcall(bot.check, bot_conf) end
-    if ok_bot and bot_verdict == "good" then
+    local bot_verdict = nil
+    if bot_conf then bot_verdict = bot.check(bot_conf) end
+    if bot_verdict == "good" then
         return -- 善意 bot 直接放行，跳过检测
-    elseif ok_bot and bot_verdict == "bad" then
+    elseif bot_verdict == "bad" then
         log_event("deny", "bot", "scanner", nil, "blocked scanner user-agent", start_ms)
         return deny()
     end
@@ -159,23 +166,23 @@ local function access_main()
     -- 3. CC 防护（挑战已通过的请求直接放行）
     local cc_conf = state.site and state.site.cc
     if cc_conf and not challenge.passed() then
-        local ok3, verdict = pcall(cc.check, cc_conf)
-        if ok3 and verdict == "deny" then
+        local verdict = cc.check(cc_conf)
+        if verdict == "deny" then
             log_event("deny", "cc", "cc", nil, "rate limit exceeded", start_ms)
             return deny()
-        elseif ok3 and verdict == "challenge" then
+        elseif verdict == "challenge" then
             log_event("challenge", "cc", "cc", nil, "rate limit, issuing js challenge", start_ms)
             return challenge.respond()
-        elseif ok3 and verdict == "log" then
+        elseif verdict == "log" then
             log_event("log", "cc", "cc", nil, "rate limit (monitor)", start_ms)
         end
     end
 
     -- 5. 扫描器行为指纹（URI 多样性 / 速率突增）
     local probe_conf = state.site and state.site.probe
-    local ok_probe, probe_hit = true, nil
-    if probe_conf then ok_probe, probe_hit = pcall(probe.check, probe_conf) end
-    if ok_probe and probe_hit then
+    local probe_hit = nil
+    if probe_conf then probe_hit = probe.check(probe_conf) end
+    if probe_hit then
         log_event("deny", "probe", "scanner", nil, probe_hit, start_ms)
         return deny()
     end
@@ -188,37 +195,35 @@ local function access_main()
         and not ngx.var.content_length
         and not ngx.var.http_transfer_encoding then
         local uri = ngx.var.request_uri or ""
-        local ok_fast, fast_hit = pcall(semantic.inspect, uri, uri)
-        if ok_fast and fast_hit then
+        local fast_hit = semantic.inspect_uri(uri)
+        if fast_hit then
             log_event("deny", "semantic", fast_hit.type, nil, fast_hit.value, start_ms)
             return deny(fast_hit.type)
-        elseif ok_fast then
+        else
             return
         end
     end
 
     -- 6. HTTP 请求走私检测（在语义检测前，畸形请求不进流水线）
-    local ok_smug, smug_hit = pcall(smug.detect)
-    if ok_smug and smug_hit then
+    local smug_hit = smug.detect()
+    if smug_hit then
         log_event("deny", "smuggling", "smuggling", nil, smug_hit, start_ms)
         return deny()
     end
 
     -- 7. 语义检测
-    local ok2, atype, adetail = pcall(detect_request, start_ms)
-    if ok2 and atype then
+    local atype, adetail = detect_request(start_ms)
+    if atype then
         log_event("deny", "semantic", atype, nil, adetail, start_ms)
         return deny(atype)
-    elseif not ok2 then
-        -- 检测引擎异常：降级为放行（绝不让 WAF bug 打挂站点），并记录错误
-        ngx.log(ngx.ERR, "[waf] detect error: ", tostring(atype))
     end
 end
 
-local ok_main, err_main = pcall(access_main)
-if not ok_main then
-    -- 兜底：入口本身异常一律放行并记录
-    ngx.log(ngx.ERR, "[waf] access error: ", tostring(err_main))
+-- When loaded through require(), keep the fully constructed engine in
+-- package.loaded so LuaJIT can compile the hot function across requests.
+-- Direct execution is retained for upgrades where an existing site still
+-- points at access.lua until its OpenResty configuration is refreshed.
+if ... == "waf.access" then
+    return { run = access_main }
 end
-
-return access_main
+access_main()

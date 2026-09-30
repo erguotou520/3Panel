@@ -1,7 +1,5 @@
 -- CC 防护：基于 lua_shared_dict 的固定窗口计数器
 -- 维度：IP（可扩展 IP+URL）；超限后按配置动作处置
-local config = require("waf.config")
-local cjson = require("cjson.safe")
 local _M = {}
 
 local dict = ngx.shared.waf_dict
@@ -22,27 +20,21 @@ function _M.check(cc_conf)
     if ip == "" then
         return nil
     end
-    local key = "cc:" .. ip
+    local window = cc_conf.window and cc_conf.window > 0 and cc_conf.window or WINDOW
+    local now = math.floor(ngx.now())
+    local bucket = math.floor(now / window)
+    local key = "cc:" .. ip .. ":" .. bucket
     if cc_conf.byUri then
         key = key .. ":" .. (ngx.var.uri or "")
     end
-    local window = cc_conf.window and cc_conf.window > 0 and cc_conf.window or WINDOW
-
-    local now = math.floor(ngx.now())
-    local bucket = math.floor(now / window)
-    local rec = nil
-    local raw = dict:get(key)
-    if raw then
-        rec = cjson.decode(raw)
+    -- The bucket is part of the key, so an atomic shared-dict increment avoids
+    -- JSON decode/encode on every request. init_ttl bounds stale buckets.
+    local count, err = dict:incr(key, 1, 0, window * 2)
+    if not count then
+        ngx.log(ngx.WARN, "[waf] cc counter failed: ", tostring(err))
+        return nil
     end
-    if not rec or rec.bucket ~= bucket then
-        rec = {bucket = bucket, count = 0}
-    end
-    rec.count = rec.count + 1
-    -- TTL = window*2 保证旧 bucket 自动淘汰
-    dict:set(key, cjson.encode(rec), window * 2)
-
-    if rec.count > cc_conf.limit then
+    if count > cc_conf.limit then
         return cc_conf.action or "deny"
     end
     return nil
