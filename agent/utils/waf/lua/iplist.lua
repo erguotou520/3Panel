@@ -106,7 +106,12 @@ end
 local function ensure_loaded()
     local now = ngx.now()
     if now - cache.checked < CACHE_TTL then
-        return cache.v4_lo ~= nil or cache.err ~= nil
+        -- TTL 窗口内是否可用，只看「有没有可查的区间表」。
+        -- 早先这里写的是 `cache.v4_lo ~= nil or cache.err ~= nil`，
+        -- 而 cache.err 非 nil 恰恰意味着上次加载失败、v4_lo 仍为 nil ——
+        -- 结果 in_list 拿到 true 后走到 `#lo` 上崩掉，表现为每个请求 500。
+        -- 去掉了 pcall 兜底后这个潜伏 bug 才暴露出来。
+        return cache.v4_lo ~= nil
     end
     cache.checked = now
 
@@ -165,6 +170,10 @@ function _M.in_list(ip)
     local n = _M.ipv4_to_num(ip)
     if n then
         local lo, hi = cache.v4_lo, cache.v4_hi
+        -- 兜底：ensure_loaded 只在有区间表时返回 true，但缓存可能被
+        -- _reset 或其它路径清空。这里再确认一次，避免 nil 上取长度
+        -- 把整个请求打成 500 —— 名单不可用时应当只是不拦截。
+        if not lo then return false end
         local a, b = 1, #lo
         while a <= b do
             local mid = math.floor((a + b) / 2)

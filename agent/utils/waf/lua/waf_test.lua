@@ -171,6 +171,7 @@ ngx.req = setmetatable({}, {
         if k == "get_uri_args" then return function() return T.uri_args end end
         if k == "read_body" then return function() end end
         if k == "get_body_data" then return function() return T.body end end
+        if k == "start_time" then return function() return T.now - 0.001 end end
     end,
 })
 _G.ngx = ngx
@@ -184,9 +185,15 @@ local MODULES = {"config", "iputils", "normalize", "semantic", "expr", "rules", 
 local function reset_modules()
     for _, name in ipairs(MODULES) do package.loaded["waf." .. name] = nil end
     for _, name in ipairs(MODULES) do
-        local chunk, err = loadfile(name .. ".lua")
-        assert(chunk, err)
-        package.loaded["waf." .. name] = chunk()
+        if name == "access" then
+            local chunk, err = loadfile("access.lua")
+            assert(chunk, err)
+            package.loaded["waf.access"] = chunk("waf.access")
+        else
+            local chunk, err = loadfile(name .. ".lua")
+            assert(chunk, err)
+            package.loaded["waf." .. name] = chunk()
+        end
     end
 end
 
@@ -374,6 +381,11 @@ check("upload normal image", not sem.detect_upload('Content-Disposition: form-da
 local hit = sem.inspect("' OR '1'='1", "/login")
 check("inspect returns sqli", hit and hit.type == "sqli")
 check("inspect clean", sem.inspect("hello", "/") == nil)
+check("inspect uri fast clean api", sem.inspect_uri("/api/users/123") == nil)
+check("inspect uri fast clean static", sem.inspect_uri("/assets/app.min.js") == nil)
+check("inspect uri fast traversal", sem.inspect_uri("/../../etc/passwd") ~= nil)
+check("inspect uri fast exposure", sem.inspect_uri("/.git/config") ~= nil)
+check("inspect uri fast encoded xss", sem.inspect_uri("/%3Cscript%3Ealert(1)%3C/script%3E") ~= nil)
 -- detect_log.xlsx 补充签名（本轮新增）
 check("sqli bare boolean probe", sem.detect_sqli("1 AND 1=2"))
 check("sqli or boolean probe", sem.detect_sqli("2 or 3=4"))
@@ -567,6 +579,28 @@ check("iplist miss private", not iplist.in_list("192.168.1.1"))
 check("iplist miss loopback", not iplist.in_list("127.0.0.1"))
 check("iplist miss nil", not iplist.in_list(nil))
 check("iplist miss garbage", not iplist.in_list("not-an-ip"))
+
+-- 回归：名单文件始终不存在时，跨 TTL 边界连续调用不得崩溃。
+--
+-- ensure_loaded 早先的短路条件是 `v4_lo ~= nil or cache.err ~= nil`，
+-- 而文件缺失时恰恰是「有 err、无 v4_lo」，于是短路返回 true，
+-- in_list 继续走到 `#lo` 上对 nil 取长度 —— 请求被打成 500。
+-- 当时被 pcall 吞掉只表现为「订阅不生效」，去掉 pcall 后暴露成 500。
+iplist._reset()
+iplist._set_reader(function() return nil end)
+check("iplist missing file call 1", iplist.in_list("1.2.3.4") == false)
+T.now = T.now + 10   -- 跨过 5 秒 TTL，强制重新走加载分支
+check("iplist missing file after TTL", iplist.in_list("1.2.3.4") == false)
+T.now = T.now + 10
+check("iplist missing file after 2nd TTL", iplist.in_list("1.2.3.4") == false)
+-- 解析失败同样不得崩
+iplist._reset()
+iplist._set_reader(function() return "not-a-wlfile" end)
+check("iplist bad data call 1", iplist.in_list("1.2.3.4") == false)
+T.now = T.now + 10
+check("iplist bad data after TTL", iplist.in_list("1.2.3.4") == false)
+iplist._reset()
+iplist._set_reader(nil)
 
 -- 坏数据必须降级为"不拦截"，而不是打挂站点
 iplist._reset()
@@ -960,9 +994,8 @@ local function access_scenario(name, rules_data, setup, expect)
     os.remove("/tmp/waf_test_events.log")
     T.now = T.now + 10
     setup()
-    local access_main = package.loaded["waf.access"]
-    -- access.lua 加载时已执行一次主流程；这里再手动调用一次观察结果
-    run(function() access_main() end)
+    local access = package.loaded["waf.access"]
+    run(function() access.run() end)
     check(name, expect())
 end
 
@@ -1055,8 +1088,8 @@ local function iplist_scenario(name, wl_blob, rules_data, setup, expect)
     ipl._reset()
     ipl._set_reader(function() return wl_blob end)
     setup()
-    local access_main = package.loaded["waf.access"]
-    run(function() access_main() end)
+    local access = package.loaded["waf.access"]
+    run(function() access.run() end)
     check(name, expect())
 end
 
