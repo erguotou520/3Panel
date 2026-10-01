@@ -7,9 +7,18 @@
             ]"
         />
         <LayoutContent :title="$t('website.waf')" v-loading="loading">
+            <template #app>
+                <!-- WAF 依附于 OpenResty 运行，未安装时给出安装引导而不是空页面 -->
+                <AppStatus
+                    app-key="openresty"
+                    v-model:mask-show="maskShow"
+                    v-model:loading="loading"
+                    @is-exist="checkOpenResty"
+                />
+            </template>
             <template #leftToolBar>
                 <el-select
-                    v-if="activeTab === 'site'"
+                    v-if="activeTab === 'site' && openRestyExist"
                     v-model="websiteId"
                     filterable
                     class="p-w-300"
@@ -25,8 +34,12 @@
                 </el-select>
             </template>
             <template #main>
+                <!-- IP 黑名单订阅是全局配置，不依赖 OpenResty，未安装时也可用 -->
                 <el-tabs v-model="activeTab">
-                    <el-tab-pane :label="$t('website.waf')" name="site">
+                    <el-tab-pane :label="$t('website.wafIPList')" name="iplist">
+                        <IPListSetting />
+                    </el-tab-pane>
+                    <el-tab-pane v-if="openRestyExist" :label="$t('website.waf')" name="site">
                         <Waf
                             v-if="selectedWebsite"
                             :key="selectedWebsite.id"
@@ -34,9 +47,6 @@
                             :waf-enabled="selectedWebsite.wafEnabled"
                         />
                         <el-empty v-else :description="$t('menu.website')" />
-                    </el-tab-pane>
-                    <el-tab-pane :label="$t('website.wafIPList')" name="iplist">
-                        <IPListSetting />
                     </el-tab-pane>
                 </el-tabs>
             </template>
@@ -50,11 +60,23 @@ import { listWebsites } from '@/api/modules/website';
 import { Website } from '@/api/interface/website';
 import Waf from '@/views/website/website/waf/index.vue';
 import IPListSetting from '@/views/website/website/waf/iplist-setting.vue';
+import AppStatus from '@/components/app-status/index.vue';
 
 // 站点页签是站点级配置，IP 名单页签是全局配置 —— 两者混在一个页面，
 // 页签切换时要把站点选择器一并收起来，否则会出现"选了站点但当前页用不上"。
-const activeTab = ref<'site' | 'iplist'>('site');
+// 未安装 OpenResty 时默认停在 IP 名单页签：站点级 WAF 此时无从谈起。
+const activeTab = ref<'site' | 'iplist'>('iplist');
+const openRestyExist = ref(false);
+const maskShow = ref(false);
 const loading = ref(false);
+
+// AppStatus 在检测到应用存在/缺失时触发，这里只需记录状态。
+const checkOpenResty = (exist: boolean) => {
+    openRestyExist.value = exist;
+    if (!exist && activeTab.value === 'site') {
+        activeTab.value = 'iplist';
+    }
+};
 const websites = ref<Website.WebsiteDTO[]>([]);
 const websiteId = ref(0);
 const selectedWebsite = computed(() => websites.value.find((item) => item.id === websiteId.value));
