@@ -191,9 +191,9 @@ if [ "${RUN_BENCHMARK:-0}" = "1" ] && command -v wrk >/dev/null 2>&1; then
   rounds="${BENCH_ROUNDS:-5}"
   declare -a B E P
   for _ in $(seq 1 "$rounds"); do
-    B+=("$(wrk -t2 -c50 -d"$duration" "http://127.0.0.1:18081$bench_path" | awk '/Requests\/sec/ {print $2}')")
-    E+=("$(wrk -t2 -c50 -d"$duration" "http://127.0.0.1:18082$bench_path" | awk '/Requests\/sec/ {print $2}')")
-    P+=("$(wrk -t2 -c50 -d"$duration" "http://127.0.0.1:18080$bench_path" | awk '/Requests\/sec/ {print $2}')")
+    B+=("$(wrk -t2 -c"${BENCH_CONC:-8}" -d"$duration" "http://127.0.0.1:18081$bench_path" | awk '/Requests\/sec/ {print $2}')")
+    E+=("$(wrk -t2 -c"${BENCH_CONC:-8}" -d"$duration" "http://127.0.0.1:18082$bench_path" | awk '/Requests\/sec/ {print $2}')")
+    P+=("$(wrk -t2 -c"${BENCH_CONC:-8}" -d"$duration" "http://127.0.0.1:18080$bench_path" | awk '/Requests\/sec/ {print $2}')")
   done
   med() { printf '%s\n' "$@" | sort -n | awk '{a[NR]=$1} END {print a[int((NR+1)/2)]}'; }
   baseline=$(med "${B[@]}")

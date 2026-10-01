@@ -108,28 +108,54 @@ match_ops.regex = function(v, p)
     return ok and res
 end
 
--- 提取请求各维度当前值
--- 注意：真实 ngx.req.get_headers() 返回小写键名，做大小写兼容
+-- 提取请求各维度当前值（惰性）。
+--
+-- 早先这里是立即求值：每请求都调 get_headers()、构造 8 字段的表和一个闭包，
+-- 哪怕规则只匹配 ip。get_headers() 要把全部请求头拷进 Lua 表，是名单查询
+-- 路径上最贵的一步。改为按需取值后，只查 IP 的规则不再碰请求头。
 local function build_dim_values()
-    local headers = ngx.req.get_headers()
-    local method = ngx.req.get_method()
-    local ua = headers["user-agent"] or headers["User-Agent"] or ""
-    local referer = headers["referer"] or headers["Referer"] or ""
-    local uri = ngx.var.uri or ""
-    local raw_uri = ngx.var.request_uri or ""
-    local ip = ngx.var.remote_addr or ""
-    local cookie = ngx.var.http_cookie or ""
+    local headers = nil
+    local cached = {}
+
+    -- 取请求头：只在真的要匹配 header 维度时才拷贝。
+    local function get_headers()
+        if not headers then headers = ngx.req.get_headers() end
+        return headers
+    end
+
+    local function dim(name)
+        local v = cached[name]
+        if v ~= nil then return v end
+        if name == "ip" then
+            v = ngx.var.remote_addr or ""
+        elseif name == "path" then
+            v = ngx.var.uri or ""
+        elseif name == "raw_path" then
+            v = ngx.var.request_uri or ""
+        elseif name == "ua" then
+            local h = get_headers()
+            v = h["user-agent"] or h["User-Agent"] or ""
+        elseif name == "referer" then
+            local h = get_headers()
+            v = h["referer"] or h["Referer"] or ""
+        elseif name == "cookie" then
+            v = ngx.var.http_cookie or ""
+        elseif name == "method" then
+            v = ngx.req.get_method()
+        end
+        cached[name] = v
+        return v
+    end
+
     return {
-        ip = ip,
-        path = uri,
-        raw_path = raw_uri,
-        ua = ua,
-        referer = referer,
-        method = method,
-        cookie = cookie,
-        header = function(name)
-            return headers[name:lower()]
-        end,
+        ip = function() return dim("ip") end,
+        path = function() return dim("path") end,
+        raw_path = function() return dim("raw_path") end,
+        ua = function() return dim("ua") end,
+        referer = function() return dim("referer") end,
+        method = function() return dim("method") end,
+        cookie = function() return dim("cookie") end,
+        header = function(name) return get_headers()[name:lower()] end,
     }
 end
 
@@ -138,17 +164,17 @@ local function rule_hit(rule, dims)
     local mt, mv, mop = rule.match_type, rule.match_value, rule.match_op or "exact"
     local fn = match_ops[mop] or match_ops.exact
     if mt == "ip" or mt == "cidr" then
-        return iputils.in_cidr(dims.ip, mv)
+        return iputils.in_cidr(dims.ip(), mv)
     elseif mt == "path" then
-        return fn(dims.path, mv) or fn(dims.raw_path, mv)
+        return fn(dims.path(), mv) or fn(dims.raw_path(), mv)
     elseif mt == "ua" then
-        return fn(dims.ua, mv)
+        return fn(dims.ua(), mv)
     elseif mt == "referer" then
-        return fn(dims.referer, mv)
+        return fn(dims.referer(), mv)
     elseif mt == "cookie" then
-        return fn(dims.cookie, mv)
+        return fn(dims.cookie(), mv)
     elseif mt == "method" then
-        return fn(dims.method, mv)
+        return fn(dims.method(), mv)
     elseif mt == "header" then
         -- match_value 格式：Name:value 或 Name（仅判断存在）
         local name, val = mv:match("^(.-):(.*)$")
@@ -271,8 +297,15 @@ end
 local function eval_compiled(compiled, dims)
     if not compiled then return nil end
     local result
-    local function take(group, value)
-        if group and value then result = prefer_result(result, group[value]) end
+    -- 惰性：先看该维度有没有编译规则，有才取值。
+    -- 若先 dims.ua() 再判断 group 非空，会为空的 ua/referer/cookie
+    -- 白白拷贝一次全部请求头 —— 这正是早先每请求的开销来源。
+    local function take(group, getter)
+        if not group then return end
+        local next_group = next(group)
+        if not next_group then return end
+        local value = getter()
+        if value then result = prefer_result(result, group[value]) end
     end
     take(compiled.ip, dims.ip)
     take(compiled.path, dims.path)

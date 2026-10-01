@@ -80,12 +80,10 @@ local function parse_cmp(tokens, pos, dims)
     end
 
     local val
-    if var == "ip" then val = dims.ip
-    elseif var == "path" then val = dims.path
-    elseif var == "method" then val = dims.method
-    elseif var == "ua" then val = dims.ua
-    elseif var == "referer" then val = dims.referer
-    elseif var == "cookie" then val = dims.cookie end
+    -- dims 来自 rules.lua 时字段是惰性取值函数（避免无谓地拷贝请求头），
+    -- 但单元测试直接传普通字符串表。两种都支持。
+    local f = dims[var]
+    val = type(f) == "function" and f() or f
     val = val or ""
 
     local hit = false
