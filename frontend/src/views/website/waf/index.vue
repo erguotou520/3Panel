@@ -1,21 +1,6 @@
 <template>
     <div>
-        <RouterButton
-            :buttons="[
-                { label: $t('menu.website'), path: '/websites' },
-                { label: 'WAF', path: '/websites/waf' },
-            ]"
-        />
         <LayoutContent :title="$t('website.waf')" v-loading="loading">
-            <template #app>
-                <!-- WAF 依附于 OpenResty 运行，未安装时给出安装引导而不是空页面 -->
-                <AppStatus
-                    app-key="openresty"
-                    v-model:mask-show="maskShow"
-                    v-model:loading="loading"
-                    @is-exist="checkOpenResty"
-                />
-            </template>
             <template #leftToolBar>
                 <el-select
                     v-if="activeTab === 'site' && openRestyExist"
@@ -58,27 +43,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { listWebsites } from '@/api/modules/website';
+import { checkAppInstalled } from '@/api/modules/app';
 import { Website } from '@/api/interface/website';
 import Waf from '@/views/website/website/waf/index.vue';
 import IPListSetting from '@/views/website/website/waf/iplist-setting.vue';
-import AppStatus from '@/components/app-status/index.vue';
 
 // 站点页签是站点级配置，IP 名单页签是全局配置 —— 两者混在一个页面，
 // 页签切换时要把站点选择器一并收起来，否则会出现"选了站点但当前页用不上"。
-// WAF 防护排在前面，因此默认停在它；未安装 OpenResty 时由 checkOpenResty
-// 自动回落到 IP 名单页签 —— 站点级 WAF 此时无从谈起。
+// WAF 防护排在前面，因此默认停在它；未安装 OpenResty 时自动回落到
+// IP 名单页签 —— 站点级 WAF 此时无从谈起。
 const activeTab = ref<'site' | 'iplist'>('site');
 const openRestyExist = ref(false);
-const maskShow = ref(false);
 const loading = ref(false);
 
-// AppStatus 在检测到应用存在/缺失时触发，这里只需记录状态。
-const checkOpenResty = (exist: boolean) => {
-    openRestyExist.value = exist;
-    if (!exist && activeTab.value === 'site') {
-        activeTab.value = 'iplist';
-    }
-};
 const websites = ref<Website.WebsiteDTO[]>([]);
 const websiteId = ref(0);
 const selectedWebsite = computed(() => websites.value.find((item) => item.id === websiteId.value));
@@ -90,8 +67,18 @@ const selectWebsite = (id: number) => {
 onMounted(async () => {
     loading.value = true;
     try {
-        const response = await listWebsites();
-        websites.value = response.data.filter((item) => item.type !== 'stream');
+        // 站点级 WAF 依附于 OpenResty。这里直接问一次安装状态，
+        // 不再挂 AppStatus 组件 —— 那条状态条会占掉页面顶部一整行，
+        // 而它承载的信息（是否安装）对本站点是常量的。
+        const [installed, response] = await Promise.all([
+            checkAppInstalled('openresty', '').catch(() => null),
+            listWebsites(),
+        ]);
+        openRestyExist.value = !!installed?.data;
+        if (!openRestyExist.value && activeTab.value === 'site') {
+            activeTab.value = 'iplist';
+        }
+        websites.value = (response.data || []).filter((item) => item.type !== 'stream');
         if (websites.value.length > 0) websiteId.value = websites.value[0].id;
     } finally {
         loading.value = false;

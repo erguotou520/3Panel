@@ -337,25 +337,16 @@ const statMax = computed(() => {
 
 const barWidth = (count: number) => `${Math.max(3, Math.round(((count || 0) / statMax.value) * 100))}%`;
 
+// VCharts/Line 的入参不是标准 echarts option：它自己拼 series 与 yAxis，
+// 只认 xData / yData / formatStr。传标准结构（xAxis/yAxis/series）会让
+// `props.option.yAxis ? yAxis : {...}` 命中前一个分支并取到空数组，
+// 轴渲染直接抛 "Cannot read properties of undefined (reading 'group')"。
 const trendOption = computed(() => {
     const trend = stat.value.trend || [];
     return {
+        xData: trend.map((item: any) => item.key),
+        yData: [{ name: i18n.global.t('website.wafTrend'), data: trend.map((item: any) => item.count || 0) }],
         grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
-        tooltip: { trigger: 'axis' },
-        xAxis: {
-            type: 'category',
-            data: trend.map((item: any) => item.key),
-            boundaryGap: false,
-        },
-        yAxis: { type: 'value', minInterval: 1 },
-        series: [
-            {
-                type: 'line',
-                smooth: true,
-                showSymbol: false,
-                data: trend.map((item: any) => item.count || 0),
-            },
-        ],
     };
 });
 const cc = ref<any>({ websiteId: props.websiteId, limit: 0, window: 60, action: 'deny', byUri: false, enabled: false });
