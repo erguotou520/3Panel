@@ -1,13 +1,5 @@
 <template>
     <div>
-        <RouterButton
-            :buttons="[
-                {
-                    label: i18n.global.t('menu.website', 2),
-                    path: '/websites',
-                },
-            ]"
-        />
         <LayoutContent :title="$t('menu.website', 2)" v-loading="loading">
             <template #app>
                 <AppStatus

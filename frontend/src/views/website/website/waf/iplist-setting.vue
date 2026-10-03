@@ -12,17 +12,18 @@
 
             <el-form label-width="180px">
                 <el-form-item :label="$t('website.wafIPListEnabled')">
-                    <el-switch v-model="form.enabled" />
+                    <el-switch v-model="form.enabled" @change="onSave" />
                     <span class="ml-3 text-gray-400 text-xs">{{ $t('website.wafIPListEnabledHint') }}</span>
                 </el-form-item>
                 <el-form-item :label="$t('website.wafIPListAutoUpdate')">
-                    <el-switch v-model="form.autoUpdate" :disabled="!form.enabled" />
+                    <el-switch v-model="form.autoUpdate" :disabled="!form.enabled" @change="onSave" />
                     <el-input-number
                         v-model="form.intervalHours"
                         :min="2"
                         :max="168"
                         :disabled="!form.enabled || !form.autoUpdate"
                         class="ml-3"
+                        @change="onSave"
                     />
                     <span class="ml-2 text-gray-400 text-xs">{{ $t('website.wafIPListIntervalUnit') }}</span>
                 </el-form-item>
@@ -80,25 +81,15 @@
             <el-alert type="info" :closable="false" class="mb-3">
                 <template #title>{{ $t('website.wafReportPrivacy') }}</template>
             </el-alert>
+            <!-- 上报地址由面板固定为社区 Worker，不做成可填字段：
+                 可改地址等于允许把拦截事件（含来源 IP 与命中参数）投递到任意第三方。 -->
             <el-form label-width="180px">
                 <el-form-item :label="$t('website.wafReportEnabled')">
-                    <el-switch v-model="form.reportEnabled" />
-                </el-form-item>
-                <el-form-item :label="$t('website.wafReportUrl')">
-                    <el-input
-                        v-model="form.reportUrl"
-                        :placeholder="'https://3panel-waf-reporter.erguotou.me/report'"
-                        :disabled="!form.reportEnabled"
-                    />
+                    <el-switch v-model="form.reportEnabled" @change="onSave" />
+                    <span class="ml-3 text-gray-400 text-xs">{{ $t('website.wafReportUrlFixed') }}</span>
                 </el-form-item>
             </el-form>
         </el-card>
-
-        <div class="mt-4 flex justify-end">
-            <el-button type="primary" :loading="saving" @click="onSave">
-                {{ $t('setting.confirm') }}
-            </el-button>
-        </div>
     </div>
 </template>
 
@@ -120,7 +111,6 @@ const form = reactive({
     autoUpdate: true,
     intervalHours: 12,
     reportEnabled: false,
-    reportUrl: '',
 });
 
 const status = reactive<WAFIPListStatus>({
@@ -142,7 +132,6 @@ const load = async () => {
             autoUpdate: data.autoUpdate !== false,
             intervalHours: data.intervalHours || 12,
             reportEnabled: !!data.reportEnabled,
-            reportUrl: data.reportUrl || '',
         });
     } catch (error) {
         MsgError(i18n.global.t('commons.msg.operationFailed'));

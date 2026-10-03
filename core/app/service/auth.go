@@ -95,10 +95,10 @@ func (u *AuthService) GetSecurityEntrance() string {
 	if err != nil {
 		return ""
 	}
-	if len(status.Value) == 0 {
-		return ""
-	}
-	return status.Value
+	// 安装器把用户直接回车确认的默认值记成 "/"，即「不设入口」。这里必须
+	// 归一化掉斜杠，否则调用方会拼出 "//"，与 gin 里显式注册的 "/" 撞成
+	// 重复路由，面板启动即 panic（handlers are already registered for '/'）。
+	return strings.Trim(strings.TrimSpace(status.Value), "/")
 }
 
 func (u *AuthService) IsLogin(c *gin.Context) bool {
@@ -461,7 +461,10 @@ func (u *AuthService) checkEntrance(entrance string) error {
 	if err != nil {
 		return err
 	}
-	if len(entranceSetting.Value) != 0 && entranceSetting.Value != entrance {
+	// 与 GetSecurityEntrance 同样归一化：库里的 "/" 表示未设入口，此时任何
+	// 请求（含空串）都应放行，不能因为字面不等就报 ErrEntrance。
+	configured := strings.Trim(strings.TrimSpace(entranceSetting.Value), "/")
+	if configured != "" && configured != strings.Trim(strings.TrimSpace(entrance), "/") {
 		return buserr.New("ErrEntrance")
 	}
 	return nil

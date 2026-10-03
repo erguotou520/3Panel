@@ -46,14 +46,24 @@ rm -rf "$ROOT"; mkdir -p "$ROOT/waf" "$ROOT/logs"
 cp "$LUA_DIR"/*.lua "$ROOT/waf/"
 
 # 基准用的 rules.json：默认空策略，另可开 cc / full 贴近真实部署。
+# POLICY 必须自带引号完整的 "sites" 键——漏掉引号会生成非法 JSON，数据面
+# 解析失败后直接放行，于是 WAF 端口退化成空 Lua 端口，测出接近 0% 的假开销。
 case "${BENCH_POLICY:-none}" in
-  cc)   POLICY='sites:{"1":{cc:{limit:100000000,window:60,action:"log",byUri:false}}}' ;;
-  full) POLICY='sites:{"1":{bot:{enabled:true,allowGoodBots:true,blockBadBots:true},cc:{limit:100000000,window:60,action:"log",byUri:false}}}' ;;
-  *)    POLICY='sites:{"1":{}}' ;;
+  cc)   POLICY='"sites":{"1":{"cc":{"limit":100000000,"window":60,"action":"log","byUri":false}}}' ;;
+  full) POLICY='"sites":{"1":{"bot":{"enabled":true,"allowGoodBots":true,"blockBadBots":true},"cc":{"limit":100000000,"window":60,"action":"log","byUri":false}}}' ;;
+  *)    POLICY='"sites":{"1":{}}' ;;
 esac
 cat > "$ROOT/rules.json" <<EOF
 {"global":{"rules":[],"ipListEnabled":false},${POLICY}}
 EOF
+# 前置自检：rules.json 必须是合法 JSON，否则本次测量作废（见上）。
+if command -v python3 >/dev/null 2>&1; then
+  if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$ROOT/rules.json" 2>/dev/null; then
+    echo "rules.json 不是合法 JSON，本次测量无意义，已中止" >&2
+    cat "$ROOT/rules.json" >&2
+    exit 1
+  fi
+fi
 
 # 三个 server 块：P0 = 无 access_by_lua，P1 = 空 access_by_lua，
 # P2 = 完整 WAF。P1 用来隔离「挂 Lua 本身」与「WAF 逻辑」的开销。
@@ -117,21 +127,19 @@ if command -v taskset >/dev/null 2>&1; then
   PIN="taskset -c 0-$((CPUS-1))"
 fi
 
+# 这台压测机装不上 wrk（apt 源无该包、GitHub 不可达），改用 ApacheBench。
+# ab 每轮只发一批请求，靠外层多轮取中位数压制噪声；它不 keep-alive，
+# 每次请求都要新建连接，绝对值偏低，但端口间可比 —— 开销是比值，不受影响。
 measure() { # $1=端口
-  local out
-  out=$($PIN wrk -t"$THREADS" -c"$CONC" -d"$DURATION" \
-        "http://127.0.0.1:$1/" 2>/dev/null | awk '/Requests\/sec/ {print $2}')
-  if [ -z "$out" ]; then
-    echo "measure($1) 无输出：确认容器已就绪且 wrk 可用" >&2
-  fi
-  printf "%s" "$out"
+  ab -n "${AB_N:-20000}" -c "${BENCH_CONC:-8}" -q "http://127.0.0.1:$1/" 2>/dev/null \
+    | awk '/Requests per second/ {print $4}'
 }
 
 echo
 echo "=== 预热（不计入结果）==="
 measure $((PORT_BASE+2)) >/dev/null
 
-echo "=== 交错测量 "${ROUNDS}" 轮 ==="
+echo "=== 交错测量 ${ROUNDS} 轮 ==="
 b=(); e=(); p=()
 for i in $(seq 1 "$ROUNDS"); do
   b+=("$(measure $((PORT_BASE)))")

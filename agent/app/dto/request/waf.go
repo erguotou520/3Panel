@@ -43,11 +43,14 @@ type WAFWebsiteOp struct {
 }
 
 type WAFCCUpdate struct {
-	WebsiteID uint   `json:"websiteId" validate:"required"`
-	Limit     int    `json:"limit"`
-	Window    int    `json:"window"`
-	Action    string `json:"action" validate:"omitempty,oneof=deny challenge log"`
-	ByURI     bool   `json:"byUri"`
+	WebsiteID uint `json:"websiteId" validate:"required"`
+	// Enabled 是 CC 防护的总开关。之前开关状态是从 Limit>0 派生的，
+	// 于是「配好阈值但先不启用」无法表达：把 limit 填成 0 就等于把配置丢掉。
+	Enabled bool   `json:"enabled"`
+	Limit   int    `json:"limit"`
+	Window  int    `json:"window"`
+	Action  string `json:"action" validate:"omitempty,oneof=deny challenge log"`
+	ByURI   bool   `json:"byUri"`
 }
 
 type WAFOptionUpdate struct {

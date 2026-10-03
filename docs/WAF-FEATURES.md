@@ -4,9 +4,50 @@
 > 状态：实现中。P0 核心链路已具备，但性能、检出率/误报率基准和真实 3Panel OpenResty 环境验收尚未达标，不得标记为发布完成。
 > 范围：仅覆盖 3Panel 管理的 OpenResty 服务，不接管或修改用户自行部署的 Nginx。
 
-## 0. 当前实现与验证状态（2026-09-30）
+## 0. 当前实现与验证状态（2026-10-02）
 
-已实现：站点级数据面热启停、SQLi/XSS/RCE/LFI/SSRF/危险上传检测，以及 Log4Shell、SSTI、XXE、Java/PHP 反序列化、模板/代码注入和高危暴露路径检测；全局/站点名单、TTL、allow/deny/log/challenge、CC、机器人与扫描行为检测、请求走私检测、日志检索/统计/导出/一键加白、误报标记并自动生成 24 小时站点 IP+路径组合放行规则、GeoIP 归属地、Webhook，以及规则文件原子更新。Go 控制面将无 TTL 的 exact 名单规则预编译为哈希表，Lua 请求面直接查表，其他规则保留解释执行。首次为站点安装 Lua 入口需要一次 OpenResty reload；安装完成后的日常启停只更新数据面，不 reload。前端在“网站”菜单下提供独立 WAF 入口，并保留单站点设置中的 WAF 页签。
+> 本节结论来自在 `192.168.211.248`（Ubuntu 20.04 / 8 核 / 15G，生产同款 `1panel/openresty:1.31.1.1-2-4-noble`）上的真实部署验证，不是本地推断。
+
+**真实部署过程中发现并修复的缺陷（本次验收的直接产物）**
+
+1. **面板无法启动**：`packaging/install.sh` 默认入口是 `/`，被原样写进 `settings.SecurityEntrance`；`core/init/router` 用它拼 `GET "//"`，与显式注册的 `GET "/"` 撞车，面板启动即 `panic: handlers are already registered for path '/'`。已在 `AuthService.GetSecurityEntrance` / `checkEntrance` 统一归一化掉首尾斜杠。
+2. **WAF 无法开启（`nginx -t` 失败）**：镜像自带的 `1pwaf/data/conf/waf.conf` 已声明 `lua_package_path`，面板再往同一 `http` 块注入一条即报 `directive is duplicate`，开启 WAF 直接 500。改为只注入 `lua_shared_dict waf_dict`，模块目录交由 `entry.lua` 依据自身路径拼进 `package.path`。
+3. **WAF 开启后所有请求 500（两处）**：
+   - `entry.lua` 的 `package.path` 前缀错算一层目录（`/www/waf/` 而非 `/www/`），`require("waf.access")` 找不到文件；
+   - `rules.lua` 对 JSON `null` 取长度。Go 把 nil 切片导出成 `null`，`cjson.safe` 解出来是 lightuserdata，在 Lua 里是**真值**，`x or {}` 兜不住，`#` 直接抛 `attempt to get length of ... a userdata value`。已加 `table_of()` 兜底。**本地 e2e 测不出后者**——`waf_test.lua` 的模拟解码器返回真 `nil`，只有真实 cjson 才暴露。
+4. **OpenResty 应用无法安装**：`WEBSITE_DIR` 不注入时 compose 报 `invalid spec: :/www: empty section between colons`；应用详情 `params: null` 导致 `init.sh` 依赖的 `PANEL_APP_PORT_HTTP` 缺失，sed 把 `listen 80` 写成空值，nginx `[emerg] host not found in "default_server"`，容器重启循环。两次均需人工绕过才能装上（**尚未修复**）。
+5. **`bench_waf.sh` 基准无效**：`POLICY` 少了一对引号，生成的是非法 JSON（`…,sites:{…}`），数据面解析失败后直接放行，于是 WAF 端口退化成空 Lua 端口，测出 `-0.34%` 的假开销。已修，并加了合法性前置断言。
+
+**压测结论：现有数据不可用，不能声称 `<5%` 达标**
+
+在 248 上用修复后的脚本重测（9 轮交错取中位数），根路径得 `-0.34%`（即"挂 WAF 后更快"，物理上不可能），`/api/users/123` 得 `+8.28%`。同一配置连测 6 次的离散度为 13257–18627 rps（**±17%**），远大于要测的 5% 效应——两个数字的符号都能翻转，说明噪声主导、结论无效。P99 三组均为 1ms，无法区分。
+
+原因：`bench_waf.sh` 用 `worker_cpu_affinity 00000001` 把 4 个 worker 全部钉在 CPU0，nginx 自身即瓶颈，Lua 开销被排队噪声淹没；且该机 Docker Hub / `openresty:alpine` 不可达，只能用 `ab` 而非 `wrk`，每轮不 keep-alive，绝对值偏低。**结论：`<5%` 需在 CPU 独占或预留核的稳定 Linux 主机上、用 `wrk` 重新测量后才能判定；在此之前不得写入"达标"。**
+
+**端到端与单元测试**：生产同款镜像下 `e2e_smoke.sh` 20 项全通过（本地同）；Go `utils/waf` / `app/service` 测试通过；Lua 单测 396 项通过。
+
+**检出率实测：未达 `>= 99%`**
+
+数据集最终定位到微信接收目录（不在仓库、不在 git 历史，也不在 248 上）：
+`~/Library/Containers/com.tencent.xinWeChat/Data/Documents/xwechat_files/Fiend_2008_8342/msg/file/2026-09/detect_log.xlsx`，103,179 行、56,166 个不同载荷、22,495 个不同路径，与本文既有记录完全一致，说明引擎自上次回放以来**检出能力无退化也无提升**。
+
+| 口径 | 检出 / 总数 | 检出率 |
+|---|---|---|
+| 全量 | 83,495 / 103,179 | **80.92%** |
+| 去重（`--deduplicate`） | 65,621 / 68,861 | **95.29%** |
+
+结论：去重口径复现了本文记录的 95.29%，距 `>= 99%` 仍差约 3.7 个百分点，**第一阶段验收不通过**。全量口径 80.92% 的分母含大量同模板变体（换随机数/路径的重复形态），不宜作为对外指标，但同样未达标。
+
+**前端核对（浏览器实测，非读代码推断）**：单站点设置中的 WAF 页签功能完整——攻击统计（类型/Top IP/趋势）、CC 防护（上限/窗口/动作/按 IP+URI）、机器人与扫描器防护、黑白名单 CRUD、WAF 日志（多维检索 + CSV/JSON 导出 + 单条"加入白名单" + 标记误报）、IP 黑名单订阅与攻击上报。
+
+本轮还发现并修复了「独立 WAF 入口」的两个真实缺陷。此前文档声称"网站菜单下提供独立 WAF 入口"，实测并不成立：
+
+- **侧栏不渲染 WAF**：前端路由 `/websites/waf` 与页面都存在，但 `Website-Menu` 子项里没有它，DB `HideMenu` 里也没有，缺一条类似 `AddWebsiteTemplateMenu` 的迁移。已补 `AddWebsiteWAFMenu` 迁移、`menu.go` 的 `Website-Menu` 子项与 `MenuSort` 排序。
+- **直接访问该路由被拦成拦截页**：`core/utils/security.IsFrontendPath` 的白名单缺 `/websites/waf`，手输地址或 F5 刷新会落到 gin 的 `NoRoute`，返回 "Access Temporarily Unavailable"。已加入 `constant.WebUrlMap`。
+
+修复后在 248 实测：侧栏「网站」下已渲染出 网站 / 证书 / 模板 / **WAF 防护** / 运行环境，点击可进入 `/websites/waf`，F5 刷新仍是正常页面。
+
+已实现：站点级数据面热启停、SQLi/XSS/RCE/LFI/SSRF/危险上传检测，以及 Log4Shell、SSTI、XXE、Java/PHP 反序列化、模板/代码注入和高危暴露路径检测；全局/站点名单、TTL、allow/deny/log/challenge、CC、机器人与扫描行为检测、请求走私检测、日志检索/统计/导出/一键加白、误报标记并自动生成 24 小时站点 IP+路径组合放行规则、GeoIP 归属地、Webhook，以及规则文件原子更新。Go 控制面将无 TTL 的 exact 名单规则预编译为哈希表，Lua 请求面直接查表，其他规则保留解释执行。首次为站点安装 Lua 入口需要一次 OpenResty reload；安装完成后的日常启停只更新数据面，不 reload。前端既保留单站点设置中的 WAF 页签，也提供「网站 > WAF 防护」独立入口（两者均已实测可用）。
 
 安全与运行约束：请求阶段从共享内存读取规则；规则文件由后台定时器刷新；事件先进入共享内存队列，再由定时器批量落盘。日志来源 IP 与规则匹配统一使用经过 OpenResty `real_ip` 处理后的 `remote_addr`，不直接信任客户端传入的 `X-Forwarded-For`。包含密码、令牌、Cookie 等敏感字段的日志值整体遮蔽，超长字段截断。
 
@@ -25,8 +66,12 @@ python3 agent/utils/waf/replay_detect_log.py /path/to/detect_log.xlsx
 
 未命中分布（去重口径，共 3,240 条）以 SQLi（约 3,900）、RCE（约 1,520）、代码注入（约 400）为主：其中相当一部分是同一模板换随机数/路径的重复形态（如 jeecg 系未授权字典接口、cgi-bin 命令执行、OAST 换域名），另有 `phpmyadmin`、`reset-password` 一类仅凭路径无法判定攻击意图的探测。后续提升空间主要在按路径模板聚合的虚拟补丁规则，而不是继续堆叠单条 payload 特征。
 
-性能进展：请求入口已改为每 worker 只构造一次并复用/JIT 编译完整引擎；规则文件首次同步在 worker 接流量前完成，后续读取与 JSON 解码全部移到后台 timer，请求只按站点 ID 读取本地不可变快照；普通无参数 URI 使用字节级快速首筛。修正压测方法为三个端口交错测量、7 轮 × 5 秒取中位数后，本地 Docker `wrk` 结果为：根路径总吞吐下降 2.71%，普通 API 路径 `/api/users/123` 总下降 4.93%（空 Lua hook 0.29%，WAF 逻辑 4.66%）。相较优化前约 25.8% 已降至本地吞吐预算内；由于根路径测量中空 Lua 端口比无 Lua 基线高 2.90%，仍存在调度噪声，且吞吐结果不能替代目标要求的 P99 延迟对照。生产同款 `1panel/openresty:1.31.1.1-2-4-noble` 镜像已在隔离容器中通过之前的 19 项端到端测试；本地 OpenResty 当前 20 项全部通过，但生产同款镜像的新用例仍需重跑。OWASP 检出率 `>= 99%`、误报率 `<= 0.1%`、控制面 API 到数据面的完整链路以及浏览器验证仍需完成。P1-P3 未实现项目继续以本文清单为准。
-开启 CC/bot 后的短测另行记录：CC 计数已改为按时间桶 key 的 shared-dict 原子 `incr`，去掉每请求 JSON 编解码；3 轮 × 3 秒交错测量中，CC+bot 组合 `/api/users/123` 总损耗为 4.08%，而仅 CC 的结果约 14.72%（该组基线波动较大，需在稳定 Linux 主机复测）。因此前述 `<5%` 结论只适用于核心无策略与组合短测，不能外推为所有策略、所有机器和 P99 延迟均达标。
+性能进展：请求入口已改为每 worker 只构造一次并复用/JIT 编译完整引擎；规则文件首次同步在 worker 接流量前完成，后续读取与 JSON 解码全部移到后台 timer，请求只按站点 ID 读取本地不可变快照；普通无参数 URI 使用字节级快速首筛。
+
+历史记录（2026-09-30，本地 Docker `wrk`，已被本轮结论取代）：三个端口交错测量、7 轮 × 5 秒取中位数，根路径总吞吐下降 2.71%，普通 API 路径 `/api/users/123` 总下降 4.93%（空 Lua hook 0.29%，WAF 逻辑 4.66%），相较优化前约 25.8% 已降至本地吞吐预算内。该组数据自身已暴露问题——根路径测量中空 Lua 端口比无 Lua 基线高 2.90%，且吞吐不能替代 P99 延迟对照。**本轮在 248 上复测未能复现该结论，`<5%` 目前处于未验证状态**，以本文开头「压测结论」一节为准。
+
+生产同款 `1panel/openresty:1.31.1.1-2-4-noble` 镜像下 `e2e_smoke.sh` 20 项已全部通过（本轮在 248 实测）。第一阶段三条验收标准的当前状态：**检出率实测 95.29%（去重口径），未达 `>= 99%`**；误报率 `<= 0.1%` 仍未验证；`<5%` 延迟增量因测量噪声未得出有效结论。控制面 API 到数据面的完整链路与浏览器验证本轮已完成。P1-P3 未实现项目继续以本文清单为准。
+开启 CC/bot 后的短测另行记录：CC 计数已改为按时间桶 key 的 shared-dict 原子 `incr`，去掉每请求 JSON 编解码；3 轮 × 3 秒交错测量中，CC+bot 组合 `/api/users/123` 总损耗为 4.08%，而仅 CC 的结果约 14.72%（该组基线波动较大，需在稳定 Linux 主机复测）。因此该组 `<5%` 结论同样不可外推为所有策略、所有机器和 P99 延迟均达标。
 
 ## 1. 定位与差异化
 

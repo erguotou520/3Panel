@@ -651,9 +651,12 @@ function _M.inspect(value, uri)
         {"lfi", function(v) return _M.detect_lfi(v, uri) end},
         {"ssrf", _M.detect_ssrf},
     }
+    -- 不逐个 pcall：LuaJIT 无法跨 pcall 编译，这里是整个引擎最热的循环，
+    -- 逐个包一层会把 detect_* 全部拖回解释器。检测器的异常由 access.lua
+    -- 入口那一层统一兜底，行为等价。
     for _, c in ipairs(checks) do
-        local ok, hit = pcall(c[2], value)
-        if ok and hit then
+        local hit = c[2](value)
+        if hit then
             return {type = c[1], value = value}
         end
     end

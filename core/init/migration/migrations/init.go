@@ -919,6 +919,23 @@ var AddWebsiteTemplateMenu = &gormigrate.Migration{
 	},
 }
 
+var AddWebsiteWAFMenu = &gormigrate.Migration{
+	ID: "20261002-add-website-waf-menu",
+	Migrate: func(tx *gorm.DB) error {
+		// WAF 的前端路由早已存在，但 Website-Menu 子项里一直没有它，
+		// 于是侧栏渲染不出来、页面只能靠手输地址（而手输会被后端拦截）。
+		return helper.UpsertChildMenuByLabel(tx, "Website-Menu", dto.ShowMenu{
+			ID:       "35",
+			Disabled: false,
+			Title:    "website.waf",
+			IsShow:   true,
+			Label:    "WebsiteWAF",
+			Path:     "/websites/waf",
+			Sort:     260,
+		}, "WebsiteTemplate")
+	},
+}
+
 func reconcileHideMenuSetting(tx *gorm.DB) error {
 	var setting model.Setting
 	if err := tx.Where("key = ?", "HideMenu").First(&setting).Error; err != nil {

@@ -3,10 +3,8 @@ package service
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"fmt"
 	"math/rand"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +20,10 @@ const (
 	// 首次拉取的抖动上限。全部实例在同一秒打 CI 会形成尖峰，
 	// 也不利于源站的限流策略。
 	initialJitter = 90 * time.Minute
+	// DefaultReportURL 是社区上报 Worker 的固定地址。上报目标由面板单方面
+	// 决定并已公开约定，不做成用户可填字段：允许自定义地址等于允许把
+	// 拦截事件（含来源 IP 与命中参数）投递到任意第三方，前端只需一个开关。
+	DefaultReportURL = "https://3panel-waf-reporter.erguotou.me/report"
 )
 
 var (
@@ -55,6 +57,9 @@ func (w WAFService) getIPListSetting() model.WAFIPListSetting {
 	if s.PanelID == "" {
 		s.PanelID = ensurePanelID()
 	}
+	// 旧版本存过空地址（或用户曾手工填过），这里统一收敛回固定常量，
+	// 否则 ReportEvent 会因为地址为空而静默跳过上报。
+	s.ReportURL = DefaultReportURL
 	return s
 }
 
@@ -63,15 +68,14 @@ func (w WAFService) UpdateIPListSetting(req model.WAFIPListSetting) error {
 	if req.IntervalHours < minIPListInterval {
 		req.IntervalHours = minIPListInterval
 	}
-	if req.ReportURL != "" && !strings.HasPrefix(req.ReportURL, "https://") {
-		return fmt.Errorf("上报地址必须以 https:// 开头")
-	}
 	s := w.getIPListSetting()
 	s.Enabled = req.Enabled
 	s.AutoUpdate = req.AutoUpdate
 	s.IntervalHours = req.IntervalHours
 	s.ReportEnabled = req.ReportEnabled
-	s.ReportURL = req.ReportURL
+	// 上报地址是固定常量，不接受前端传入：用户可改地址等于可把拦截事件
+	// （含来源 IP 与命中参数）投递到任意第三方。
+	s.ReportURL = DefaultReportURL
 	// PanelID 是本实例的稳定哈希，只在首次生成后固化：
 	// 上报端用它做去重，若每次都变则单个实例能伪装成多个。
 	if s.PanelID == "" {

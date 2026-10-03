@@ -33,10 +33,14 @@ type Mirror struct {
 }
 
 // DefaultMirrors 是内置的三个镜像，顺序即优先级：
-// 自建对象存储（最快最稳）→ 带 URL 前缀的代理（绕过 raw 不可达）→ 原生 raw。
+// 自建对象存储（最快最稳）→ GitHub Release 附件 → 原生 raw。
 //
 // 刻意不产出 .gz：meta.json 里经过验证的代理不透传 Content-Encoding，
 // 预压缩包经代理后会被错误解码。398KB 的裸包对 12 小时一次的拉取完全无压力。
+//
+// 后两个镜像的仓库名必须是实际发布制品的那个仓库，且制品在 Release 附件里
+// ——build-waf-iplist.yml 用 softprops/action-gh-release 以 tag waf-iplist-latest
+// 发布，并没有创建名为 waf-iplist 的分支，所以 raw 分支路径永远 404。
 var DefaultMirrors = []Mirror{
 	{
 		Name:    "cloudsmith",
@@ -44,14 +48,14 @@ var DefaultMirrors = []Mirror{
 		DataURL: "https://generic.cloudsmith.io/3panel/3panel/waf-iplist/latest/wl_v2.bin",
 	},
 	{
-		Name:    "proxy",
-		MetaURL: "https://proxy.erguotou.me/https://raw.githubusercontent.com/3panel-dev/3panel/waf-iplist/main/dist/meta.json",
-		DataURL: "https://proxy.erguotou.me/https://raw.githubusercontent.com/3panel-dev/3panel/waf-iplist/main/dist/wl_v2.bin",
+		Name:    "github-release",
+		MetaURL: "https://github.com/erguotou520/3Panel/releases/download/waf-iplist-latest/meta.json",
+		DataURL: "https://github.com/erguotou520/3Panel/releases/download/waf-iplist-latest/wl_v2.bin",
 	},
 	{
-		Name:    "github",
-		MetaURL: "https://raw.githubusercontent.com/3panel-dev/3panel/waf-iplist/main/dist/meta.json",
-		DataURL: "https://raw.githubusercontent.com/3panel-dev/3panel/waf-iplist/main/dist/wl_v2.bin",
+		Name:    "proxy",
+		MetaURL: "https://proxy.erguotou.me/https://raw.githubusercontent.com/erguotou520/3Panel/waf-iplist/main/dist/meta.json",
+		DataURL: "https://proxy.erguotou.me/https://raw.githubusercontent.com/erguotou520/3Panel/waf-iplist/main/dist/wl_v2.bin",
 	},
 }
 

@@ -36,9 +36,7 @@
             <template #main>
                 <!-- IP 黑名单订阅是全局配置，不依赖 OpenResty，未安装时也可用 -->
                 <el-tabs v-model="activeTab">
-                    <el-tab-pane :label="$t('website.wafIPList')" name="iplist">
-                        <IPListSetting />
-                    </el-tab-pane>
+                    <!-- WAF 防护在前：它是这个页面的主功能，IP 名单订阅是附属配置 -->
                     <el-tab-pane v-if="openRestyExist" :label="$t('website.waf')" name="site">
                         <Waf
                             v-if="selectedWebsite"
@@ -47,6 +45,9 @@
                             :waf-enabled="selectedWebsite.wafEnabled"
                         />
                         <el-empty v-else :description="$t('menu.website')" />
+                    </el-tab-pane>
+                    <el-tab-pane :label="$t('website.wafIPList')" name="iplist">
+                        <IPListSetting />
                     </el-tab-pane>
                 </el-tabs>
             </template>
@@ -64,8 +65,9 @@ import AppStatus from '@/components/app-status/index.vue';
 
 // 站点页签是站点级配置，IP 名单页签是全局配置 —— 两者混在一个页面，
 // 页签切换时要把站点选择器一并收起来，否则会出现"选了站点但当前页用不上"。
-// 未安装 OpenResty 时默认停在 IP 名单页签：站点级 WAF 此时无从谈起。
-const activeTab = ref<'site' | 'iplist'>('iplist');
+// WAF 防护排在前面，因此默认停在它；未安装 OpenResty 时由 checkOpenResty
+// 自动回落到 IP 名单页签 —— 站点级 WAF 此时无从谈起。
+const activeTab = ref<'site' | 'iplist'>('site');
 const openRestyExist = ref(false);
 const maskShow = ref(false);
 const loading = ref(false);

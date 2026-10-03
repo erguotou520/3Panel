@@ -218,10 +218,19 @@ local function rule_expired(rule)
     return ngx.time() >= t
 end
 
+-- JSON null 兜底。Go 把 nil 切片/映射导出为 JSON null，cjson 解码后是
+-- lightuserdata（cjson.null），它在 Lua 里是「真值」，`x or {}` 兜不住，
+-- 紧接着 #/ipairs/next 会抛 "attempt to get length of ... a userdata value"。
+local function table_of(v)
+    if type(v) == "table" then return v end
+    return {}
+end
+
 local function compiled_empty(compiled)
-    return not compiled or (not next(compiled.ip or {}) and not next(compiled.path or {})
+    if type(compiled) ~= "table" then return true end
+    return not next(compiled.ip or {}) and not next(compiled.path or {})
         and not next(compiled.method or {}) and not next(compiled.ua or {})
-        and not next(compiled.referer or {}) and not next(compiled.cookie or {}))
+        and not next(compiled.referer or {}) and not next(compiled.cookie or {})
 end
 
 function _M.get_site_state()
@@ -243,10 +252,15 @@ function _M.get_site_state_cached(site_id)
     -- has_any 在此处算一次。早先每请求调用 has_rules() 都会对
     -- compiled 的 6 张表各做一次 next()，两层共 12 次；它对同一份
     -- state 恒定不变，缓存后每请求零成本。
-    local global_rules_ = data.global and data.global.rules or {}
-    local global_compiled_ = data.global and data.global.compiled or {}
-    local site_rules_ = site and site.rules or {}
-    local site_compiled_ = site and site.compiled or {}
+    --
+    -- 注意不能用 `x and x.y or {}`：Go 把 nil 切片导出成 JSON null，
+    -- cjson 解出来是 lightuserdata，而它在 Lua 里是真值，`or` 兜不住，
+    -- 随后 `#` / `ipairs` 会直接报错（"attempt to get length of ...
+    -- a userdata value"）。统一走 table_of 兜底。
+    local global_rules_ = table_of(data.global and data.global.rules)
+    local global_compiled_ = table_of(data.global and data.global.compiled)
+    local site_rules_ = table_of(site and site.rules)
+    local site_compiled_ = table_of(site and site.compiled)
     local state = {
         site = site,
         has_any = #site_rules_ > 0 or #global_rules_ > 0
@@ -272,8 +286,8 @@ local function eval_list(list, dims)
     local deny_hit = nil
     for _, rule in ipairs(list) do
         if (rule.enabled == nil or rule.enabled == true) and not rule_expired(rule) then
-            local ok, hit = pcall(rule_hit, rule, dims)
-            if ok and hit then
+            local hit = rule_hit(rule, dims)
+            if hit then
                 if rule.action == "allow" then
                     return {hit = true, action = "allow", rule = rule}
                 elseif not deny_hit or (rule.priority or 100) < (deny_hit.rule.priority or 100) then
@@ -331,9 +345,9 @@ function _M.has_rules(state)
     if not state then return false end
     -- get_site_state 已预计算；外部构造的 state（测试）走原逻辑。
     if state.has_any ~= nil then return state.has_any end
-    local site_rules = state.site and state.site.rules or {}
-    local site_compiled = state.site and state.site.compiled or {}
-    local global_rules = state.global_rules or {}
+    local site_rules = table_of(state.site and state.site.rules)
+    local site_compiled = table_of(state.site and state.site.compiled)
+    local global_rules = table_of(state.global_rules)
     return #site_rules > 0 or #global_rules > 0
         or not compiled_empty(site_compiled) or not compiled_empty(state.global_compiled)
 end
@@ -344,9 +358,9 @@ end
 function _M.check(state)
     state = state or _M.get_site_state()
     if not state then return nil end
-    local site_rules = state.site and state.site.rules or {}
-    local site_compiled = state.site and state.site.compiled or {}
-    local global_rules = state.global_rules or {}
+    local site_rules = table_of(state.site and state.site.rules)
+    local site_compiled = table_of(state.site and state.site.compiled)
+    local global_rules = table_of(state.global_rules)
     if not _M.has_rules(state) then
         return nil
     end

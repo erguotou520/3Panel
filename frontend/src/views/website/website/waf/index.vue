@@ -13,32 +13,64 @@
                 <template #header>
                     <div class="card-header">
                         <span>{{ $t('website.wafStat') }}</span>
+                        <el-button link type="primary" @click="loadStat">{{ $t('commons.button.refresh') }}</el-button>
                     </div>
                 </template>
-                <el-row :gutter="20">
-                    <el-col :span="8">
-                        <h5>{{ $t('website.wafAttackType') }}</h5>
-                        <div v-for="item in stat.attackType" :key="item.key" class="stat-row">
-                            <span>{{ item.key || '-' }}</span>
-                            <el-tag type="danger" size="small">{{ item.count }}</el-tag>
+                <!-- 概览数字先给结论，再给分布：三个 KPI 平铺一行，
+                     趋势独占整行（时间维度需要宽度），类型与来源 IP 并排。 -->
+                <div class="waf-kpi">
+                    <div class="waf-kpi-item">
+                        <span class="waf-kpi-value">{{ statTotal }}</span>
+                        <span class="waf-kpi-label">{{ $t('website.wafStatTotal') }}</span>
+                    </div>
+                    <div class="waf-kpi-item">
+                        <span class="waf-kpi-value">{{ stat.attackType?.length || 0 }}</span>
+                        <span class="waf-kpi-label">{{ $t('website.wafAttackType') }}</span>
+                    </div>
+                    <div class="waf-kpi-item">
+                        <span class="waf-kpi-value">{{ stat.topIP?.length || 0 }}</span>
+                        <span class="waf-kpi-label">{{ $t('website.wafTopIP') }}</span>
+                    </div>
+                </div>
+
+                <div class="waf-stat-trend">
+                    <div class="waf-stat-title">{{ $t('website.wafTrend') }}</div>
+                    <VCharts
+                        v-if="stat.trend?.length"
+                        type="line"
+                        height="180px"
+                        :option="trendOption"
+                        class="waf-stat-chart"
+                    />
+                    <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
+                </div>
+
+                <el-row :gutter="16" class="mt-3">
+                    <el-col :xs="24" :md="12">
+                        <div class="waf-stat-title">{{ $t('website.wafAttackType') }}</div>
+                        <div v-if="stat.attackType?.length" class="waf-bars">
+                            <div v-for="item in stat.attackType" :key="item.key" class="waf-bar-row">
+                                <span class="waf-bar-name">{{ item.key || '-' }}</span>
+                                <div class="waf-bar-track">
+                                    <div class="waf-bar-fill" :style="{ width: barWidth(item.count) }" />
+                                </div>
+                                <span class="waf-bar-value">{{ item.count }}</span>
+                            </div>
                         </div>
-                        <el-empty v-if="!stat.attackType?.length" :image-size="40" />
+                        <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
                     </el-col>
-                    <el-col :span="8">
-                        <h5>Top IP</h5>
-                        <div v-for="item in stat.topIP" :key="item.key" class="stat-row">
-                            <span>{{ item.key }}</span>
-                            <el-tag size="small">{{ item.count }}</el-tag>
+                    <el-col :xs="24" :md="12">
+                        <div class="waf-stat-title">{{ $t('website.wafTopIP') }}</div>
+                        <div v-if="stat.topIP?.length" class="waf-bars">
+                            <div v-for="item in stat.topIP" :key="item.key" class="waf-bar-row">
+                                <span class="waf-bar-name waf-bar-ip">{{ item.key }}</span>
+                                <div class="waf-bar-track">
+                                    <div class="waf-bar-fill waf-bar-fill-ip" :style="{ width: barWidth(item.count) }" />
+                                </div>
+                                <span class="waf-bar-value">{{ item.count }}</span>
+                            </div>
                         </div>
-                        <el-empty v-if="!stat.topIP?.length" :image-size="40" />
-                    </el-col>
-                    <el-col :span="8">
-                        <h5>{{ $t('website.wafTrend') }}</h5>
-                        <div v-for="item in stat.trend" :key="item.key" class="stat-row">
-                            <span>{{ item.key }}</span>
-                            <el-tag type="warning" size="small">{{ item.count }}</el-tag>
-                        </div>
-                        <el-empty v-if="!stat.trend?.length" :image-size="40" />
+                        <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
                     </el-col>
                 </el-row>
             </el-card>
@@ -47,31 +79,32 @@
                 <template #header>
                     <div class="card-header">
                         <span>CC {{ $t('website.wafProtect') }}</span>
-                        <el-button type="primary" plain @click="saveCC">{{ $t('commons.button.save') }}</el-button>
+                        <div class="flex items-center gap-3">
+                            <el-switch v-model="cc.enabled" />
+                            <el-button type="primary" plain :disabled="!cc.enabled" @click="saveCC">
+                                {{ $t('commons.button.save') }}
+                            </el-button>
+                        </div>
                     </div>
                 </template>
-                <el-form label-width="140px" inline>
+                <!-- 关闭时把阈值等参数置灰但保留取值：直接隐藏会让用户
+                     重新开启后要再填一遍，配置也就无法"备而不用"。 -->
+                <el-form label-width="120px" class="waf-cc-form">
                     <el-form-item :label="$t('website.wafCCLimit')">
-                        <el-input-number v-model="cc.limit" :min="0" />
+                        <el-input-number v-model="cc.limit" :min="1" :disabled="!cc.enabled" />
                     </el-form-item>
                     <el-form-item :label="$t('website.wafCCWindow')">
-                        <el-input-number v-model="cc.window" :min="1" />
+                        <el-input-number v-model="cc.window" :min="1" :disabled="!cc.enabled" />
                     </el-form-item>
                     <el-form-item :label="$t('website.wafAction')">
-                        <el-select v-model="cc.action" style="width: 140px">
+                        <el-select v-model="cc.action" :disabled="!cc.enabled" class="p-w-150">
                             <el-option label="deny" value="deny" />
                             <el-option label="challenge" value="challenge" />
                             <el-option label="log" value="log" />
                         </el-select>
                     </el-form-item>
-                    <el-form-item :label="$t('website.wafFalsePositive')">
-                        <el-select v-model="logReq.falsePositive" clearable class="p-w-120">
-                            <el-option :label="$t('website.wafFalsePositiveMarked')" :value="true" />
-                            <el-option :label="$t('website.wafFalsePositiveUnmarked')" :value="false" />
-                        </el-select>
-                    </el-form-item>
                     <el-form-item :label="$t('website.wafCCByUri')">
-                        <el-switch v-model="cc.byUri" />
+                        <el-switch v-model="cc.byUri" :disabled="!cc.enabled" />
                     </el-form-item>
                 </el-form>
                 <el-alert :title="$t('website.wafCCTip')" type="info" :closable="false" />
@@ -254,9 +287,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
+import VCharts from '@/components/v-charts/index.vue';
 import {
     deleteWAFRule,
     createRuleFromWAFLog,
@@ -291,6 +325,39 @@ const logReq = ref<any>({
 });
 const logTimeRange = ref<Date[]>([]);
 const stat = ref<any>({ attackType: [], topIP: [], trend: [] });
+
+// 三个分组各有自己的量级，KPI 的「拦截总数」用趋势之和而不是某一组的最大值，
+// 否则「攻击类型 3 种」这种计数会被当成事件总数显示。
+const statTotal = computed(() => (stat.value.trend || []).reduce((sum: number, item: any) => sum + (item.count || 0), 0));
+
+const statMax = computed(() => {
+    const counts = [...(stat.value.attackType || []), ...(stat.value.topIP || [])].map((item: any) => item.count || 0);
+    return Math.max(1, ...counts);
+});
+
+const barWidth = (count: number) => `${Math.max(3, Math.round(((count || 0) / statMax.value) * 100))}%`;
+
+const trendOption = computed(() => {
+    const trend = stat.value.trend || [];
+    return {
+        grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
+        tooltip: { trigger: 'axis' },
+        xAxis: {
+            type: 'category',
+            data: trend.map((item: any) => item.key),
+            boundaryGap: false,
+        },
+        yAxis: { type: 'value', minInterval: 1 },
+        series: [
+            {
+                type: 'line',
+                smooth: true,
+                showSymbol: false,
+                data: trend.map((item: any) => item.count || 0),
+            },
+        ],
+    };
+});
 const cc = ref<any>({ websiteId: props.websiteId, limit: 0, window: 60, action: 'deny', byUri: false, enabled: false });
 const option = ref<any>({
     websiteId: props.websiteId,
@@ -423,5 +490,90 @@ onMounted(() => {
 }
 .mt-2 {
     margin-top: 12px;
+}
+.mt-3 {
+    margin-top: 16px;
+}
+/* KPI 平铺：先给结论，再给分布 */
+.waf-kpi {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+.waf-kpi-item {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border: 1px solid var(--el-border-color-lighter);
+    border-radius: 6px;
+    background-color: var(--el-fill-color-blank);
+}
+.waf-kpi-value {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+}
+.waf-kpi-label {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+}
+.waf-stat-title {
+    margin-bottom: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--el-text-color-regular);
+}
+/* 横向条形：比一列 el-tag 更易比较大小，且长 IP 不会撑破布局 */
+.waf-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.waf-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.waf-bar-name {
+    flex: 0 0 96px;
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.waf-bar-ip {
+    flex-basis: 130px;
+    font-family: monospace;
+}
+.waf-bar-track {
+    flex: 1;
+    height: 8px;
+    overflow: hidden;
+    border-radius: 4px;
+    background-color: var(--el-fill-color);
+}
+.waf-bar-fill {
+    height: 100%;
+    border-radius: 4px;
+    background-color: var(--el-color-danger);
+}
+.waf-bar-fill-ip {
+    background-color: var(--el-color-primary);
+}
+.waf-bar-value {
+    flex: 0 0 auto;
+    min-width: 32px;
+    font-size: 13px;
+    text-align: right;
+    color: var(--el-text-color-regular);
+}
+/* CC 表单：两列栅格而非 inline 顺排。inline 会在窄屏折行，
+   折行后的标签宽度由 label-width 固定，视觉上就散了。 */
+.waf-cc-form :deep(.el-form-item) {
+    display: flex;
+    align-items: center;
+    margin-right: 32px;
 }
 </style>

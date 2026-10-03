@@ -1,6 +1,5 @@
 <template>
     <div>
-        <RouterButton :buttons="routerButton" />
         <LayoutContent :title="$t('menu.template')">
             <template #leftToolBar>
                 <el-button v-permission type="primary" @click="openCreate()">
@@ -75,13 +74,6 @@ const opRef = ref();
 const operateRef = ref();
 const outputCreateRef = ref();
 const outputListRef = ref();
-
-const routerButton = [
-    {
-        label: i18n.global.t('menu.template'),
-        path: '/websites/templates',
-    },
-];
 
 const paginationConfig = reactive({
     cacheSizeKey: 'website-template-page-size',

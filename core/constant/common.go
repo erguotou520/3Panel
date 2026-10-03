@@ -153,6 +153,7 @@ var WebUrlMap = map[string]struct{}{
 	"/websites":                 {},
 	"/websites/templates":       {},
 	"/websites/ssl":             {},
+	"/websites/waf":             {},
 	"/websites/runtimes/php":    {},
 	"/websites/runtimes/node":   {},
 	"/websites/runtimes/java":   {},

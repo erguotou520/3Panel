@@ -119,7 +119,12 @@ func (w WAFService) SetWebsiteWAF(websiteID uint, enable bool) error {
 	return nil
 }
 
-// wafEnsureHTTPConfig 确保 openresty nginx.conf 的 http 块有 lua_package_path（幂等）
+// wafEnsureHTTPConfig 确保 openresty nginx.conf 的 http 块声明 waf 共享内存字典（幂等）
+//
+// 这里刻意不注入 lua_package_path：镜像自带的 1pwaf/data/conf/waf.conf 已经声明过该
+// 指令，同一 http 块里再来一条会让 nginx -t 以 "lua_package_path directive is
+// duplicate" 失败，于是开启 WAF 直接报错。模块目录改由 entry.lua 依据自身路径拼进
+// package.path，既避开冲突也不依赖 include 顺序。
 func wafEnsureHTTPConfig() error {
 	nginxInstall, err := getAppInstallByKey("openresty")
 	if err != nil {
@@ -138,37 +143,14 @@ func wafEnsureHTTPConfig() error {
 	if httpBlock == nil {
 		return fmt.Errorf("http block not found in nginx.conf")
 	}
-	packagePath := fmt.Sprintf("%s/?.lua;", path.Dir(wafutils.WAFDir))
 	// CC 计数与挑战所需的共享内存字典。不能用“是否存在任意共享字典”代替 waf_dict 检查。
-	hasWAFDict := false
 	for _, directive := range httpBlock.FindDirectives("lua_shared_dict") {
 		params := directive.GetParameters()
 		if len(params) > 0 && params[0] == "waf_dict" {
-			hasWAFDict = true
-			break
+			return nil
 		}
 	}
-	if !hasWAFDict {
-		httpBlock.UpdateDirective("lua_shared_dict", []string{"waf_dict", "32m"})
-	}
-	hasPackagePath := false
-	currentPackagePath := ""
-	for _, directive := range httpBlock.FindDirectives("lua_package_path") {
-		params := directive.GetParameters()
-		if len(params) > 0 {
-			currentPackagePath = params[0]
-			if strings.Contains(params[0], path.Dir(wafutils.WAFDir)+"/?.lua") {
-				hasPackagePath = true
-				break
-			}
-		}
-	}
-	if !hasPackagePath {
-		httpBlock.UpdateDirective("lua_package_path", []string{packagePath + currentPackagePath})
-	}
-	if hasWAFDict && hasPackagePath {
-		return nil
-	}
+	httpBlock.UpdateDirective("lua_shared_dict", []string{"waf_dict", "32m"})
 	rootConfig.FilePath = mainConfPath
 	if err := nginx.WriteConfig(rootConfig, nginx.IndentedStyle); err != nil {
 		return err
@@ -320,7 +302,9 @@ func (w WAFService) UpdateCCConfig(req request.WAFCCUpdate) error {
 	cc.Window = req.Window
 	cc.Action = req.Action
 	cc.ByURI = req.ByURI
-	cc.Enabled = req.Limit > 0
+	// 开关由前端显式给出。此前是从 Limit>0 派生的，导致「配好阈值先不启用」
+	// 无法表达：关掉防护就得把 limit 清零，下次开启还要重新填一遍。
+	cc.Enabled = req.Enabled && req.Limit > 0
 	if cc.Action == "" {
 		cc.Action = model.WAFActionDeny
 	}

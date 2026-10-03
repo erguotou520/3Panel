@@ -1,6 +1,5 @@
 <template>
     <div>
-        <RouterButton :buttons="routerButton" />
         <LayoutContent :title="$t('website.ssl', 2)">
             <template #leftToolBar>
                 <el-button v-permission type="primary" @click="openSSL()">
@@ -238,13 +237,6 @@ const req = reactive({
     orderBy: 'updated_at',
     order: 'descending',
 });
-
-const routerButton = [
-    {
-        label: i18n.global.t('website.ssl', 2),
-        path: '/websites/ssl',
-    },
-];
 
 const buttons = [
     {
