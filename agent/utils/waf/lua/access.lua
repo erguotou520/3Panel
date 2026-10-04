@@ -77,6 +77,10 @@ local function detect_request(start_ms)
         end
     end
     -- 请求体（仅 application/x-www-form-urlencoded / json，且不超过阈值）
+    --
+    -- 命中的请求体要作为第三个返回值交给日志：只有 URI/参数命中时日志里的
+    -- requestBody 天然为空，但 POST 命中时它是唯一的取证材料。之前 body 只是
+    -- 局部变量，日志恒为空，展开详情永远看不到请求内容。
     local ct = ngx.var.content_type or ""
     local cl = tonumber(ngx.var.content_length) or 0
     if cl > 0 and cl <= config.BODY_LIMIT and (ct:find("urlencoded", 1, true) or ct:find("json", 1, true) or ct:find("multipart", 1, true)) then
@@ -84,11 +88,11 @@ local function detect_request(start_ms)
         local body = ngx.req.get_body_data()
         if body then
             if ct:find("multipart", 1, true) and semantic.detect_upload(body) then
-                return "upload", "dangerous file upload"
+                return "upload", "dangerous file upload", body
             end
             local h = semantic.inspect(body, uri)
             if h then
-                return h.type, h.value
+                return h.type, h.value, body
             end
         end
     end
@@ -212,9 +216,10 @@ local function access_main()
     end
 
     -- 7. 语义检测
-    local atype, adetail = detect_request(start_ms)
+    -- abody 是命中的请求体（仅 POST 命中时有值），要交给日志留证。
+    local atype, adetail, abody = detect_request(start_ms)
     if atype then
-        log_event("deny", "semantic", atype, nil, adetail, start_ms)
+        log_event("deny", "semantic", atype, nil, adetail, start_ms, abody)
         return deny(atype)
     end
 end

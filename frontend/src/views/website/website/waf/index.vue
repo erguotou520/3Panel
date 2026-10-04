@@ -249,7 +249,7 @@
                     <el-table-column prop="action" :label="$t('website.wafAction')" width="80" />
                     <el-table-column prop="ip" label="IP" width="130" />
                     <el-table-column prop="area" label="GeoIP" width="140" show-overflow-tooltip />
-                    <el-table-column prop="method" :label="$t('home.method')" width="80" />
+                    <el-table-column prop="method" :label="$t('website.wafMethod')" width="80" />
                     <el-table-column prop="path" :label="$t('website.wafPath')" min-width="200" show-overflow-tooltip />
                     <el-table-column
                         prop="ruleName"
@@ -341,12 +341,22 @@ const barWidth = (count: number) => `${Math.max(3, Math.round(((count || 0) / st
 // 只认 xData / yData / formatStr。传标准结构（xAxis/yAxis/series）会让
 // `props.option.yAxis ? yAxis : {...}` 命中前一个分支并取到空数组，
 // 轴渲染直接抛 "Cannot read properties of undefined (reading 'group')"。
+//
+// formatStr 必须给：组件用它拼纵轴名 '( xxx )'，tooltip 也会把值与它
+// 拼接，缺省就是纵轴 "( undefined )"、tooltip "5undefined"。
+// 给"次"而不是空串：空串会让纵轴只剩一对空括号，读起来像渲染坏了。
 const trendOption = computed(() => {
     const trend = stat.value.trend || [];
     return {
         xData: trend.map((item: any) => item.key),
         yData: [{ name: i18n.global.t('website.wafTrend'), data: trend.map((item: any) => item.count || 0) }],
-        grid: { left: 8, right: 16, top: 16, bottom: 8, containLabel: true },
+        formatStr: i18n.global.t('website.wafTrendUnit'),
+        // 只有一个系列，图例是冗余的（右上角那一项还会重复轴标题）。
+        legend: { show: false },
+        // top 必须容得下轴名 '( 次 )'：echarts 把轴名放在网格外侧，
+        // top=16/28 时它被画布上边缘裁掉（实测顶部行有残留像素），
+        // 34 起完整。取 36 留一点余量。
+        grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
     };
 });
 const cc = ref<any>({ websiteId: props.websiteId, limit: 0, window: 60, action: 'deny', byUri: false, enabled: false });
