@@ -3321,6 +3321,7 @@ const message = {
         wafAction: '动作',
         wafMethod: '请求方法',
         wafRuleName: '规则',
+        wafNoRule: '非名单规则',
         wafAttackType: '攻击类型',
         wafPath: '路径',
         wafDetail: '命中详情',

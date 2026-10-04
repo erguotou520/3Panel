@@ -3502,6 +3502,7 @@ const message = {
         wafAction: 'Action',
         wafMethod: 'Method',
         wafRuleName: 'Rule',
+        wafNoRule: 'Not a list rule',
         wafAttackType: 'Attack type',
         wafPath: 'Path',
         wafDetail: 'Match detail',

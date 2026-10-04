@@ -256,7 +256,15 @@
                         :label="$t('website.wafRuleName')"
                         width="130"
                         show-overflow-tooltip
-                    />
+                    >
+                        <!-- 只有命中名单规则的记录才有规则名；语义/CC/bot/订阅
+                             层拦截时没有对应规则，显示占位符而不是空白单元格，
+                             否则整列看上去像数据没加载出来。 -->
+                        <template #default="{ row }">
+                            <span v-if="row.ruleName">{{ row.ruleName }}</span>
+                            <span v-else class="text-gray-400 text-xs">{{ $t('website.wafNoRule') }}</span>
+                        </template>
+                    </el-table-column>
                     <el-table-column :label="$t('commons.table.operate')" width="270" fixed="right">
                         <template #default="{ row }">
                             <el-button link type="primary" @click="onLogRule(row, 'allow')">
