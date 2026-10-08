@@ -2,19 +2,21 @@
     <div class="waf-iplist p-4">
         <el-card shadow="never" class="mb-4">
             <template #header>
-                <div class="flex items-center justify-between">
-                    <span>{{ $t('website.wafIPList') }}</span>
-                    <el-button size="small" :loading="syncing" @click="onSync">
-                        {{ $t('website.wafIPListSyncNow') }}
-                    </el-button>
+                <div class="card-header">
+                    <div>
+                        <span>{{ $t('website.wafIPList') }}</span>
+                        <span class="ml-2 text-gray-400 text-xs">{{ $t('website.wafIPListEnabledHint') }}</span>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <el-switch v-model="form.enabled" @change="onSave" />
+                        <el-button size="small" :loading="syncing" @click="onSync">
+                            {{ $t('website.wafIPListSyncNow') }}
+                        </el-button>
+                    </div>
                 </div>
             </template>
 
             <el-form label-width="180px">
-                <el-form-item :label="$t('website.wafIPListEnabled')">
-                    <el-switch v-model="form.enabled" @change="onSave" />
-                    <span class="ml-3 text-gray-400 text-xs">{{ $t('website.wafIPListEnabledHint') }}</span>
-                </el-form-item>
                 <el-form-item :label="$t('website.wafIPListAutoUpdate')">
                     <el-switch v-model="form.autoUpdate" :disabled="!form.enabled" @change="onSave" />
                     <el-input-number
@@ -32,7 +34,9 @@
 
         <el-card shadow="never" class="mb-4">
             <template #header>
-                <span>{{ $t('website.wafIPListStatus') }}</span>
+                <div class="card-header">
+                    <span>{{ $t('website.wafIPListStatus') }}</span>
+                </div>
             </template>
             <el-descriptions :column="2" border v-loading="loading">
                 <el-descriptions-item :label="$t('website.wafIPListInstalled')">
@@ -76,7 +80,10 @@
 
         <el-card shadow="never">
             <template #header>
-                <span>{{ $t('website.wafReport') }}</span>
+                <div class="card-header">
+                    <span>{{ $t('website.wafReport') }}</span>
+                    <el-switch v-model="form.reportEnabled" @change="onSave" />
+                </div>
             </template>
             <el-alert type="info" :closable="false" class="mb-3">
                 <template #title>{{ $t('website.wafReportPrivacy') }}</template>
@@ -85,8 +92,7 @@
                  可改地址等于允许把拦截事件（含来源 IP 与命中参数）投递到任意第三方。 -->
             <el-form label-width="180px">
                 <el-form-item :label="$t('website.wafReportEnabled')">
-                    <el-switch v-model="form.reportEnabled" @change="onSave" />
-                    <span class="ml-3 text-gray-400 text-xs">{{ $t('website.wafReportUrlFixed') }}</span>
+                    <span class="text-gray-400 text-xs">{{ $t('website.wafReportUrlFixed') }}</span>
                 </el-form-item>
             </el-form>
         </el-card>
@@ -125,13 +131,18 @@ const status = reactive<WAFIPListStatus>({
 const load = async () => {
     loading.value = true;
     try {
-        const data = (await getWAFIPListStatus()) as any;
+        // 响应拦截器返回的是完整信封 {code, message, data}，payload 在 res.data。
+        // 直接读 res.enabled 会全是 undefined，于是开关恒为「关」：用户点开 ->
+        // onSave 写库成功 -> 紧接着 load() 又把界面刷回「关」，看起来就是
+        // 「开启不了 / 改了不保存」。与本项目其它页面统一用 res.data。
+        const res = await getWAFIPListStatus();
+        const data = (res as any)?.data;
         Object.assign(status, data);
         Object.assign(form, {
-            enabled: !!data.enabled,
-            autoUpdate: data.autoUpdate !== false,
-            intervalHours: data.intervalHours || 12,
-            reportEnabled: !!data.reportEnabled,
+            enabled: !!data?.enabled,
+            autoUpdate: data?.autoUpdate !== false,
+            intervalHours: data?.intervalHours || 12,
+            reportEnabled: !!data?.reportEnabled,
         });
     } catch (error) {
         MsgError(i18n.global.t('commons.msg.operationFailed'));
@@ -176,3 +187,11 @@ const onSync = async () => {
 
 onMounted(load);
 </script>
+
+<style scoped>
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+</style>

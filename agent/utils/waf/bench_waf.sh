@@ -92,7 +92,7 @@ $(for p in 0 1 2; do
   else
     echo "    access_by_lua_file /www/waf/access.lua;"
   fi
-  echo "    location / { default_type text/plain; content_by_lua_block { ngx.say(\"ok\") } } }"
+  echo "    location / { default_type text/plain; content_by_lua_block { ngx.header[\"Content-Length\"]=2; ngx.print(\"ok\") } } }"
 done)
 }
 EOF
@@ -127,12 +127,21 @@ if command -v taskset >/dev/null 2>&1; then
   PIN="taskset -c 0-$((CPUS-1))"
 fi
 
-# 这台压测机装不上 wrk（apt 源无该包、GitHub 不可达），改用 ApacheBench。
-# ab 每轮只发一批请求，靠外层多轮取中位数压制噪声；它不 keep-alive，
-# 每次请求都要新建连接，绝对值偏低，但端口间可比 —— 开销是比值，不受影响。
+# 这台压测机装不上 wrk（apt 源无该包、GitHub 不可达），ab 也不行：
+# ab 不 keep-alive、也不报延迟分位数，连接建立的开销把 WAF 的 Lua 开销
+# 完全淹没（实测整条链路只有 ~5k rps），于是测出接近 0 甚至负数的假开销。
+# bench_load.py 是为此写的 keep-alive 多进程压测器，报 rps + P50/P90/P99。
+if [ ! -f ./bench_load.py ]; then
+  echo "缺少 bench_load.py，无法测量" >&2
+  exit 1
+fi
+BENCH_LOAD_PROCS=${BENCH_LOAD_PROCS:-2}
+BENCH_LOAD_CONNS=${BENCH_LOAD_CONNS:-8}
 measure() { # $1=端口
-  ab -n "${AB_N:-20000}" -c "${BENCH_CONC:-8}" -q "http://127.0.0.1:$1/" 2>/dev/null \
-    | awk '/Requests per second/ {print $4}'
+  python3 ./bench_load.py \
+    --port "$1" --conns "$BENCH_LOAD_CONNS" --procs "$BENCH_LOAD_PROCS" \
+    --duration "${BENCH_DURATION_SEC:-10}" ${BENCH_PATH:+--path "$BENCH_PATH"} 2>/dev/null \
+    | awk '{print $1, $2}'
 }
 
 echo
@@ -141,10 +150,15 @@ measure $((PORT_BASE+2)) >/dev/null
 
 echo "=== 交错测量 ${ROUNDS} 轮 ==="
 b=(); e=(); p=()
+bp=(); ep=(); pp=()   # 每轮的 P99
 for i in $(seq 1 "$ROUNDS"); do
-  b+=("$(measure $((PORT_BASE)))")
-  e+=("$(measure $((PORT_BASE+1)))")
-  p+=("$(measure $((PORT_BASE+2)))")
+  # rps 与 P99 分开取：measure 输出两列，分别落进两组数组
+  out=$(measure $((PORT_BASE)))
+  b+=("$(echo "$out" | cut -f1)"); bp+=("$(echo "$out" | cut -f2)")
+  out=$(measure $((PORT_BASE+1)))
+  e+=("$(echo "$out" | cut -f1)"); ep+=("$(echo "$out" | cut -f2)")
+  out=$(measure $((PORT_BASE+2)))
+  p+=("$(echo "$out" | cut -f1)"); pp+=("$(echo "$out" | cut -f2)")
   printf "\r  已完成 %d/%d  " "$i" "$ROUNDS"
 done
 echo
@@ -152,40 +166,55 @@ echo
 # 中位数 + 四分位距：IQR 反映测量稳定度，IQR 接近效应大小时数字不可信。
 # 不用 awk 的 `>` 重定向写临时文件：macOS 自带的是 BSD awk，
 # 同样的表达式会被解析成 `>>>` 语法而失败。改用 sort + shell 读取。
-stats() { # $1=label  其余为样本
-  local tmp
-  tmp=$(printf "%s\n" "${@:2}" | sort -n)
-  local med
+stats() { # $1=label  $2=小数位数  其余为样本
+  local label="$1" digits="$2"; shift 2
+  local tmp med q1 q3
+  tmp=$(printf "%s\n" "$@" | sort -n)
   med=$(printf "%s\n" "$tmp" | awk '{a[NR]=$1} END{print a[int((NR+1)/2)]}')
-  local q1 q3
   q1=$(printf "%s\n" "$tmp" | awk '{a[NR]=$1} END{print a[int(NR*0.25)+1]}')
   q3=$(printf "%s\n" "$tmp" | awk '{a[NR]=$1} END{print a[int(NR*0.75)+1]}')
-  awk -v m="$med" -v lo="$q1" -v hi="$q3" -v n="$1" \
-    'BEGIN{printf "  %-10s 中位数=%8.0f rps  IQR=%.1f%%\n", n, m, (hi-lo)*100/m}'
-  printf "%s" "$med" > "/tmp/bench_$1"
+  awk -v m="$med" -v lo="$q1" -v hi="$q3" -v n="$label" -v d="$digits" \
+    'BEGIN{printf "  %-16s 中位数=%8.*f  IQR=%.1f%%\n", n, d, m, (hi-lo)*100/m}'
+  printf "%s" "$med" > "/tmp/bench_$label"
 }
 
 echo
-echo "=== 各端口吞吐 ==="
-stats baseline "${b[@]}"
-stats empty_lua "${e[@]}"
-stats waf      "${p[@]}"
+echo "=== 各端口吞吐（rps）==="
+stats baseline 0 "${b[@]}"
+stats empty_lua 0 "${e[@]}"
+stats waf 0 "${p[@]}"
+echo
+echo "=== 各端口 P99 延迟（毫秒）==="
+stats baseline_p99 3 "${bp[@]}"
+stats empty_lua_p99 3 "${ep[@]}"
+stats waf_p99 3 "${pp[@]}"
 
 mb=$(cat /tmp/bench_baseline); me=$(cat /tmp/bench_empty_lua); mw=$(cat /tmp/bench_waf)
-rm -f /tmp/bench_baseline /tmp/bench_empty_lua /tmp/bench_waf
+mbp=$(cat /tmp/bench_baseline_p99); mep=$(cat /tmp/bench_empty_lua_p99); mwp=$(cat /tmp/bench_waf_p99)
+rm -f /tmp/bench_baseline /tmp/bench_empty_lua /tmp/bench_waf \
+      /tmp/bench_baseline_p99 /tmp/bench_empty_lua_p99 /tmp/bench_waf_p99
 
 echo
-awk -v b="$mb" -v e="$me" -v w="$mw" -v c="$CONC" 'BEGIN{
+awk -v b="$mb" -v e="$me" -v w="$mw" -v c="$CONC" \
+    -v bp="$mbp" -v ep="$mep" -v wp="$mwp" 'BEGIN{
   if (b <= 0 || e <= 0 || w <= 0) { print "  测量无效（某一组为空），请加长 BENCH_ROUNDS"; exit 1 }
   printf "=== 开销（c=%d）===\n", c
   printf "  挂 Lua 本身 : %6.2f%%\n", (b-e)*100/b
   printf "  WAF 逻辑    : %6.2f%%\n", (e-w)*100/e
   printf "  端到端合计  : %6.2f%%\n", (b-w)*100/b
-  if ((b-w)*100/b < 5) print "  => 达标（<5%）"
-  else                 print "  => 未达标（>=5%）"
+  printf "  P99 延迟    : baseline %.3fms -> waf %.3fms (%+.3fms)\n", bp, wp, wp-bp
+  if ((b-w)*100/b < 5) print "  => 吞吐达标（<5%）"
+  else                 print "  => 吞吐未达标（>=5%）"
 }'
 
 echo
 echo "=== 清理 ==="
-docker rm -f "$NAME" >/dev/null 2>&1
-echo "容器已删除（保留 KEEP_CONTAINER=1 可用于手工排查）"
+# KEEP_CONTAINER=1 时必须真的保留容器：早先这里无条件 rm -f，
+# 提示语说「保留 KEEP_CONTAINER=1 可用于手工排查」但代码从不读它，
+# 于是想复现问题时容器已经没了，只能靠猜。
+if [ "${KEEP_CONTAINER:-0}" = "1" ]; then
+  echo "容器 $NAME 已保留（KEEP_CONTAINER=1），排查用：docker logs $NAME"
+else
+  docker rm -f "$NAME" >/dev/null 2>&1
+  echo "容器已删除（设 KEEP_CONTAINER=1 可保留用于手工排查）"
+fi

@@ -18,16 +18,27 @@
                     />
                 </el-select>
             </template>
+            <template #rightToolBar>
+                <!-- 总开关放在标题栏右侧（与站点选择器同一行），
+                     与其它功能页「标题 + 右侧操作」的布局保持一致。 -->
+                <el-switch
+                    v-if="activeTab === 'site' && selectedWebsite"
+                    v-model="wafEnabled"
+                    @change="onToggleWAF"
+                />
+            </template>
             <template #main>
                 <!-- IP 黑名单订阅是全局配置，不依赖 OpenResty，未安装时也可用 -->
                 <el-tabs v-model="activeTab">
                     <!-- WAF 防护在前：它是这个页面的主功能，IP 名单订阅是附属配置 -->
                     <el-tab-pane v-if="openRestyExist" :label="$t('website.waf')" name="site">
+                        <!-- key 带 wafEnabled：启用/禁用都整体重建子页，
+                             避免依赖子组件 watch prop 的时机 -->
                         <Waf
                             v-if="selectedWebsite"
-                            :key="selectedWebsite.id"
+                            :key="`${selectedWebsite.id}-${wafEnabled}`"
                             :website-id="selectedWebsite.id"
-                            :waf-enabled="selectedWebsite.wafEnabled"
+                            :waf-enabled="wafEnabled"
                         />
                         <el-empty v-else :description="$t('menu.website')" />
                     </el-tab-pane>
@@ -44,9 +55,12 @@
 import { computed, onMounted, ref } from 'vue';
 import { listWebsites } from '@/api/modules/website';
 import { checkAppInstalled } from '@/api/modules/app';
+import { operateWebsiteWAF } from '@/api/modules/waf';
 import { Website } from '@/api/interface/website';
 import Waf from '@/views/website/website/waf/index.vue';
 import IPListSetting from '@/views/website/website/waf/iplist-setting.vue';
+import i18n from '@/lang';
+import { MsgSuccess } from '@/utils/message';
 
 // 站点页签是站点级配置，IP 名单页签是全局配置 —— 两者混在一个页面，
 // 页签切换时要把站点选择器一并收起来，否则会出现"选了站点但当前页用不上"。
@@ -60,8 +74,35 @@ const websites = ref<Website.WebsiteDTO[]>([]);
 const websiteId = ref(0);
 const selectedWebsite = computed(() => websites.value.find((item) => item.id === websiteId.value));
 
+// 总开关状态以当前选中站点为准：切换站点时同步刷新，
+// 避免开关显示的是上一个站点的启用状态。
+const wafEnabled = ref(false);
+const syncWafEnabled = () => {
+    wafEnabled.value = !!selectedWebsite.value?.wafEnabled;
+};
+// 重新拉站点列表：operateWebsiteWAF 不会就地改本地缓存，
+// 不重拉的话 syncWafEnabled 读到的还是操作前的 wafEnabled，
+// 开关会被弹回原状态（关闭时尤其明显——后端已禁用，界面仍显示开启）。
+const reloadWebsites = async () => {
+    const response = await listWebsites();
+    websites.value = (response.data || []).filter((item) => item.type !== 'stream');
+};
 const selectWebsite = (id: number) => {
     websiteId.value = id;
+    syncWafEnabled();
+};
+const onToggleWAF = async (val: boolean) => {
+    if (!selectedWebsite.value) return;
+    const id = selectedWebsite.value.id;
+    try {
+        await operateWebsiteWAF(id, val ? 'enable' : 'disable');
+        MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+        await reloadWebsites();
+        websiteId.value = id;
+        syncWafEnabled();
+    } catch {
+        wafEnabled.value = !val;
+    }
 };
 
 onMounted(async () => {
@@ -80,6 +121,7 @@ onMounted(async () => {
         }
         websites.value = (response.data || []).filter((item) => item.type !== 'stream');
         if (websites.value.length > 0) websiteId.value = websites.value[0].id;
+        syncWafEnabled();
     } finally {
         loading.value = false;
     }

@@ -84,6 +84,13 @@ func (w WAFService) UpdateIPListSetting(req model.WAFIPListSetting) error {
 	if err := global.DB.Save(&s).Error; err != nil {
 		return err
 	}
+	// 订阅开关随 rules.json 的 global.ipListEnabled 下发，数据面据此决定
+	// 是否查名单。不在这里同步的话，用户在前端关掉开关，数据面照拦 ——
+	// 开关就成了摆设（实测确认：update 返回 200，但 ipListEnabled 仍为 true）。
+	// 同步失败只记录不阻断：设置已落库，不能因为导出失败就告诉用户保存失败。
+	if err := w.syncDataPlane(); err != nil {
+		global.LOG.Errorf("sync waf data plane after iplist setting update failed: %v", err)
+	}
 	ipListNextRun = time.Time{}
 	return nil
 }
