@@ -93,13 +93,34 @@ def worker(port: int, path: bytes, conns: int, duration: float, out) -> None:
     reconnects = 0
     first_error = ""
     deadline = time.perf_counter() + duration
-    for s in socks:
-        s.settimeout(max(0.1, deadline - time.perf_counter()))
+
+    def connect(idx: int):
+        """重建第 idx 条连接；返回 None 表示建不起来（端口可能已没）。
+
+        不用 `socket.socket | None` 这种新式注解：压测机是 Python 3.8，
+        该写法在函数定义时就抛 TypeError，worker 还没进入循环就崩了，
+        主进程会永远卡在 out.get() 上（表现为压测脚本整体挂住）。
+        """
+        try:
+            s = socket.create_connection(("127.0.0.1", port), timeout=10)
+            s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            s.settimeout(max(0.1, deadline - time.perf_counter()))
+            return s
+        except OSError as exc:
+            if not first_error:
+                first_error = f"connect: {type(exc).__name__}: {exc}"
+            return None
+
+    for idx in range(len(socks)):
+        socks[idx].settimeout(max(0.1, deadline - time.perf_counter()))
+
+    dead = False
     try:
         while time.perf_counter() < deadline:
             for idx, s in enumerate(socks):
                 if time.perf_counter() >= deadline:
                     break
+                closed = False
                 try:
                     s.sendall(req)
                     t0 = time.perf_counter()
@@ -110,27 +131,36 @@ def worker(port: int, path: bytes, conns: int, duration: float, out) -> None:
                         latencies.append(dt)
                         count += 1
                     else:
+                        # b"000" 表示对端关闭了连接。这条连接已经废了，必须
+                        # 重建 —— 早先只在 except 分支里重连，「读到空」这条
+                        # 正常返回路径不重连，于是一条连接被关掉后，后续每次
+                        # 循环都立刻拿到 b"000"，进程空转到截止时间：吞吐塌到
+                        # 个位数 rps，而 P99 看起来完全正常（因为压根没有
+                        # 成功的请求可比）。这就是本机上 5 rps / 0.2 rps 的成因。
                         errors += 1
+                        closed = True
                 except (OSError, socket.timeout) as exc:
                     errors += 1
                     if not first_error:
                         first_error = f"{type(exc).__name__}: {exc}"
-                    # 必须重建连接。早先只是 break 掉本轮循环，下一轮又拿
-                    # 这条已损坏的 socket 继续 send/recv，每次都立刻失败 ——
-                    # 于是一个瞬时错误就废掉整条连接，进程空转到截止时间，
-                    # 表现为吞吐塌到个位数 rps 而 P99 看起来完全正常。
+                    closed = True
+
+                if closed:
                     try:
                         s.close()
                     except OSError:
                         pass
-                    try:
-                        s = socket.create_connection(("127.0.0.1", port), timeout=10)
-                        s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-                        s.settimeout(max(0.1, deadline - time.perf_counter()))
-                        socks[idx] = s
-                        reconnects += 1
-                    except OSError:
+                    fresh = connect(idx)
+                    if fresh is None:
+                        # 端口已无响应。必须跳出双层循环而不是 return ——
+                        # 直接 return 会跳过 out.put()，主进程会永远卡在
+                        # out.get() 上。
+                        dead = True
                         break
+                    socks[idx] = fresh
+                    reconnects += 1
+            if dead:
+                break
     finally:
         for s in socks:
             try:
