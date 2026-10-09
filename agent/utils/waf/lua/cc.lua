@@ -48,4 +48,26 @@ function _M.challenge_passed()
     return ok and passed
 end
 
+-- 启动自检：cc 计数器依赖 lua_shared_dict waf_dict。
+--
+-- waf.conf 里 `lua_shared_dict waf_dict 32m` 若被注释掉或改名，check() 会在
+-- 每个请求上打一条 ERR —— 但 nginx 的 error_log 在面板默认配置下是 notice
+-- 级别，ERR 之外也可能被采样丢弃，表现为「限流就是不生效」且毫无线索。
+-- 这里在 worker 初始化阶段一次性把结论写进日志，让静默失效可被定位。
+function _M.selfcheck()
+    if not dict then
+        ngx.log(ngx.ERR, "[waf] CC selfcheck FAILED: shared dict 'waf_dict' is not declared; ",
+            "check lua_shared_dict waf_dict in waf.conf — rate limiting will NOT run")
+        return false
+    end
+    local probe_key = "cc:selfcheck"
+    local count, err = dict:incr(probe_key, 1, 0, 60)
+    if not count then
+        ngx.log(ngx.ERR, "[waf] CC selfcheck FAILED: dict incr error: ", tostring(err))
+        return false
+    end
+    ngx.log(ngx.NOTICE, "[waf] CC selfcheck ok: shared dict 'waf_dict' usable")
+    return true
+end
+
 return _M

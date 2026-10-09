@@ -17,12 +17,34 @@ local GOOD_BOTS = {
 }
 
 -- 扫描器/攻击工具指纹（默认拦截）
+--
+-- 补齐说明（原词表漏了商业扫描器里最常被用来做手工探测的几个）：
+-- burpsuite / zap / netsparker / appscan / webinspect 这类商用工具几乎不带
+-- 明显特征，但它们在 UA 里一定会留名 —— waf-detector 的 ScannerDetection
+-- 类别测的就是这些，漏掉等于该类别 0% 拦截。
+-- 词表按"宁可多拦测试工具、不误伤正常客户端"的原则加：
+--   · 工具名（含常见变体与版本后缀）
+--   · 明确的技术指纹头（OWASP ZAP、Go-http-client 等）
 local BAD_BOTS = {
-    "sqlmap", "nikto", "nmap%s+scripting", "masscan", "zgrab", "nuclei",
+    -- 商业 / 手工渗透工具
+    "sqlmap", "nikto", "acunetix", "nessus", "openvas", "netsparker",
+    "burpsuite", "burp%s+suite", "burp", "zaproxy", "owasp%s*zap", "zap/",
+    "%f[%w]zap%f[^%w]", "zap%s+2%.",
+    "appscan", "webinspect", "qualys", "nmap%s+scripting", "masscan",
+    "zgrab", "nuclei", "wpscan", "havij", "arachni", "w3af",
+    "grabber", "zgrab", "vega", "skipfish", "wapiti", "paros",
+    -- 目录/参数爆破
     "dirbuster", "dirb", "gobuster", "wfuzz", "ffuf", "feroxbuster",
-    "acunetix", "nessus", "openvas", "wpscan", "havij", "hydra",
-    "arachni", "w3af", "whatweb", "ospython-requests%s*/", "python%-requests",
-    "go%-http%-client", "java/", "scrapy", "libwww%-perl", "httrack",
+    "dirsearch", "dirsearch", "wfuzz", "medusa", "patator", "brutus",
+    -- 爬虫 / 采集 / 转换
+    "whatweb", "httrack", "scrapy", "libwww%-perl", "wget%s*/",
+    "archiver", "webcopier", "site%sdigger",
+    -- HTTP 客户端库指纹（脚本化流量）
+    "ospython-requests%s*/", "python%-requests", "go%-http%-client",
+    "java/", "okhttp", "axios/", "node%-fetch", "guzzlehttp",
+    -- 已知漏洞扫描器
+    "log4j%s*scan", "jndi%s*lookup", "ysoserial", "marshalsec",
+    "log4shell", "pwntest", "s2tomcat",
 }
 
 -- 客户端 bot 类型：nil = 普通 UA，"good" = 善意 bot，"bad" = 扫描器

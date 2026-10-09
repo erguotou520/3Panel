@@ -239,8 +239,11 @@ func (w WAFService) SyncRules() error {
 	if err := global.DB.Where("enabled = ?", true).Order("priority asc").Find(&rules).Error; err != nil {
 		return err
 	}
+	// CC 不在 DB 层过滤 enabled：ExportRules 里本来就有 `!cc.Enabled` 判断。
+	// 提前过滤会让「禁用」在数据面上表现成「记录不存在」，一旦规则被跳过就再也无法
+	// 区分"显式关闭"与"未配置"，排查时看不到任何线索。
 	var ccs []model.WAFCCConfig
-	if err := global.DB.Where("enabled = ?", true).Find(&ccs).Error; err != nil {
+	if err := global.DB.Find(&ccs).Error; err != nil {
 		return err
 	}
 	var options []model.WAFOption

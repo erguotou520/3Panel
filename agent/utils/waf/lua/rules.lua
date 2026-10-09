@@ -42,6 +42,29 @@ local function refresh_rules(premature, path, content_key, lock_key)
     end
 end
 
+-- 把 rules.json 里各站点的可选防护模块显式记进日志。
+--
+-- 面板显示「CC 防护：已开启」而数据面实际不生效，是个静默失效：cc 段只在
+-- ExportRules 写出 cc 字段时才存在，缺失时 access.lua 拿到 nil 直接跳过，
+-- 既不拦截也不报错。这里在每 worker 首次加载后打一条汇总，日志里能直接
+-- 看出「面板开了但 rules.json 里没有 cc」，省掉逐条 payload 复现的功夫。
+local function report_protection_modules(data)
+    if not data or type(data.sites) ~= "table" then return end
+    for site_id, site in pairs(data.sites) do
+        if type(site) == "table" then
+            local cc = site.cc
+            local probe = site.probe
+            local bot = site.bot
+            ngx.log(ngx.NOTICE, "[waf] site ", site_id,
+                " enabled=", tostring(site.enabled ~= false),
+                " cc=", cc and (tostring(cc.limit) .. "/" .. tostring(cc.window) .. "s/" .. tostring(cc.action))
+                           or "absent(CC not enforced)",
+                " bot=", bot and tostring(bot.enabled) or "absent",
+                " probe=", probe and tostring(probe.enabled) or "absent")
+        end
+    end
+end
+
 local function periodic_refresh(premature, path, content_key, lock_key)
     if premature then return end
     if ngx.shared.waf_dict:add(lock_key, true, CACHE_TTL) then
@@ -66,6 +89,8 @@ function _M.start_refresh()
     -- Populate this worker before serving its first protected request. Later
     -- refreshes stay entirely on the timer path.
     refresh_rules(false, path, content_key, lock_key)
+    report_protection_modules(cache.data)
+    require("waf.cc").selfcheck()
     local ok, err = ngx.timer.at(1, periodic_refresh, path, content_key, lock_key)
     if not ok then
         refresh_started = false

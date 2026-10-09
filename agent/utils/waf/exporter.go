@@ -165,7 +165,13 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		}
 		if r.Scope == model.WAFScopeSite && r.WebsiteID != 0 {
 			key := fmt.Sprintf("%d", r.WebsiteID)
-			site := data.Sites[key]
+			site, ok := data.Sites[key]
+			// 站点不存在时不能凭空建条目：site 是零值，Enabled=false，
+			// 回写后这个站点会被 Lua 的 site_enabled() 判成关闭 ——
+			// 一条属于未知站点的规则反而把该站点的 WAF 关掉了。
+			if !ok {
+				continue
+			}
 			if site.Compiled.IP == nil {
 				site.Compiled = newCompiledRuleSet()
 			}
@@ -184,7 +190,10 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 			continue
 		}
 		key := fmt.Sprintf("%d", cc.WebsiteID)
-		site := data.Sites[key]
+		site, ok := data.Sites[key]
+		if !ok {
+			continue
+		}
 		if site.Compiled.IP == nil {
 			site.Compiled = newCompiledRuleSet()
 		}
@@ -196,7 +205,10 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 			continue
 		}
 		key := fmt.Sprintf("%d", opt.WebsiteID)
-		site := data.Sites[key]
+		site, ok := data.Sites[key]
+		if !ok {
+			continue
+		}
 		if site.Compiled.IP == nil {
 			site.Compiled = newCompiledRuleSet()
 		}
