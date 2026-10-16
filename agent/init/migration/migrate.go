@@ -115,6 +115,8 @@ func agentDBMigrations() []*gormigrate.Migration {
 		migrations.AddWAFTables,
 		migrations.AddWAFLogDisposition,
 		migrations.AddWAFIPListSettings,
+		migrations.AddWAFRuleKeepInspecting,
+		migrations.AddWAFOptionModeAndPage,
 	}
 }
 

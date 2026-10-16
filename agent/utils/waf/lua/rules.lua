@@ -309,17 +309,40 @@ end
 -- 在单层名单内评估：命中 allow 立即返回；deny 类命中按 priority 取最小（数值越小越优先）
 local function eval_list(list, dims)
     local deny_hit = nil
+    -- 「加白仍检测」的白名单：命中后不终止请求，而是把"继续检测"的决定
+    -- 交回调用方（access.lua），由它放行但继续跑后续检测链、只记日志不拦截。
+    -- 没有这一路时，用户点了误报反馈就等于让这段攻击彻底"看不见"了。
+    local inspect_hit = nil
     for _, rule in ipairs(list) do
         if (rule.enabled == nil or rule.enabled == true) and not rule_expired(rule) then
             local hit = rule_hit(rule, dims)
             if hit then
                 if rule.action == "allow" then
-                    return {hit = true, action = "allow", rule = rule}
+                    if rule.keep_inspecting or rule.keepInspecting then
+                        -- 只记最高优先级的一条（数值越小越优先），
+                        -- 免得日志里同一个请求刷出多条相同记录。
+                        if not inspect_hit or (rule.priority or 100) < (inspect_hit.rule.priority or 100) then
+                            inspect_hit = {hit = true, action = "allow", rule = rule, keep_inspecting = true}
+                        end
+                    else
+                        return {hit = true, action = "allow", rule = rule}
+                    end
                 elseif not deny_hit or (rule.priority or 100) < (deny_hit.rule.priority or 100) then
                     deny_hit = {hit = true, action = rule.action, rule = rule}
                 end
             end
         end
+    end
+    -- 普通 allow 已经在上面 return 了；走到这里说明要么无命中，要么只有
+    -- keep_inspecting 型 allow。有 keep_inspecting 时它优先于黑名单返回，
+    -- 否则"加白"就名存实亡。
+    if inspect_hit then
+        -- 把同层命中的 deny 一并带出去。
+        -- 丢弃它的话，access.lua 只看到 action=allow，
+        -- "命中了黑名单规则"这件事就彻底不可见 ——
+        -- 而"既放行又让你看见"正是这个开关的全部价值。
+        inspect_hit.deny_hit = deny_hit
+        return inspect_hit
     end
     return deny_hit
 end
@@ -359,7 +382,18 @@ end
 local function eval_layer(compiled, list, dims)
     local fast = eval_compiled(compiled, dims)
     local slow = eval_list(list, dims)
-    if fast and fast.action == "allow" then return fast end
+    -- keep_inspecting 优先于普通 allow。
+    --
+    -- compiled 表里只会有普通 allow（exporter 把带 keep_inspecting 的
+    -- 规则挡在了表外），但同一维度上另一条普通 allow 仍可能优先级更高。
+    -- 若直接 `if fast.action == allow then return fast`，keep_inspecting
+    -- 标记会被整个丢掉 —— 开关"保存成功但完全失效"，且没有任何日志提示。
+    if fast and fast.action == "allow" then
+        if slow and slow.keep_inspecting then
+            return slow
+        end
+        return fast
+    end
     if slow and slow.action == "allow" then return slow end
     if not fast then return slow end
     if not slow then return fast end

@@ -9,7 +9,6 @@ import (
 	"os"
 	"path"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -41,6 +40,8 @@ type IWAFService interface {
 	CreateRule(req request.WAFRuleCreate) error
 	UpdateRule(req request.WAFRuleUpdate) error
 	DeleteRule(id uint) error
+	// ReorderRules 按目标顺序重排优先级（黑白名单拖动排序）。
+	ReorderRules(req request.WAFRuleReorder) error
 	GetCCConfig(websiteID uint) (*model.WAFCCConfig, error)
 	UpdateCCConfig(req request.WAFCCUpdate) error
 	GetOption(websiteID uint) (*model.WAFOption, error)
@@ -364,6 +365,7 @@ func (w WAFService) createRule(req request.WAFRuleCreate, source string) error {
 		MatchOp: req.MatchOp, Action: req.Action, TTL: req.TTL,
 		ExpiresAt: expiresAt, Enabled: true,
 		Source: source, Remark: req.Remark,
+		KeepInspecting: req.KeepInspecting,
 	}
 	if err := global.DB.Create(&rule).Error; err != nil {
 		return err
@@ -390,6 +392,7 @@ func (w WAFService) UpdateRule(req request.WAFRuleUpdate) error {
 	rule.Action = req.Action
 	rule.Enabled = req.Enabled
 	rule.Remark = req.Remark
+	rule.KeepInspecting = req.KeepInspecting
 	if req.TTL > 0 {
 		rule.TTL = req.TTL
 		t := time.Now().Add(time.Duration(req.TTL) * time.Second)
@@ -404,6 +407,95 @@ func (w WAFService) UpdateRule(req request.WAFRuleUpdate) error {
 	if err := w.syncDataPlane(); err != nil {
 		_ = global.DB.Save(&original).Error
 		_ = w.syncDataPlane()
+		return err
+	}
+	return nil
+}
+
+// ReorderRules 按给定顺序重排黑白名单优先级。
+//
+// 前端传的是「拖完之后看到的完整顺序」，这里按下标重新编号：
+// 第一条 priority=1，第二条 2，以此类推。
+// 用固定步长 10 而不是连续数字，是给后续在中间插入留出空间 ——
+// 用户在列表里新建一条规则时不必重排全部。
+func (w WAFService) ReorderRules(req request.WAFRuleReorder) error {
+	if len(req.IDs) == 0 {
+		return fmt.Errorf("reorder requires at least one rule id")
+	}
+	// 同一批里出现重复 ID 会让编号互相覆盖，先拒掉。
+	seen := make(map[uint]bool, len(req.IDs))
+	for _, id := range req.IDs {
+		if id == 0 {
+			return fmt.Errorf("reorder contains zero id")
+		}
+		if seen[id] {
+			return fmt.Errorf("duplicate rule id in reorder: %d", id)
+		}
+		seen[id] = true
+	}
+
+	var originals []model.WAFRule
+	if err := global.DB.Where("id IN ?", req.IDs).Find(&originals).Error; err != nil {
+		return err
+	}
+	// 传了不存在的 ID 直接报错：静默忽略会让用户以为排序生效了，
+	// 实际部分规则没动，而列表里看不出差别。
+	if len(originals) != len(req.IDs) {
+		found := make(map[uint]bool, len(originals))
+		for _, r := range originals {
+			found[r.ID] = true
+		}
+		var missing []uint
+		for _, id := range req.IDs {
+			if !found[id] {
+				missing = append(missing, id)
+			}
+		}
+		return fmt.Errorf("reorder references unknown rule ids: %v", missing)
+	}
+
+	backup := make(map[uint]int, len(originals))
+	for _, r := range originals {
+		backup[r.ID] = r.Priority
+	}
+
+	// 事务：中途失败要能整体回滚，否则规则优先级会处于半更新状态，
+	// 而优先级直接决定名单的生效顺序，出错就是防护行为不确定。
+	err := global.DB.Transaction(func(tx *gorm.DB) error {
+		for i, id := range req.IDs {
+			priority := (i + 1) * 10
+			if err := tx.Model(&model.WAFRule{}).Where("id = ?", id).
+				Update("priority", priority).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		// 事务失败时 gorm 已自动 Rollback，DB 里就是原值，不需要再手工回滚。
+		//
+		// 曾经在这里多写一层手工回滚，副作用比看起来大：若事务是因
+		// SQLITE_BUSY 失败的，回滚后再发 N 条 UPDATE 会抢同一把写锁、
+		// 立刻再失败一遍，N 条错误日志把真正的根因（锁竞争）淹没。
+		// 而那段注释写的「此时数据已经不可信」也是错的 —— 事务已回滚，
+		// 数据恰恰是可信的，误导后续维护者以为事务不可靠。
+		return err
+	}
+
+	if err := w.syncDataPlane(); err != nil {
+		// 这里才需要手工回滚：事务已提交，DB 里是新值，
+		// 但数据面（rules.json）还是旧的 —— 优先级与实际生效顺序不一致。
+		for id, priority := range backup {
+			if rbErr := global.DB.Model(&model.WAFRule{}).Where("id = ?", id).
+				Update("priority", priority).Error; rbErr != nil {
+				// 回滚失败必须留下痕迹：此时 DB 是新值、数据面是旧值，
+				// 名单生效顺序处于不确定状态，需要人工介入。
+				global.LOG.Errorf("[waf] reorder rollback failed for rule %d: %v", id, rbErr)
+			}
+		}
+		if rbErr := w.syncDataPlane(); rbErr != nil {
+			global.LOG.Errorf("[waf] reorder re-sync after rollback failed: %v", rbErr)
+		}
 		return err
 	}
 	return nil
@@ -462,6 +554,27 @@ func (w WAFService) UpdateOption(req request.WAFOptionUpdate) error {
 	}
 	if req.ProbeMaxRPS > 0 {
 		opt.ProbeMaxRPS = req.ProbeMaxRPS
+	}
+	// Mode / 拦截页 / 检测器开关：空值保持原有。
+	// 刻意不用 `= req.X` 直接赋值 —— 前端只提交部分字段时（老版本前端、
+	// 或某个调用方只想改 bot 开关），直接赋值会把没带的字段清空。
+	if req.Mode != "" {
+		opt.Mode = req.Mode
+	}
+	if req.BlockPageTitle != "" {
+		opt.BlockPageTitle = req.BlockPageTitle
+	}
+	if req.BlockPageBody != "" {
+		opt.BlockPageBody = req.BlockPageBody
+	}
+	if req.BlockPageBgColor != "" {
+		opt.BlockPageBgColor = req.BlockPageBgColor
+	}
+	if req.BlockPageTextColor != "" {
+		opt.BlockPageTextColor = req.BlockPageTextColor
+	}
+	if req.DisabledDetectors != "" {
+		opt.DisabledDetectors = req.DisabledDetectors
 	}
 	if err := global.DB.Save(&opt).Error; err != nil {
 		return err
@@ -555,12 +668,43 @@ func (w WAFService) SearchLogs(req request.WAFLogSearch) (int64, []model.WAFLog,
 	if err := db.Count(&total).Error; err != nil {
 		return 0, nil, err
 	}
-	order := "created_at desc"
-	if req.Order == "asc" {
-		order = "created_at asc"
-	}
+	order := wafLogOrder(req)
 	err := db.Order(order).Offset((req.Page - 1) * req.PageSize).Limit(req.PageSize).Find(&logs).Error
 	return total, logs, err
+}
+
+// wafLogSortableColumns 是日志查询允许排序的列白名单。
+// 白名单是必须的：Order 的字符串会被拼进 SQL ORDER BY，
+// 直接透传前端传来的列名等于开放 SQL 注入面。
+var wafLogSortableColumns = map[string]string{
+	"":               "created_at",
+	"created_at":     "created_at",
+	"ip":             "ip",
+	"attack_type":    "attack_type",
+	"action":         "action",
+	"duration_ms":    "duration_ms",
+	"path":           "path",
+	"website_id":     "website_id",
+	"false_positive": "false_positive",
+}
+
+// wafLogOrder 组装 ORDER BY 子句。列名走白名单映射，
+// 未知列一律退回 created_at；方向只认 asc/desc，其余按 desc。
+// 附加 id 作为次级排序键：created_at 有秒级精度，同秒插入的多条记录
+// 若不追加 tie-breaker，分页时会出现同一条记录在两页里各出现一次。
+func wafLogOrder(req request.WAFLogSearch) string {
+	col, ok := wafLogSortableColumns[req.OrderBy]
+	if !ok {
+		col = "created_at"
+	}
+	dir := "desc"
+	if strings.EqualFold(req.Order, "asc") {
+		dir = "asc"
+	}
+	if col == "created_at" {
+		return "created_at " + dir + ", id " + dir
+	}
+	return col + " " + dir + ", id " + dir
 }
 
 type WAFStatItem struct {
@@ -585,7 +729,13 @@ func (w WAFService) StatLogs(req request.WAFLogSearch) (map[string][]WAFStatItem
 		}
 		return db
 	}
-	res := map[string][]WAFStatItem{}
+	// 三个维度都初始化成空切片而非 nil：无数据时 JSON 序列化成 [] 而不是 null，
+	// 前端的 stat.attackType?.length 拿到的是 0 而不是抛错。
+	res := map[string][]WAFStatItem{
+		"attackType": {},
+		"topIP":      {},
+		"trend":      {},
+	}
 	var byType, byIP []WAFStatItem
 	if err := newBase().Select("attack_type as key, count(*) as count").Where("attack_type != ''").Group("attack_type").Scan(&byType).Error; err != nil {
 		return nil, err
@@ -593,20 +743,16 @@ func (w WAFService) StatLogs(req request.WAFLogSearch) (map[string][]WAFStatItem
 	if err := newBase().Select("ip as key, count(*) as count").Group("ip").Order("count desc").Limit(10).Scan(&byIP).Error; err != nil {
 		return nil, err
 	}
-	var rows []model.WAFLog
-	if err := newBase().Select("created_at").Scan(&rows).Error; err != nil {
+	if byType == nil {
+		byType = []WAFStatItem{}
+	}
+	if byIP == nil {
+		byIP = []WAFStatItem{}
+	}
+	byTime, err := statLogsTrend(newBase(), req)
+	if err != nil {
 		return nil, err
 	}
-	trendMap := map[string]int64{}
-	for _, r := range rows {
-		day := r.CreatedAt.Format("2006-01-02")
-		trendMap[day]++
-	}
-	byTime := make([]WAFStatItem, 0, len(trendMap))
-	for day, count := range trendMap {
-		byTime = append(byTime, WAFStatItem{Key: day, Count: count})
-	}
-	sort.Slice(byTime, func(i, j int) bool { return byTime[i].Key < byTime[j].Key })
 	res["attackType"] = byType
 	res["topIP"] = byIP
 	res["trend"] = byTime
@@ -710,6 +856,11 @@ func (w WAFService) MarkFalsePositive(req request.WAFFalsePositiveOp) error {
 		Action:     model.WAFActionAllow,
 		TTL:        ttl,
 		Remark:     remark,
+		// 误报反馈默认开启「加白时仍检测」：
+		// 用户点这一下是为了"别再拦我"，不是"别再让我看见"。
+		// 默认彻底放行的话，这条攻击后续就彻底消失在视野里 ——
+		// 万一误报的是真攻击，运营无从察觉。
+		KeepInspecting: true,
 	}, "false_positive"); err != nil {
 		log.FalsePositive, log.DispositionRemark, log.DispositionAt = originalFalsePositive, originalRemark, originalAt
 		_ = global.DB.Save(&log).Error
@@ -937,4 +1088,34 @@ func toFloat(v interface{}) float64 {
 		return f
 	}
 	return 0
+}
+
+// statLogsTrend 按时间桶聚合趋势。
+//
+// 历史实现是把时间范围内的每一行日志 Select 到 Go 内存里再按天计数，
+// 注释理由是「避免依赖特定数据库的日期函数」。代价是查询量随日志量线性增长：
+// 一个月的高流量站点能轻松到百万行，直接把 agent 进程撑爆。
+//
+// 现在改成在 SQL 侧分组：日志表已有 created_at 索引，分组只扫索引不扫表体。
+// 日期格式化用 SQLite 与 MySQL 都支持的 strftime（agent 固定跑 SQLite）。
+func statLogsTrend(base *gorm.DB, req request.WAFLogSearch) ([]WAFStatItem, error) {
+	format := "%Y-%m-%d"
+	if req.TrendGranularity == "hour" {
+		format = "%Y-%m-%d %H"
+	}
+	var rows []WAFStatItem
+	// 注意 gorm 的链式条件不可复用：Group 会写进 statement，
+	// 所以这里直接用传进来的 base（调用方每次都新建），不缓存。
+	err := base.
+		Select("strftime('" + format + "', created_at) as key, count(*) as count").
+		Group("strftime('" + format + "', created_at)").
+		Order("key asc").
+		Scan(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	if rows == nil {
+		rows = []WAFStatItem{}
+	}
+	return rows, nil
 }

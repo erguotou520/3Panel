@@ -3,6 +3,22 @@
 local normalize = require("waf.normalize")
 local _M = {}
 
+-- 被关闭的语义检测器集合（nil = 全部启用）。
+--
+-- 必须是**模块级**：setter 定义在函数外，若声明在 inspect 函数体内，
+-- 两者不是同一个变量 —— 赋值看着成功，inspect 却永远读到 nil（静默失效）。
+--
+-- 做成运行时状态而不是每次从配置读：inspect 是热路径，
+-- 每请求读一遍配置会把 JSON 解析成本乘以 QPS。
+-- access.lua 每次请求都会重新灌（读的是 rules.json 的 5 秒 TTL 缓存）。
+local disabled_detectors = nil
+
+-- 检测器是否已被关闭。checks 数组之外的独立检出路径
+-- （exposure / sensitive_path）必须走这个函数，否则关掉它们不生效。
+local function detector_off(name)
+    return disabled_detectors ~= nil and disabled_detectors[name] == true
+end
+
 -- ============ SQL 注入 ============
 -- SQL 语法结构指纹：识别「输入能构成合法 SQL 片段」而非命中关键字
 local SQL_LOGIC_OPS = {["or"]=true, ["and"]=true, ["xor"]=true}
@@ -953,7 +969,11 @@ function _M.inspect(value, uri)
     if not has_attack_candidate(lower) then
         return nil
     end
-    if _M.detect_exposure(value) then return {type = "exposure", value = value} end
+    -- exposure 走独立分支（不进 checks 数组），所以必须单独判开关，
+    -- 否则界面上关掉它照样拦。
+    if not detector_off("exposure") and _M.detect_exposure(value) then
+        return {type = "exposure", value = value}
+    end
     local checks = {
         {"log4shell", _M.detect_log4shell},
         {"code_injection", _M.detect_code_injection},
@@ -974,12 +994,46 @@ function _M.inspect(value, uri)
     -- 逐个包一层会把 detect_* 全部拖回解释器。检测器的异常由 access.lua
     -- 入口那一层统一兜底，行为等价。
     for _, c in ipairs(checks) do
-        local hit = c[2](value)
-        if hit then
-            return {type = c[1], value = value}
+        -- 关闭的检测器直接跳过。
+        --
+        -- 判断必须用「值恰为 true」而不是 next(t[k])：
+        --   · next(t[k]) 在 k 不存在时是 next(nil) → 直接报
+        --     "bad argument #1 to 'next' (table expected, got nil)"；
+        --   · 若改成「值为真」，键名 "0"/""/"false" 这些边界值会被
+        --     误判成未关闭。setter 里只写入字符串键，故 == true 足够严格。
+        if detector_off(c[1]) then
+            -- 该检测器被关掉，继续下一个
+        else
+            local hit = c[2](value)
+            if hit then
+                return {type = c[1], value = value}
+            end
         end
     end
     return nil
+end
+
+-- 设置被关闭的检测器集合。names 为 nil 或空表 = 全部启用。
+--
+-- 传数组（JSON 解出来就是数组）时转成 set，让 inspect 里是 O(1) 查表。
+
+function _M.set_disabled_detectors(names)
+    if not names or #names == 0 then
+        disabled_detectors = nil
+        return
+    end
+    local set = {}
+    for _, name in ipairs(names) do
+        if type(name) == "string" and name ~= "" then
+            set[name] = true
+        end
+    end
+    disabled_detectors = next(set) and set or nil
+end
+
+-- 仅供测试：当前被关闭的检测器集合
+function _M.get_disabled_detectors()
+    return disabled_detectors
 end
 
 -- URI-only fast gate for requests without query/body. Token lookup is cheaper
@@ -1014,7 +1068,7 @@ function _M.inspect_uri(value)
         end
         -- 无点号的敏感路径（/etc/passwd / /actuator/env）走不到下面的模式分支，
         -- 必须在这里单独判一次，否则字节扫描的"plain 快速路径"会把它们直接放过。
-        if _M.detect_sensitive_path(value) then
+        if not detector_off("sensitive_path") and _M.detect_sensitive_path(value) then
             return {type = "sensitive_path", value = value}
         end
         return nil
@@ -1033,7 +1087,7 @@ function _M.inspect_uri(value)
         -- 没有任何攻击特征"的串不在候选词表里，会被提前 return nil ——
         -- 于是 /a.bak 漏网、/config.php.bak 却能拦（它含 .php，过得了筛）。
         -- 先各自问一次专用的敏感路径检测器，再决定是否交给 inspect 深挖。
-        if _M.detect_sensitive_path(value) then
+        if not detector_off("sensitive_path") and _M.detect_sensitive_path(value) then
             return {type = "sensitive_path", value = value}
         end
         return _M.inspect(value, value)
@@ -1041,7 +1095,7 @@ function _M.inspect_uri(value)
     -- 敏感路径探测走查表：.env / .git/config / wp-config.php / id_rsa 这类，
     -- 多数含 '.' 所以已经落到这里；但 /etc/passwd（无点）会被上面的 plain
     -- 分支提前 return nil，所以那一类要在 plain 分支里也放行。
-    if _M.detect_sensitive_path(value) then
+    if not detector_off("sensitive_path") and _M.detect_sensitive_path(value) then
         return {type = "sensitive_path", value = value}
     end
     return nil
@@ -1212,5 +1266,6 @@ function _M.detect_sensitive_path(value)
 end
 
 _M.attack_types = {"sqli", "xss", "rce", "lfi", "ssrf", "upload", "log4shell", "code_injection", "ssti", "deserialization", "xxe", "exposure", "prototype_pollution", "graphql", "sensitive_path"}
+
 
 return _M

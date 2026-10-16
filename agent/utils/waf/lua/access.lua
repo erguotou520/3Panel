@@ -26,11 +26,89 @@ local function client_ip()
     return ngx.var.remote_addr or ""
 end
 
-local function deny(attack_type, rule, detail)
+-- HTML 转义。拦截页的标题与正文来自面板配置（用户自己填），
+-- 但这个页面会展示给所有访问者 —— 包括攻击者。所以必须转义，
+-- 否则一个"精心构造的提示文案"就成了给站点注入脚本的入口。
+local function html_escape(s)
+    if not s or s == "" then return nil end
+    s = s:gsub("&", "&amp;")
+    s = s:gsub("<", "&lt;")
+    s = s:gsub(">", "&gt;")
+    s = s:gsub('"', "&quot;")
+    s = s:gsub("'", "&#39;")
+    return s
+end
+
+-- 颜色只接受 #RGB / #RRGGBB / 少量具名色，其余一律回退默认。
+-- 颜色值会拼进 style 属性，放任用户输入等于允许 CSS 注入
+-- （expression()、url(javascript:) 这类在老浏览器上能执行脚本）。
+local COLOR_PATTERN = "^#%x%x%x%x%x%x$"
+local NAMED_COLORS = {
+    black = "#1f2328", white = "#ffffff", red = "#d1242f",
+    orange = "#bc4c00", yellow = "#9a6700", green = "#1a7f37",
+    blue = "#0969da", gray = "#6e7781", grey = "#6e7781",
+}
+
+local function safe_color(v, fallback)
+    if not v or v == "" then return fallback end
+    v = v:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    if v:match(COLOR_PATTERN) then return v end
+    return NAMED_COLORS[v] or fallback
+end
+
+-- 渲染拦截页。cfg 为 nil 时用内置默认样式。
+local function render_block_page(cfg, default_title, default_body)
+    local title = html_escape(cfg and cfg.title) or default_title
+    local body = html_escape(cfg and cfg.body) or default_body
+    local bg = safe_color(cfg and cfg.bgColor, "#ffffff")
+    local fg = safe_color(cfg and cfg.textColor, "#1f2328")
     ngx.status = 403
     ngx.header.content_type = "text/html; charset=utf-8"
-    ngx_say("<html><body><h1>403 Forbidden</h1><p>Blocked by 3panel WAF</p></body></html>")
+    ngx.say('<!DOCTYPE html><html><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width,initial-scale=1">',
+            '<title>', title, '</title><style>',
+            'body{margin:0;min-height:100vh;display:flex;align-items:center;',
+            'justify-content:center;background:', bg, ';color:', fg, ';',
+            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}',
+            'h1{font-size:20px;margin:0 0 12px}p{font-size:14px;line-height:1.7;margin:0;opacity:.8}',
+            '</style></head><body><div><h1>', title, '</h1><p>', body, '</p></div></body></html>')
     return ngx_exit(403)
+end
+
+-- 维护模式：所有请求返回维护页，状态码 503（Service Unavailable）而不是 403——
+-- 503 表达"服务暂时不可用"，对搜索引擎与监控都更准确；403 会被当成客户端错误。
+local function maintenance_page(cfg)
+    local title = html_escape(cfg and cfg.title) or "Service temporarily unavailable"
+    local body = html_escape(cfg and cfg.body) or "The site is under maintenance. Please try again later."
+    local bg = safe_color(cfg and cfg.bgColor, "#f6f8fa")
+    local fg = safe_color(cfg and cfg.textColor, "#1f2328")
+    ngx.status = 503
+    ngx.header.content_type = "text/html; charset=utf-8"
+    ngx.say('<!DOCTYPE html><html><head><meta charset="utf-8">',
+            '<meta name="viewport" content="width=device-width,initial-scale=1">',
+            '<title>', title, '</title><style>',
+            'body{margin:0;min-height:100vh;display:flex;align-items:center;',
+            'justify-content:center;background:', bg, ';color:', fg, ';',
+            'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;padding:24px}',
+            'h1{font-size:20px;margin:0 0 12px}p{font-size:14px;line-height:1.7;margin:0;opacity:.8}',
+            '</style></head><body><div><h1>', title, '</h1><p>', body, '</p></div></body></html>')
+    return ngx_exit(503)
+end
+
+-- 拦截。cfg 是当前请求的站点配置（access_main 里的 local，按参数传进来）。
+--
+-- 刻意不用模块级变量存它：LuaJIT 每 worker 只有一份模块实例，
+-- 模块级 local 会跨请求残留 —— 站点 A（observe）之后，
+-- 站点 B（enabled=false）在赋值前就 return，模块里存的仍是 A 的配置。
+-- 虽然 B 不会调 deny，但那是靠调用顺序侥幸对的，不是结构上保证的。
+--
+-- observe 模式下不真正拒绝，只记日志后返回；日志 action 仍是 deny，
+-- 便于在界面上区分「若开启会拦」与「已放行」。
+local function deny(cfg, attack_type, rule, detail)
+    if cfg and cfg.mode == "observe" then
+        return
+    end
+    return render_block_page(cfg and cfg.blockPage, "403 Forbidden", "Blocked by 3panel WAF")
 end
 
 local function log_event(action, layer, attack_type, rule, detail, start_ms, body)
@@ -190,20 +268,58 @@ local function access_main()
         return
     end
 
+    -- 站点配置在整条流水线里都要用（拦截页渲染、维护模式、observe 降级），
+    -- 在这里取一次。enabled==false 已在上面 return，所以拿到 site 一定非空。
+    local site_cfg = state.site
+
+    -- 把「被关闭的语义检测器」灌进检测引擎。
+    -- 每次请求都灌：rules.json 本身有 5 秒 TTL 缓存，这里读的是缓存里的值，
+    -- 成本只是一次字段读取 + 可能的 set 构建，不是 JSON 解析。
+    --
+    -- 注意顺序：必须在任何 semantic 调用之前。
+    semantic.set_disabled_detectors(site_cfg and site_cfg.disabled_detectors)
+
+    -- 维护模式：挡住全部流量，状态码 503。
+    -- 放在所有检测之前 —— 维护期间不该再产生任何攻击日志，
+    -- 也没有必要付出检测开销。
+    if site_cfg and site_cfg.mode == "maintenance" then
+        return maintenance_page(site_cfg.blockPage)
+    end
+
     -- 1. 名单引擎
+    -- inspect_only 为真表示"本请求已加白但仍检测"：
+    -- 后续所有拦截动作降级为仅记录，不再真的拒绝。
+    local inspect_only = false
     local res
     if rules.has_rules(state) then
         res = rules.check(state)
     end
     if res then
         if res.action == "allow" then
-            return -- 白名单：直接放行，跳过所有检测
+            if res.keep_inspecting then
+                -- 「加白仍检测」：放行但继续跑后面的检测链。
+                -- 与普通白名单的区别是这里不 return —— 后续任何拦截动作
+                -- 都会因为 inspect_only 为真而降级成"只记日志"。
+                inspect_only = true
+                log_event("log", "rules", "whitelist", res.rule,
+                    "hit whitelist rule, keep inspecting", start_ms)
+                -- 同层若还命中了黑名单，把它记下来。
+                -- rules.check 会把 deny 一并带出（res.deny_hit）；不记的话
+                -- 用户只看到"命中白名单"，完全不知道自己的黑名单其实也命中了 ——
+                -- 而"看见"正是这个开关的全部价值。
+                if res.deny_hit and res.deny_hit.rule then
+                    log_event("deny", "rules", "blacklist", res.deny_hit.rule,
+                        "hit blacklist rule but whitelisted with keep-inspecting", start_ms)
+                end
+            else
+                return -- 白名单：直接放行，跳过所有检测
+            end
         elseif res.action == "deny" then
             log_event("deny", "rules", "blacklist", res.rule, "hit blacklist rule", start_ms)
-            return deny()
+            if not inspect_only then return deny(site_cfg) end
         elseif res.action == "challenge" then
             log_event("challenge", "rules", "blacklist", res.rule, "hit challenge rule", start_ms)
-            return challenge.respond()
+            if not inspect_only then return challenge.respond() end
         elseif res.action == "log" then
             log_event("log", "rules", "blacklist", res.rule, "hit monitor rule", start_ms)
             -- 仅记录，不拦截
@@ -225,7 +341,14 @@ local function access_main()
     local in_blacklist = iplist.in_list(client_ip())
     if in_blacklist then
         log_event("deny", "subscription", "ip_blacklist", nil, "source ip in subscription blocklist", start_ms)
-        return deny("ip_blacklist")
+        -- 这一层刻意不受 inspect_only 影响。
+        --
+        -- 订阅名单是用户改不了的外部数据源（自动更新），用户唯一的自救手段
+        -- 就是往自己的白名单里加IP。若 inspect_only 能把它降级成"只记日志"，
+        -- 误伤就变成既无法规避、也看不见自己被拦的死局 —— 比直接拦截更糟。
+        --
+        -- 语义/CC/bot 这类层不同：它们的开关就在用户面板上，随时能调。
+        return deny(site_cfg, "ip_blacklist")
     end
     end
 
@@ -245,7 +368,7 @@ local function access_main()
             return -- 善意 bot 直接放行，跳过检测
         elseif bot_verdict == "bad" then
             log_event("deny", "bot", "scanner", nil, "blocked scanner user-agent", start_ms)
-            return deny()
+            if not inspect_only then return deny(site_cfg) end
         end
     else
         -- 未配置 bot：仍拦扫描器 UA，只是不放行任何"善意 bot"
@@ -253,7 +376,7 @@ local function access_main()
         if kind == "bad" then
             log_event("deny", "bot", "scanner", nil,
                 "blocked scanner user-agent (bot module not configured)", start_ms)
-            return deny()
+            if not inspect_only then return deny(site_cfg) end
         end
     end
 
@@ -263,10 +386,10 @@ local function access_main()
         local verdict = cc.check(cc_conf)
         if verdict == "deny" then
             log_event("deny", "cc", "cc", nil, "rate limit exceeded", start_ms)
-            return deny()
+            if not inspect_only then return deny(site_cfg) end
         elseif verdict == "challenge" then
             log_event("challenge", "cc", "cc", nil, "rate limit, issuing js challenge", start_ms)
-            return challenge.respond()
+            if not inspect_only then return challenge.respond() end
         elseif verdict == "log" then
             log_event("log", "cc", "cc", nil, "rate limit (monitor)", start_ms)
         end
@@ -278,7 +401,7 @@ local function access_main()
     if probe_conf then probe_hit = probe.check(probe_conf) end
     if probe_hit then
         log_event("deny", "probe", "scanner", nil, probe_hit, start_ms)
-        return deny()
+        if not inspect_only then return deny(site_cfg) end
     end
 
     -- Common static/page GET: after policy checks, inspect the URI once and avoid
@@ -293,7 +416,7 @@ local function access_main()
     local header_hit = inspect_headers()
     if header_hit then
         log_event("deny", "semantic", "header_injection", nil, header_hit, start_ms)
-        return deny("header_injection")
+        if not inspect_only then return deny(site_cfg, "header_injection") end
     end
 
     -- WebSocket 升级请求：必须放在下面的 GET 快速路径**之前**。
@@ -306,7 +429,7 @@ local function access_main()
         local ws_hit = websocket.inspect_handshake(semantic, uri)
         if ws_hit then
             log_event("deny", "websocket", "websocket_injection", nil, ws_hit, start_ms)
-            return deny("websocket_injection")
+            if not inspect_only then return deny(site_cfg, "websocket_injection") end
         end
     end
 
@@ -318,7 +441,12 @@ local function access_main()
         local fast_hit = semantic.inspect_uri(uri)
         if fast_hit then
             log_event("deny", "semantic", fast_hit.type, nil, fast_hit.value, start_ms)
-            return deny(fast_hit.type)
+            if not inspect_only then return deny(site_cfg, fast_hit.type) end
+            -- inspect_only：快速路径已命中并记过一次，直接结束。
+            -- 不 return 会继续走到 detect_request()，对同一 URI 再跑一遍
+            -- semantic.inspect —— 同一次攻击写 2~3 条日志；而 deny 类日志
+            -- 会触发 webhook 通知与上游攻击样本上报，一次攻击被放大成多次轰炸。
+            return
         else
             return
         end
@@ -328,7 +456,7 @@ local function access_main()
     local smug_hit = smug.detect()
     if smug_hit then
         log_event("deny", "smuggling", "smuggling", nil, smug_hit, start_ms)
-        return deny()
+        if not inspect_only then return deny(site_cfg) end
     end
 
     -- 7. 语义检测
@@ -337,7 +465,7 @@ local function access_main()
     local atype, adetail, abody = detect_request(start_ms)
     if atype then
         log_event("deny", "semantic", atype, nil, adetail, start_ms, abody)
-        return deny(atype)
+        if not inspect_only then return deny(site_cfg, atype) end
     end
 end
 

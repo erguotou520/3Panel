@@ -91,6 +91,25 @@ func (b *BaseApi) UpdateWAFRule(c *gin.Context) {
 }
 
 // @Tags WAF
+// @Summary Reorder waf rules
+// @Param request body request.WAFRuleReorder true "request"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/rules/reorder [post]
+func (b *BaseApi) ReorderWAFRules(c *gin.Context) {
+	var req request.WAFRuleReorder
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := wafService.ReorderRules(req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// @Tags WAF
 // @Summary Delete waf rule
 // @Param id path integer true "id"
 // @Success 200

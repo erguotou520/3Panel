@@ -1162,6 +1162,615 @@ end)
 require("waf.iplist")._reset()
 require("waf.iplist")._set_reader(nil)
 
+-- ==================== 白名单「加白时仍检测」（2026-10-14）====================
+-- 背景：白名单命中原本立即 return，请求彻底放行。误报反馈建的也是白名单，
+-- 于是误报 = 这段攻击从此不可见。现在 allow 规则可带 keep_inspecting，
+-- 放行但继续跑检测链，命中时只记日志不拦截。
+print("=== 白名单加白仍检测 ===")
+
+-- 基线：不带开关的白名单必须维持"彻底放行"的原有语义
+rules_scenario("keep_inspecting 缺省=彻底放行", {global = {rules = {
+    {id = 1, name = "plain", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true},
+}}}, base_dims, function(res)
+    return res and res.action == "allow" and res.keep_inspecting == nil
+end)
+
+-- 开关打开：命中但标记 keep_inspecting，由 access.lua 决定后续
+rules_scenario("keep_inspecting 命中带标记", {global = {rules = {
+    {id = 1, name = "keep", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, base_dims, function(res)
+    return res and res.action == "allow" and res.keep_inspecting == true
+end)
+
+-- 兼容两种键名：exporter 导出的是 keep_inspecting，
+-- 但手工编辑 rules.json 或旧数据可能是驼峰，两种都要认。
+rules_scenario("keep_inspecting 兼容驼峰键名", {global = {rules = {
+    {id = 1, name = "keep-camel", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keepInspecting = true},
+}}}, base_dims, function(res)
+    return res and res.keep_inspecting == true
+end)
+
+-- 关键语义：加白仍检测的白名单必须压过同层的黑名单，
+-- 否则"加白"名存实亡 —— 明明加了白，同一请求仍被黑名单拒掉。
+rules_scenario("加白仍检测压过黑名单", {global = {rules = {
+    {id = 1, name = "black", priority = 20, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true},
+    {id = 2, name = "white-keep", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, base_dims, function(res)
+    return res and res.action == "allow" and res.keep_inspecting == true
+end)
+
+-- 反过来：普通白名单同样压过黑名单（原有行为不能被改坏）
+rules_scenario("普通白名单仍压过黑名单", {global = {rules = {
+    {id = 1, name = "black", priority = 20, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true},
+    {id = 2, name = "white", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true},
+}}}, base_dims, function(res)
+    return res and res.action == "allow" and res.keep_inspecting == nil
+end)
+
+-- 多条加白仍检测规则同时命中：只保留优先级最高的一条，
+-- 免得同一请求在日志里刷出多条重复记录。
+rules_scenario("多条加白只记最高优先级", {global = {rules = {
+    {id = 1, name = "w-low",  priority = 50, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+    {id = 2, name = "w-high", priority = 5,  match_type = "path", match_value = "/index", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, base_dims, function(res)
+    return res and res.keep_inspecting == true and res.rule and res.rule.name == "w-high"
+end)
+
+-- 开关对黑名单无意义：黑名单带该字段时行为不变（仍是 deny）
+rules_scenario("黑名单带该字段仍是 deny", {global = {rules = {
+    {id = 1, name = "black", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true, keep_inspecting = true},
+}}}, base_dims, function(res)
+    return res and res.action == "deny" and res.keep_inspecting == nil
+end)
+
+-- 未命中时不应产生任何放行
+rules_scenario("未命中不产生放行", {global = {rules = {
+    {id = 1, name = "other", priority = 10, match_type = "ip", match_value = "9.9.9.9", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, base_dims, function(res) return res == nil end)
+
+-- 禁用的规则即便带开关也不该命中
+rules_scenario("已禁用的加白规则不生效", {global = {rules = {
+    {id = 1, name = "disabled", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = false, keep_inspecting = true},
+}}}, base_dims, function(res) return res == nil end)
+
+
+-- ==================== 加白仍检测：access 层行为（2026-10-14）====================
+-- 前面 9 条只测了 rules.check 的返回值，access 层的实际行为完全没覆盖，
+-- 于是「订阅黑名单被降级」「同一攻击记 2~3 次日志」两个问题全绿通过。
+-- 这里补 access 集成场景，逐条锁住实际行为。
+print("=== 加白仍检测：access 层 ===")
+
+-- 读出本次请求写入的事件日志
+local function read_events()
+    local out = {}
+    local f = io.open("/tmp/waf_test_events.log", "r")
+    if not f then return out end
+    for line in f:lines() do
+        local ok, evt = pcall(json.decode, line)
+        if ok and evt then out[#out + 1] = evt end
+    end
+    f:close()
+    return out
+end
+
+local function count_events(pred)
+    local n = 0
+    for _, e in ipairs(read_events()) do
+        if pred(e) then n = n + 1 end
+    end
+    return n
+end
+
+-- 干净请求：加白后不该产生任何攻击日志
+access_scenario("keep_inspecting 干净请求无日志", {global = {rules = {
+    {id = 1, name = "w", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = ""
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    local evts = read_events()
+    -- 允许一条 whitelist 记录，不允许任何攻击类记录
+    for _, e in ipairs(evts) do
+        if e.attackType ~= "whitelist" then
+            return false
+        end
+    end
+    return true
+end)
+
+-- 关键回归：同一次攻击只能记一条日志。
+-- 修复前 GET 快速路径命中后继续下坠，detect_request 又检一遍，
+-- 同一次攻击写 2~3 条 —— 而 deny 类日志会触发 webhook 通知与
+-- 上游样本上报，一次攻击被放大成多次轰炸。
+--
+-- URI 必须选真正会让 inspect_uri 命中的那种，否则测试看着通过其实什么也没验：
+-- 之前用 /login 实测 inspect_uri 返回 nil（快速路径根本不命中），
+-- 于是「快速路径不再下坠」这个修复被回退掉测试也不红。/.env 走
+-- detect_sensitive_path，inspect_uri 才会返回 sensitive_path。
+access_scenario("keep_inspecting 同一次攻击只记一次", {global = {rules = {
+    {id = 1, name = "w", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/.env"
+    T.vars.request_uri = "/.env"
+    -- 必须是 nil 而非 ""：真实 OpenResty 里没有 query 时
+    -- ngx.var.query_string 是未定义（nil），而 Lua 里 "" 为真，
+    -- not "" 为假 —— 用 "" 会让快速路径条件永不成立，测试看着跑其实没覆盖到。
+    T.vars.query_string = nil
+    T.vars.content_length = nil
+    T.vars.http_transfer_encoding = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    -- 必须恰好记1 条：0 条说明没检出，2 条以上是同一次攻击被重复记录
+    local n = count_events(function(e) return e.attackType ~= "whitelist" end)
+    return n == 1
+end)
+
+-- 订阅黑名单是用户改不了的外部数据源（自动更新），加白是唯一自救通道。
+-- 这一层绝不能被 inspect_only 降级成「只记日志」——
+-- 否则误伤就变成既无法规避、也看不见自己被拦的死局，比直接拦截更糟。
+local KEEP_BLOB = build_wlfile({v4("1.2.3.0/24")})
+iplist_scenario("keep_inspecting 不降级订阅黑名单", KEEP_BLOB, {global = {
+    rules = {
+        {id = 1, name = "w", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+    },
+    ipListEnabled = true,
+}}, function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = ""
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    -- 必须真的返回 403。若被 inspect_only 降级，这里会是 nil/放行。
+    return ngx.status == 403 and T.exited == 403
+end)
+
+-- 对照：不在订阅名单内的 IP，即使开了 keep_inspecting 也应放行
+iplist_scenario("keep_inspecting 名单外 IP 正常放行", KEEP_BLOB, {global = {
+    rules = {
+        {id = 1, name = "w", priority = 10, match_type = "ip", match_value = "8.8.8.8", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+    },
+    ipListEnabled = true,
+}}, function()
+    T.vars.remote_addr = "8.8.8.8"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = ""
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil and ngx.status ~= 403
+end)
+
+-- 同层黑名单命中时要看得见。
+-- rules.check 会把 deny 一并带出（res.deny_hit），access 据此补一条
+-- blacklist 日志 —— 否则用户只看到"命中白名单"，不知道黑名单其实也命中了，
+-- 而"看见"正是这个开关的全部价值。
+access_scenario("keep_inspecting 同层黑名单记录可见", {global = {rules = {
+    {id = 1, name = "black", priority = 20, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true},
+    {id = 2, name = "w", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+}}}, function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = ""
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return count_events(function(e) return e.layer == "rules" and e.attackType == "blacklist" end) >= 1
+end)
+
+-- compiled 表里的普通 allow 不该顶掉 keep_inspecting。
+-- exporter 把 keep_inspecting 规则挡在 compiled 表外，但同一维度上
+-- 另一条普通 allow 仍可能优先级更高 —— 若直接 return fast，
+-- keep_inspecting 标记被整个丢掉，开关"保存成功但完全失效"。
+rules_scenario("compiled allow 不顶掉 keep_inspecting", {global = {
+    compiled = {ip = {["1.2.3.4"] = {id = 9, name = "compiled-allow", priority = 1, action = "allow", enabled = true}}},
+    rules = {
+        {id = 1, name = "w", priority = 50, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true, keep_inspecting = true},
+    },
+}}, base_dims, function(res)
+    return res and res.keep_inspecting == true
+end)
+
+
+-- ==================== 防护模式三态 + 拦截页定制（2026-10-15）====================
+-- 现状只有 enable/disable 两态。补三态：
+--   block      —— 命中即拦（默认，行为不变）
+--   observe    —— 命中只记日志，一律放行
+--   maintenance—— 全部请求 503 维护页，且不产生任何攻击日志
+-- 同时拦截页支持自定义标题/正文/配色。关键约束：
+-- 标题与正文必须 HTML 转义（页面展示给所有访问者，含攻击者），
+-- 颜色必须校验格式（拼进 style 属性，CSS 注入的老payload 能执行脚本）。
+print("=== 防护模式与拦截页 ===")
+
+local function site_with(mode, extra)
+    local site = { enabled = true, rules = {}, compiled = {} }
+    if mode then site.mode = mode end
+    if extra then for k, v in pairs(extra) do site[k] = v end end
+    return { global = { rules = {} }, sites = { ["1"] = site } }
+end
+
+-- 基线：block 模式（或不配 mode）必须照常拦截
+access_scenario("mode 缺省=防护，命中即拦", site_with(nil), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    -- request_uri 用已解码的载荷，并同时给 T.uri_args ——
+    -- detect_request 靠 ngx.req.get_uri_args 取参数，只设 query_string
+    -- 是取不到参数的，SQLi 那一层根本不会命中。
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return ngx.status == 403 and T.exited == 403
+end)
+
+access_scenario("mode=block 命中即拦", site_with("block"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return ngx.status == 403 and T.exited == 403
+end)
+
+-- observe：命中但放行，且日志里要有记录（否则「观察」就毫无意义）
+access_scenario("mode=observe 放行但记录", site_with("observe"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    if T.exited ~= nil then return false end
+    return count_events(function(e) return e.action == "deny" end) >= 1
+end)
+
+-- observe 下干净请求不该产生日志
+access_scenario("mode=observe 干净请求无日志", site_with("observe"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil and #read_events() == 0
+end)
+
+-- maintenance：所有请求都 503，干净的也挡
+access_scenario("mode=maintenance 全站 503", site_with("maintenance"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return ngx.status == 503 and T.exited == 503
+end)
+
+-- maintenance 下不应产生攻击日志（检测根本没跑到）
+access_scenario("mode=maintenance 不产生攻击日志", site_with("maintenance"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return ngx.status == 503 and #read_events() == 0
+end)
+
+-- enabled=false 时 mode 不生效：WAF 整个旁路，请求正常通过
+access_scenario("enabled=false 时 mode 无效", {global = {rules = {}},
+    sites = {["1"] = {enabled = false, mode = "maintenance"}}}, function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil and ngx.status ~= 503
+end)
+
+-- ==================== 拦截页转义与配色校验（2026-10-15）====================
+-- 拦截页展示给所有访问者（含攻击者），所以配置里的标题/正文必须转义、
+-- 颜色必须校验格式。这里验证「原始 HTML 不会被输出到页面里」。
+print("=== 拦截页转义 ===")
+
+-- 读出 ngx.say 累积的输出内容
+local function read_output()
+    return table.concat(T.resp_body or {}, "")
+end
+
+local EVIL = "<script>alert(1)</script>"
+local EVIL_BODY = '<img src=x onerror="alert(1)">'
+
+access_scenario("拦截页标题转义", site_with("block", {blockPage = {
+    title = EVIL, body = "普通正文" } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    local out = read_output()
+    -- 原始 script 标签绝不能出现在输出里
+    if out:find("<script>alert(1)</script>", 1, true) then return false end
+    -- 转义后的形态应该在
+    return out:find("&lt;script&gt;alert(1)&lt;/script&gt;", 1, true) ~= nil
+end)
+
+access_scenario("拦截页正文转义", site_with("block", {blockPage = {
+    title = "标题", body = EVIL_BODY } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    local out = read_output()
+    if out:find("<img src=x", 1, true) then return false end
+    return out:find("&lt;img src=x onerror=&quot;alert(1)&quot;&gt;", 1, true) ~= nil
+end)
+
+-- 引号转义：否则能提前闭合 title 属性或注入属性
+access_scenario("拦截页引号转义", site_with("block", {blockPage = {
+    title = 'a" onmouseover="alert(1)', body = "b" } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    local out = read_output()
+    if out:find('onmouseover="alert(1)', 1, true) then return false end
+    return out:find("&quot;", 1, true) ~= nil
+end)
+
+-- 颜色校验：CSS 注入的老payload（expression / url(javascript:)）必须被拒
+access_scenario("拦截页拒绝非法颜色", site_with("block", {blockPage = {
+    title = "t", body = "b",
+    bgColor = "red;background:url(javascript:alert(1))" } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    local out = read_output()
+    -- 注入片段绝不能进 style
+    if out:find("javascript:", 1, true) then return false end
+    return true
+end)
+
+-- 合法颜色要生效
+access_scenario("拦截页接受合法颜色", site_with("block", {blockPage = {
+    title = "t", body = "b", bgColor = "#123456" } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return read_output():find("#123456", 1, true) ~= nil
+end)
+
+-- 具名色也要能用
+access_scenario("拦截页接受具名颜色", site_with("block", {blockPage = {
+    title = "t", body = "b", bgColor = "black" } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    -- 具名色被映射成十六进制
+    return read_output():find("#1f2328", 1, true) ~= nil
+end)
+
+-- 维护模式同样要转义
+access_scenario("维护页也转义", site_with("maintenance", {blockPage = {
+    title = EVIL, body = EVIL_BODY } }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    local out = read_output()
+    if out:find("<script>alert(1)</script>", 1, true) then return false end
+    if out:find("<img src=x", 1, true) then return false end
+    return ngx.status == 503
+end)
+
+-- ==================== 语义检测器开关（2026-10-16）====================
+-- 15 类检测器此前写死在 semantic.lua 的 checks 数组里，面板关不掉某一项。
+-- 现在 site.disabled_detectors 可以关掉指定的类。
+-- 关键约束：关掉某一类**不能影响其它类** —— 这类开关最常见的坏结果是
+-- 关掉 sqli 时把 xss 一起关掉了（候选词筛复用同一套）。
+print("=== 检测器开关 ===")
+
+-- 直接测setter + inspect 的行为
+do
+    local sem = require("waf.semantic")
+
+    -- 基线：全部启用
+    sem.set_disabled_detectors(nil)
+    check("默认 sqli 检出", sem.detect_sqli("1' OR '1'='1") ~= false)
+    check("默认 xss 检出", sem.detect_xss("<script>alert(1)</script>") ~= false)
+
+    -- 关掉 sqli
+    sem.set_disabled_detectors({"sqli"})
+    check("关掉 sqli 后 inspect 不再报 sqli",
+          not (sem.inspect("1' OR '1'='1", "1' OR '1'='1") or {}).type == "sqli"
+          or (sem.inspect("1' OR '1'='1", "1' OR '1'='1") or {}).type == nil)
+    -- 关键：关掉 sqli 不能影响 xss
+    local xss = sem.inspect("<script>alert(1)</script>", "<script>alert(1)</script>")
+    check("关掉 sqli 后 xss 仍检出", xss ~= nil and xss.type == "xss")
+
+    -- 关掉 xss
+    sem.set_disabled_detectors({"xss"})
+    local sqli = sem.inspect("1' OR '1'='1", "1' OR '1'='1")
+    check("关掉 xss 后 sqli 仍检出", sqli ~= nil and sqli.type == "sqli")
+    local xss2 = sem.inspect("<script>alert(1)</script>", "<script>alert(1)</script>")
+    check("关掉 xss 后 xss 不再检出", xss2 == nil or xss2.type ~= "xss")
+
+    -- 一次关多个
+    sem.set_disabled_detectors({"sqli", "xss"})
+    local none1 = sem.inspect("1' OR '1'='1", "1' OR '1'='1")
+    local none2 = sem.inspect("<script>alert(1)</script>", "<script>alert(1)</script>")
+    check("关掉 sqli+xss 后两者都不报",
+          (none1 == nil or none1.type ~= "sqli") and (none2 == nil or none2.type ~= "xss"))
+    -- 其它类不受影响
+    local pp = sem.inspect('{"__proto__": {"admin": true}}', '{"__proto__": {"admin": true}}')
+    check("关掉 sqli+xss 后原型污染仍检出", pp ~= nil and pp.type == "prototype_pollution")
+
+    -- 还原
+    sem.set_disabled_detectors(nil)
+    local back = sem.inspect("1' OR '1'='1", "1' OR '1'='1")
+    check("清空后恢复检出", back ~= nil and back.type == "sqli")
+end
+
+-- 空表 / nil / 全是空串都应等于"全部启用"
+do
+    local sem = require("waf.semantic")
+    for _, v in ipairs({ {}, {""}, {nil} }) do
+        sem.set_disabled_detectors(v)
+        local r = sem.inspect("1' OR '1'='1", "1' OR '1'='1")
+        check("空配置仍检出 sqli", r ~= nil and r.type == "sqli")
+    end
+    sem.set_disabled_detectors(nil)
+end
+
+-- 未知检测器名不应误伤已知的
+do
+    local sem = require("waf.semantic")
+    sem.set_disabled_detectors({"no-such-detector"})
+    local r = sem.inspect("1' OR '1'='1", "1' OR '1'='1")
+    check("未知检测器名不影响其它检测", r ~= nil and r.type == "sqli")
+    sem.set_disabled_detectors(nil)
+end
+
+-- access 层：站点配置了 disabled_detectors 应真的生效
+access_scenario("access 应用 disabled_detectors", site_with("block", {
+    disabled_detectors = {"sqli"} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    -- 关掉 sqli 后这条 SQLi 应放行
+    return T.exited == nil and ngx.status ~= 403
+end)
+
+-- ==================== exposure / sensitive_path 的独立路径（2026-10-16）====================
+-- exposure 与 sensitive_path 不走 checks 数组，而是在 inspect()/inspect_uri()
+-- 里单独检出。第一版开关只改了 checks 循环，这两类"关不掉"——
+-- 界面上能关、能保存，实际照样拦。这里补上回归。
+print("=== 检测器开关：独立检出路径 ===")
+
+do
+    local sem = require("waf.semantic")
+
+    -- 基线：两者默认都检出
+    sem.set_disabled_detectors(nil)
+    local base_exp = sem.inspect("/.env", "/.env")
+    check("默认 exposure 检出 /.env", base_exp ~= nil and (base_exp.type == "exposure" or base_exp.type == "sensitive_path"))
+    local base_sp = sem.inspect_uri("/.env")
+    check("默认 sensitive_path 检出 /.env", base_sp ~= nil)
+
+    -- 关掉 exposure：inspect 的独立分支必须失效
+    sem.set_disabled_detectors({"exposure"})
+    local r1 = sem.inspect("/.env", "/.env")
+    check("关掉 exposure 后 inspect 不再报 exposure",
+          r1 == nil or r1.type ~= "exposure")
+    -- 但 sensitive_path 仍应检出（只关一个，不能连带关另一个）
+    check("关掉 exposure 后 sensitive_path 仍检出",
+          r1 ~= nil and r1.type == "sensitive_path")
+
+    -- 关掉 sensitive_path：inspect_uri 的独立分支必须失效
+    sem.set_disabled_detectors({"sensitive_path"})
+    local r2 = sem.inspect_uri("/.env")
+    check("关掉 sensitive_path 后 inspect_uri 不再报", r2 == nil or r2.type ~= "sensitive_path")
+    -- 无点号的敏感路径（/etc/passwd）走 plain 分支，也要关得掉
+    local r3 = sem.inspect_uri("/etc/passwd")
+    check("关掉 sensitive_path 后 /etc/passwd 也放行",
+          r3 == nil or r3.type ~= "sensitive_path")
+
+    -- 两者都关：/.env 完全放行
+    sem.set_disabled_detectors({"exposure", "sensitive_path"})
+    check("两个都关后 /.env 完全放行", sem.inspect("/.env", "/.env") == nil)
+    check("两个都关后 inspect_uri(/.env) 也放行", sem.inspect_uri("/.env") == nil)
+
+    -- 关掉它们不能影响其它类
+    local sqli = sem.inspect("1' OR '1'='1", "1' OR '1'='1")
+    check("关掉 exposure+sensitive_path 后 sqli 仍检出",
+          sqli ~= nil and sqli.type == "sqli")
+
+    -- 还原，避免污染后续用例
+    sem.set_disabled_detectors(nil)
+end
+
+-- access 层：站点关掉 sensitive_path 后 /.env 应放行
+access_scenario("access 应用 sensitive_path 开关", site_with("block", {
+    disabled_detectors = {"sensitive_path", "exposure"} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/.env"
+    T.vars.request_uri = "/.env"
+    T.vars.query_string = nil
+    T.vars.content_length = nil
+    T.vars.http_transfer_encoding = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil and ngx.status ~= 403
+end)
+
+-- 对照：不关时 /.env 必须被拦
+access_scenario("access 不关时 /.env 仍被拦", site_with("block"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/.env"
+    T.vars.request_uri = "/.env"
+    T.vars.query_string = nil
+    T.vars.content_length = nil
+    T.vars.http_transfer_encoding = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return ngx.status == 403
+end)
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

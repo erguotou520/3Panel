@@ -1,0 +1,111 @@
+name: Test
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+
+# 本工作流只跑测试与静态检查，不构建产物、不发布。
+# 目的是让回归在合并前暴露 —— 尤其是 WAF 的测试覆盖的是
+# 「SQL 注入载荷的 shell 引号转义」这类安全相关逻辑，
+# 没有 CI 保护就会在下一次重构里悄悄腐烂。
+jobs:
+    frontend:
+        name: 前端测试与类型检查
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            # 用 npm 而非 pnpm：本仓锁的是 frontend/package-lock.json
+            # （pnpm-lock.yaml 在 .gitignore 里），用 pnpm 装出来的
+            # 依赖树与仓库记录不一致。
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+                  cache: 'npm'
+                  cache-dependency-path: frontend/package-lock.json
+
+            - name: 安装依赖
+              working-directory: frontend
+              run: npm ci
+
+            # 测试必须在类型检查之前跑：类型错误会让 build 挂掉，
+            # 但不该阻止单元测试报告自己那部分结果。
+            - name: 运行单元测试
+              working-directory: frontend
+              run: npm test
+
+            # 全量 type-check 目前有 10 处既有错误（分布在 container/network、
+            # host/process、login-form、website config、waf/iplist-setting 五个文件，
+            # 均非本次改动引入），直接跑会让本工作流一上线就红。
+            #
+            # 这里跑全量但只对「本次涉及的 WAF 文件」的结果判失败：
+            # vue-tsc 不支持命令行指定文件（会报 TS5112 与 tsconfig 冲突），
+            # 所以全量跑完再 grep 出属于本次范围的错误。
+            # 等既有错误清零后，把 grep 整段去掉即可恢复为全量检查。
+            - name: 类型检查（只判 WAF 改动范围）
+              working-directory: frontend
+              run: |
+                  set -o pipefail
+                  npx vue-tsc --noEmit 2>&1 | tee /tmp/tsc.log || true
+                  if grep -E "views/website/website/waf/(index|rule-dialog)\.vue|api/modules/waf(-helpers)?\.ts" /tmp/tsc.log; then
+                      echo "❌ 本次 WAF 改动引入了类型错误"
+                      exit 1
+                  fi
+                  echo "✓ WAF 改动范围无类型错误"
+                  echo "（其余既有错误：$(grep -c 'error TS' /tmp/tsc.log) 处，不在本次范围内）"
+
+            # 全库 prettier --check 目前有 24 处既有格式问题（本次未触及的文件）。
+            # 直接判失败会让工作流一上线就红，失去意义。
+            # 这里跑全量但只对本次改动范围内的文件判失败；
+            # 等既有格式问题清零后，把 grep 整段去掉即可恢复全量检查。
+            - name: 格式检查（只判 WAF 改动范围）
+              working-directory: frontend
+              run: |
+                  set -o pipefail
+                  npx prettier --check "src/**/*.{ts,vue}" 2>&1 | tee /tmp/prettier.log || true
+                  if grep "warn" /tmp/prettier.log | grep -E "website/website/waf/(index|rule-dialog)\.vue|api/modules/waf"; then
+                      echo "❌ 本次 WAF 改动引入了格式问题"
+                      exit 1
+                  fi
+                  echo "✓ WAF 改动范围格式正确"
+                  echo "（其余既有格式问题：$(grep -c warn /tmp/prettier.log) 处，不在本次范围内）"
+
+    backend:
+        name: 后端测试与 Lua 数据面测试
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-go@v5
+              with:
+                  go-version: '1.24'
+
+            # waf_test.lua 必须在 LuaJIT 下跑：它用到 lua-resty-* 的
+            # shim（ngx.shared / ngx.var 等），标准 lua 没有这些全局，
+            # 直接跑会在 require 时报 nil 索引。
+            - name: 安装 LuaJIT
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y luajit
+                  luajit -v
+
+            - name: agent Go 测试
+              working-directory: agent
+              run: go test ./...
+
+            # WAF 的数据面（匹配、限流、名单）是 Lua 写的，
+            # Go 测试完全覆盖不到 —— 实测拦截率 100% 那套修复全在 Lua 里。
+            - name: WAF Lua 数据面测试
+              working-directory: agent/utils/waf/lua
+              run: luajit waf_test.lua
+
+            - name: gofmt 检查
+              working-directory: agent
+              run: |
+                  out=$(gofmt -l app/ utils/ router/ init/ 2>&1 || true)
+                  if [ -n "$out" ]; then
+                      echo "以下文件未格式化："
+                      echo "$out"
+                      exit 1
+                  fi

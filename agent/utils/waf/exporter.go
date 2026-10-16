@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/3panel-dev/3panel/agent/app/model"
@@ -50,6 +51,8 @@ type ruleDTO struct {
 	Action     string     `json:"action"`
 	Enabled    bool       `json:"enabled"`
 	ExpiresAt  *time.Time `json:"expires_at"`
+	// KeepInspecting：白名单「加白时仍检测」。仅 action=allow 时被 Lua 读取。
+	KeepInspecting bool `json:"keep_inspecting"`
 }
 
 type ccDTO struct {
@@ -74,11 +77,26 @@ type probeDTO struct {
 
 type siteEntry struct {
 	Enabled  bool            `json:"enabled"`
+	Mode     string          `json:"mode,omitempty"`
 	Rules    []ruleDTO       `json:"rules"`
 	Compiled compiledRuleSet `json:"compiled"`
 	CC       *ccDTO          `json:"cc,omitempty"`
 	Bot      *botDTO         `json:"bot,omitempty"`
 	Probe    *probeDTO       `json:"probe,omitempty"`
+	// BlockPage 站点级拦截页定制；nil 表示用内置默认样式。
+	BlockPage *blockPageDTO `json:"blockPage,omitempty"`
+	// DisabledDetectors 是被关闭的语义检测器名集合（Lua 侧转成 set 便于 O(1) 判断）。
+	DisabledDetectors []string `json:"disabled_detectors,omitempty"`
+}
+
+// blockPageDTO 是拦截页的可配置部分。
+// 只支持纯文本 + 两个颜色值，不接受 HTML 片段 —— 这个页面会展示给
+// 所有访问者（包括攻击者），让配置者可注入脚本等于给站点开一个 XSS 入口。
+type blockPageDTO struct {
+	Title     string `json:"title,omitempty"`
+	Body      string `json:"body,omitempty"`
+	BgColor   string `json:"bgColor,omitempty"`
+	TextColor string `json:"textColor,omitempty"`
 }
 
 type exportedRules struct {
@@ -122,6 +140,12 @@ func (c *compiledRuleSet) add(rule ruleDTO) bool {
 	if !rule.Enabled || rule.ExpiresAt != nil || rule.MatchOp != "exact" {
 		return false
 	}
+	// 「加白仍检测」的白名单不能进快速表：compiled 表只存 (键 → 规则)，
+	// Lua 侧查表命中即 return，拿不到 keep_inspecting 这个语义。
+	// 漏掉这一条会让开关「保存成功但完全无效」—— 最典型的静默失效。
+	if rule.Action == model.WAFActionAllow && rule.KeepInspecting {
+		return false
+	}
 	var target map[string]ruleDTO
 	switch rule.MatchType {
 	case "ip":
@@ -162,6 +186,7 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 			ID: r.ID, Name: r.Name, Priority: r.Priority,
 			MatchType: r.MatchType, MatchValue: r.MatchValue, MatchOp: r.MatchOp,
 			Action: r.Action, Enabled: r.Enabled, ExpiresAt: r.ExpiresAt,
+			KeepInspecting: r.KeepInspecting,
 		}
 		if r.Scope == model.WAFScopeSite && r.WebsiteID != 0 {
 			key := fmt.Sprintf("%d", r.WebsiteID)
@@ -201,7 +226,14 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		data.Sites[key] = site
 	}
 	for _, opt := range options {
-		if opt.WebsiteID == 0 || (!opt.BotEnabled && !opt.ProbeEnabled) {
+		// Mode / BlockPage / DisabledDetectors 也在这条路径导出，
+		// 所以过滤条件必须把它们算进来 —— 只看 BotEnabled/ProbeEnabled
+		// 会让「只配了防护模式」的站点整个被跳过，模式静默失效。
+		hasCustomPage := opt.BlockPageTitle != "" || opt.BlockPageBody != "" ||
+			opt.BlockPageBgColor != "" || opt.BlockPageTextColor != ""
+		if opt.WebsiteID == 0 ||
+			(!opt.BotEnabled && !opt.ProbeEnabled && !hasCustomPage &&
+				opt.Mode == "" && opt.DisabledDetectors == "") {
 			continue
 		}
 		key := fmt.Sprintf("%d", opt.WebsiteID)
@@ -217,6 +249,22 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		}
 		if opt.ProbeEnabled {
 			site.Probe = &probeDTO{Enabled: true, MaxURIs: opt.ProbeMaxURIs, Window: opt.ProbeWindow, MaxRPS: opt.ProbeMaxRPS}
+		}
+		// Mode 只导出非默认值：空与 block 行为相同，
+		// 不导出能让 rules.json 保持小一点，也便于老版本 Lua 忽略未知字段。
+		if opt.Mode != "" && opt.Mode != WAFModeBlock {
+			site.Mode = opt.Mode
+		}
+		if hasCustomPage {
+			site.BlockPage = &blockPageDTO{
+				Title:     opt.BlockPageTitle,
+				Body:      opt.BlockPageBody,
+				BgColor:   opt.BlockPageBgColor,
+				TextColor: opt.BlockPageTextColor,
+			}
+		}
+		if opt.DisabledDetectors != "" {
+			site.DisabledDetectors = splitAndTrim(opt.DisabledDetectors)
 		}
 		data.Sites[key] = site
 	}
@@ -252,4 +300,34 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		return err
 	}
 	return os.Rename(tmpName, target)
+}
+
+// WAF 站点防护模式取值。必须与 Lua 侧 access.lua 判定用的字面量一致。
+const (
+	// WAFModeBlock 防护：命中即拦截并记录。
+	WAFModeBlock = "block"
+	// WAFModeObserve 观察：命中只记录日志，一律不拦截。
+	WAFModeObserve = "observe"
+	// WAFModeMaintenance 维护：所有请求返回维护页。
+	WAFModeMaintenance = "maintenance"
+)
+
+// splitAndTrim 把逗号分隔的列表拆成去掉空白的切片。
+// 空字符串返回 nil —— JSON 里 omitempty 会直接省掉该字段，
+// Lua 侧据此走「全部启用」的默认路径。
+func splitAndTrim(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	parts := strings.Split(s, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

@@ -1919,6 +1919,22 @@ var AddWAFIPListSettings = &gormigrate.Migration{
 	},
 }
 
+var AddWAFRuleKeepInspecting = &gormigrate.Migration{
+	ID: "20261014-add-waf-rule-keep-inspecting",
+	Migrate: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.WAFRule{})
+	},
+}
+
+var AddWAFOptionModeAndPage = &gormigrate.Migration{
+	ID: "20261015-add-waf-option-mode-and-page",
+	Migrate: func(tx *gorm.DB) error {
+		// AutoMigrate 对已有表缺列走 ALTER TABLE ADD COLUMN，不重建表，
+		// 存量行的 Mode 会落成 gorm tag 里的默认值 block —— 与升级前行为一致。
+		return tx.AutoMigrate(&model.WAFOption{})
+	},
+}
+
 var AddFirewallRuleTable = &gormigrate.Migration{
 	ID: "20260819-add-firewall-v2-tables",
 	Migrate: func(tx *gorm.DB) error {

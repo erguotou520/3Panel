@@ -13,6 +13,8 @@ export interface WAFRule {
     ttl?: number;
     enabled?: boolean;
     remark?: string;
+    /** 白名单「加白时仍检测」：放行但继续检测，只记日志不拦截 */
+    keepInspecting?: boolean;
     createdAt?: string;
 }
 
@@ -40,6 +42,15 @@ export interface WAFLog {
     createdAt: string;
 }
 
+export interface WAFRuleReorder {
+    /** 有序的规则 ID 列表，第一个优先级最高 */
+    ids: number[];
+}
+
+export const reorderWAFRules = (req: WAFRuleReorder) => {
+    return http.post('/waf/rules/reorder', req);
+};
+
 export interface WAFRuleSearch {
     scope?: string;
     websiteId?: number;
@@ -57,6 +68,8 @@ export interface WAFLogSearch {
     page?: number;
     pageSize?: number;
     order?: string;
+    /** 排序列，取值见 waf-helpers 的 WAFLogSortKey（后端有白名单校验） */
+    orderBy?: string;
     format?: string;
 }
 
@@ -64,6 +77,11 @@ export interface WAFStat {
     attackType: { key: string; count: number }[];
     topIP: { key: string; count: number }[];
     trend: { key: string; count: number }[];
+}
+
+export interface WAFStatRequest extends WAFLogSearch {
+    /** 时间粒度：day（默认）或 hour */
+    trendGranularity?: 'day' | 'hour';
 }
 
 export const searchWAFRules = (req: WAFRuleSearch) => {
@@ -86,7 +104,7 @@ export const searchWAFLogs = (req: WAFLogSearch) => {
     return http.post<{ items: WAFLog[]; total: number }>(`/waf/logs/search`, req);
 };
 
-export const statWAFLogs = (req: WAFLogSearch) => {
+export const statWAFLogs = (req: WAFStatRequest) => {
     return http.post<WAFStat>(`/waf/logs/stat`, req);
 };
 
@@ -119,6 +137,19 @@ export const updateWAFCCConfig = (req: WAFCCConfig) => {
     return http.post(`/waf/cc/update`, req);
 };
 
+/**
+ * 站点级防护模式。取值必须与后端 model + Lua access.lua 的字面量一致：
+ * 不一致时 Lua 的判断会静默走默认分支（block），界面上选了却没效果。
+ */
+export type WAFMode = 'block' | 'observe' | 'maintenance';
+
+export interface WAFBlockPage {
+    title: string;
+    body: string;
+    bgColor: string;
+    textColor: string;
+}
+
 export interface WAFOption {
     websiteId: number;
     botEnabled: boolean;
@@ -128,6 +159,14 @@ export interface WAFOption {
     probeMaxURIs: number;
     probeWindow: number;
     probeMaxRPS: number;
+    /** 防护模式：block 防护 / observe 观察 / maintenance 维护。空值按 block 处理 */
+    mode?: WAFMode;
+    blockPageTitle?: string;
+    blockPageBody?: string;
+    blockPageBgColor?: string;
+    blockPageTextColor?: string;
+    /** 被关闭的语义检测器名，逗号分隔。空 = 全部启用 */
+    disabledDetectors?: string;
 }
 
 export const getWAFOption = (websiteId: number) => {
@@ -138,9 +177,12 @@ export const updateWAFOption = (req: WAFOption) => {
     return http.post(`/waf/option/update`, req);
 };
 
+/** 通知渠道。取值必须与后端 constant/alert.go 里的常量一致 —— 大小写错了会被 oneof 校验拒绝。 */
+export type WAFWebhookMethod = 'custom' | 'weCom' | 'dingTalk' | 'feiShu';
+
 export interface WAFWebhookSetting {
     enable: boolean;
-    method: string;
+    method: WAFWebhookMethod;
     url: string;
 }
 

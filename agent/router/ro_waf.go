@@ -28,6 +28,7 @@ func (a *WAFRouter) InitRouter(Router *gin.RouterGroup) {
 		wafRouter.POST("/rules/search", baseApi.SearchWAFRules)
 		wafRouter.POST("/rules", baseApi.CreateWAFRule)
 		wafRouter.POST("/rules/update", baseApi.UpdateWAFRule)
+		wafRouter.POST("/rules/reorder", baseApi.ReorderWAFRules)
 		wafRouter.DELETE("/rules/:id", baseApi.DeleteWAFRule)
 
 		wafRouter.POST("/logs/search", baseApi.SearchWAFLogs)

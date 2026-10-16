@@ -17,19 +17,22 @@ type WAFRuleCreate struct {
 	Action     string `json:"action" validate:"required,oneof=allow deny challenge log"`
 	TTL        int    `json:"ttl"`
 	Remark     string `json:"remark"`
+	// KeepInspecting：白名单「加白时仍检测」，仅 action=allow 时生效。
+	KeepInspecting bool `json:"keepInspecting"`
 }
 
 type WAFRuleUpdate struct {
-	ID         uint   `json:"id" validate:"required"`
-	Name       string `json:"name" validate:"required"`
-	Priority   int    `json:"priority"`
-	MatchType  string `json:"matchType" validate:"required"`
-	MatchValue string `json:"matchValue" validate:"required"`
-	MatchOp    string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex"`
-	Action     string `json:"action" validate:"required,oneof=allow deny challenge log"`
-	TTL        int    `json:"ttl"`
-	Enabled    bool   `json:"enabled"`
-	Remark     string `json:"remark"`
+	ID             uint   `json:"id" validate:"required"`
+	Name           string `json:"name" validate:"required"`
+	Priority       int    `json:"priority"`
+	MatchType      string `json:"matchType" validate:"required"`
+	MatchValue     string `json:"matchValue" validate:"required"`
+	MatchOp        string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex"`
+	Action         string `json:"action" validate:"required,oneof=allow deny challenge log"`
+	TTL            int    `json:"ttl"`
+	Enabled        bool   `json:"enabled"`
+	Remark         string `json:"remark"`
+	KeepInspecting bool   `json:"keepInspecting"`
 }
 
 type WAFRuleOp struct {
@@ -62,12 +65,35 @@ type WAFOptionUpdate struct {
 	ProbeMaxURIs  int  `json:"probeMaxURIs"`
 	ProbeWindow   int  `json:"probeWindow"`
 	ProbeMaxRPS   int  `json:"probeMaxRPS"`
+	// Mode 防护模式：block（防护）/ observe（观察）/ maintenance（维护）。
+	// 空 = 保持原有值（新建时为 block）。取值必须与 Lua 侧一致。
+	Mode string `json:"mode" validate:"omitempty,oneof=block observe maintenance"`
+	// 拦截页定制。留空 = 用内置默认样式。
+	// 刻意不接受 HTML 片段：这个页面会展示给所有访问者（含攻击者）。
+	BlockPageTitle     string `json:"blockPageTitle" validate:"max=200"`
+	BlockPageBody      string `json:"blockPageBody" validate:"max=2000"`
+	BlockPageBgColor   string `json:"blockPageBgColor" validate:"max=32"`
+	BlockPageTextColor string `json:"blockPageTextColor" validate:"max=32"`
+	// DisabledDetectors 被关闭的语义检测器名，逗号分隔。空 = 全部启用。
+	DisabledDetectors string `json:"disabledDetectors" validate:"max=1000"`
 }
 
 type WAFWebhookUpdate struct {
-	Enable bool   `json:"enable"`
-	Method string `json:"method" validate:"omitempty,oneof=custom wecom dingtalk feishu"`
-	URL    string `json:"url"`
+	Enable bool `json:"enable"`
+	// 取值必须与 constant.WeCom/DingTalk/FeiShu/Custom 完全一致（驼峰），
+	// 也必须与 webhook_sender.BuildWebhookPayload 的 switch 分支名一致。
+	// 曾误写成小写 wecom/dingtalk/feishu，导致前端按常量传值一律被 oneof 拒绝，
+	// 而面板没有这个配置界面，于是该功能自上线起无人能用过。
+	Method string `json:"method" validate:"omitempty,oneof=custom weCom dingTalk feiShu"`
+	URL    string `json:"url" validate:"required_if=Enable true,omitempty,url"`
+}
+
+// WAFRuleReorder 黑白名单拖动排序。
+// 传完整的目标顺序（按数组下标=最终优先级次序），而不是逐条传 priority：
+// 前端拖完只有一份最终顺序，让后端按顺序重新编号比前端算差值更不容易错。
+type WAFRuleReorder struct {
+	// IDs 是有序的规则 ID 列表，第一个优先级最高（数字最小）。
+	IDs []uint `json:"ids" validate:"required,min=1,dive,gt=0"`
 }
 
 type WAFLogSearch struct {
@@ -82,7 +108,13 @@ type WAFLogSearch struct {
 	Page          int    `form:"page" json:"page"`
 	PageSize      int    `form:"pageSize" json:"pageSize"`
 	Order         string `form:"order" json:"order"`
-	Format        string `form:"format" json:"format"`
+	// OrderBy 指定排序列。与 Order 分开传，而不是让前端拼 "ip:desc" 这种
+	// 需要后端二次解析的格式 —— 排序列是白名单校验的，方向是自由值。
+	OrderBy string `form:"orderBy" json:"orderBy"`
+	// TrendGranularity 控制趋势图的时间粒度：day（默认）或 hour。
+	// 小时粒度用于「看峰值」，跨度大时前端会自动退回按天。
+	TrendGranularity string `form:"trendGranularity" json:"trendGranularity" validate:"omitempty,oneof=day hour"`
+	Format           string `form:"format" json:"format"`
 }
 
 type WAFLogRuleOp struct {

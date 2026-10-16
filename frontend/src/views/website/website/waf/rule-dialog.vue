@@ -34,6 +34,13 @@
                     <el-radio value="log">log</el-radio>
                 </el-radio-group>
             </el-form-item>
+
+            <!-- 「加白时仍检测」只在白名单下有意义：黑名单本来就是拦。
+                     开启后加白不等于让这段攻击彻底不可见 —— 仍会检测、只记日志。 -->
+            <el-form-item v-if="form.action === 'allow'" :label="$t('website.wafKeepInspect')">
+                <el-switch v-model="form.keepInspecting" />
+                <div class="text-xs text-gray-400 ml-2">{{ $t('website.wafKeepInspectTip') }}</div>
+            </el-form-item>
             <el-form-item :label="$t('website.wafTTL')">
                 <el-input-number v-model="form.ttl" :min="0" />
                 <span class="ml-2">{{ $t('website.wafTTLTip') }}</span>
@@ -75,6 +82,7 @@ const form = reactive<any>({
     ttl: 0,
     priority: 100,
     enabled: true,
+    keepInspecting: false,
 });
 const rules = reactive({
     required: [{ required: true, message: i18n.global.t('commons.inputRequired'), trigger: 'blur' }],
@@ -95,6 +103,7 @@ const acceptParams = (params: { websiteId: number; rule: any }) => {
         ttl: params.rule?.ttl || 0,
         priority: params.rule?.priority || 100,
         enabled: params.rule?.enabled ?? true,
+        keepInspecting: params.rule?.keepInspecting ?? false,
     });
     drawerVisible.value = true;
 };
@@ -105,6 +114,11 @@ const onSubmit = () => {
         if (!valid) return;
         if (form.scope === 'site') {
             form.websiteId = websiteId.value;
+        }
+        // 该开关只对白名单有意义，切换到黑名单时显式清掉，
+        // 否则数据库里会留下"deny + keepInspecting"这种无意义的组合。
+        if (form.action !== 'allow') {
+            form.keepInspecting = false;
         }
         if (isEdit.value) {
             await updateWAFRule(form);
