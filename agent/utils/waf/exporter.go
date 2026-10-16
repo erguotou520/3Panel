@@ -66,6 +66,10 @@ type botDTO struct {
 	Enabled       bool `json:"enabled"`
 	AllowGoodBots bool `json:"allowGoodBots"`
 	BlockBadBots  bool `json:"blockBadBots"`
+	// Level 强度分档：off / observe / balanced / high。
+	// off/observe 在 Lua 侧 bot.check 里判定；
+	// high = 平衡档 + 把「空 User-Agent」当可疑（扫描器可配成不发 UA）。
+	Level string `json:"level,omitempty"`
 }
 
 type probeDTO struct {
@@ -87,6 +91,10 @@ type siteEntry struct {
 	BlockPage *blockPageDTO `json:"blockPage,omitempty"`
 	// DisabledDetectors 是被关闭的语义检测器名集合（Lua 侧转成 set 便于 O(1) 判断）。
 	DisabledDetectors []string `json:"disabled_detectors,omitempty"`
+	// SemanticLevel 语义层强度分档：off / observe / balanced / high。
+	// balanced 是默认值，省略时 Lua 按 balanced 处理。
+	// high = 绕过 has_attack_candidate 快速筛（召回更高、CPU 开销更大）。
+	SemanticLevel string `json:"semantic_level,omitempty"`
 }
 
 // blockPageDTO 是拦截页的可配置部分。
@@ -231,8 +239,13 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		// 会让「只配了防护模式」的站点整个被跳过，模式静默失效。
 		hasCustomPage := opt.BlockPageTitle != "" || opt.BlockPageBody != "" ||
 			opt.BlockPageBgColor != "" || opt.BlockPageTextColor != ""
+		// hasLevel 表示「配了非默认强度」。必须进过滤条件 ——
+		// 否则只调了强度、没开 bot/probe 的站点会被整个跳过，
+		// 界面上能配、保存后数据面毫无反应（静默失效）。
+		hasLevel := (opt.SemanticLevel != "" && opt.SemanticLevel != WAFLevelBalanced) ||
+			(opt.BotLevel != "" && opt.BotLevel != WAFLevelBalanced)
 		if opt.WebsiteID == 0 ||
-			(!opt.BotEnabled && !opt.ProbeEnabled && !hasCustomPage &&
+			(!opt.BotEnabled && !opt.ProbeEnabled && !hasCustomPage && !hasLevel &&
 				opt.Mode == "" && opt.DisabledDetectors == "") {
 			continue
 		}
@@ -245,7 +258,17 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 			site.Compiled = newCompiledRuleSet()
 		}
 		if opt.BotEnabled {
-			site.Bot = &botDTO{Enabled: true, AllowGoodBots: opt.AllowGoodBots, BlockBadBots: opt.BlockBadBots}
+			// Level 只导出非默认值：空与 balanced 行为相同。
+			level := ""
+			if opt.BotLevel != "" && opt.BotLevel != WAFLevelBalanced {
+				level = opt.BotLevel
+			}
+			site.Bot = &botDTO{
+				Enabled:       true,
+				AllowGoodBots: opt.AllowGoodBots,
+				BlockBadBots:  opt.BlockBadBots,
+				Level:         level,
+			}
 		}
 		if opt.ProbeEnabled {
 			site.Probe = &probeDTO{Enabled: true, MaxURIs: opt.ProbeMaxURIs, Window: opt.ProbeWindow, MaxRPS: opt.ProbeMaxRPS}
@@ -265,6 +288,11 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		}
 		if opt.DisabledDetectors != "" {
 			site.DisabledDetectors = splitAndTrim(opt.DisabledDetectors)
+		}
+		// 强度分档同样只导出非默认值（balanced）。理由同 Mode：
+		// rules.json 保持小，且老版本 Lua 遇到未知字段直接忽略。
+		if opt.SemanticLevel != "" && opt.SemanticLevel != WAFLevelBalanced {
+			site.SemanticLevel = opt.SemanticLevel
 		}
 		data.Sites[key] = site
 	}
@@ -310,6 +338,18 @@ const (
 	WAFModeObserve = "observe"
 	// WAFModeMaintenance 维护：所有请求返回维护页。
 	WAFModeMaintenance = "maintenance"
+)
+
+// 保护强度分档。必须与 Lua 侧 semantic.lua / bot.lua 判定的字面量一致。
+const (
+	// WAFLevelOff 该层整体不生效。
+	WAFLevelOff = "off"
+	// WAFLevelObserve 照常检测，命中只记日志不拦截。
+	WAFLevelObserve = "observe"
+	// WAFLevelBalanced 平衡防护（默认）。
+	WAFLevelBalanced = "balanced"
+	// WAFLevelHigh 高强度。语义层 = 绕过快速筛；bot 层 = 额外把空 UA 当可疑。
+	WAFLevelHigh = "high"
 )
 
 // splitAndTrim 把逗号分隔的列表拆成去掉空白的切片。

@@ -3546,6 +3546,19 @@ const message = {
         wafBlockPageTextColor: 'Text colour',
         wafBlockPageColorTip:
             'Colours accept #RRGGBB or a named colour (black/white/red/orange/yellow/green/blue/gray). Other values are ignored and the default palette is used.',
+        wafSemanticLevel: 'Semantic detection level',
+        wafBotLevel: 'Bot detection level',
+        wafLevelOff: 'Off',
+        wafLevelOffDesc:
+            'The layer is disabled entirely; hits are not detected. Protection is completely absent while off.',
+        wafLevelObserve: 'Observe',
+        wafLevelObserveDesc:
+            'Detect and log as usual, but never block. Useful during a trial period, or to see how much would be blocked while investigating false positives.',
+        wafLevelBalanced: 'Balanced',
+        wafLevelBalancedDesc: 'Default. Blocks clear attack signatures while keeping false-positive risk in check.',
+        wafLevelHigh: 'High',
+        wafLevelHighDesc:
+            'Higher recall at higher cost. The semantic layer runs every detector instead of only those the pre-filter lets through; bot detection also treats requests without a User-Agent as suspicious.',
         wafDetectors: 'Disabled detectors',
         wafDetectorsTip:
             'Ticking a box disables that detector; those attacks will no longer be detected. Only disable temporarily while confirming a false positive.',

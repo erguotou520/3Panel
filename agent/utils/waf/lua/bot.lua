@@ -67,8 +67,22 @@ function _M.classify(ua)
 end
 
 -- 按策略处置：返回 nil（放行）或 "good" / "bad"（命中类型，由 access 决定动作）
+--
+-- conf.level 是强度分档：
+--   off        —— 整层不生效，直接放行
+--   observe    —— 识别并返回命中类型，但调用方（access）只记日志不拦
+--   balanced   —— 默认行为
+--   high       —— 平衡档 + 把「空 User-Agent」当可疑
+--
+-- 空 UA 这一档不是造出来的：扫描器可以配成完全不发 UA，
+-- 而 classify 对空 UA 返回 nil（不分类）—— 这是真实缺口。
+-- 代价是某些不带 UA 的合法客户端（脚本、IoT 设备）会被一起拦，
+-- 所以放在 high 而不是默认档。
 function _M.check(conf)
     if not conf or not conf.enabled then
+        return nil
+    end
+    if conf.level == "off" then
         return nil
     end
     local ua = ngx.var.http_user_agent
@@ -76,6 +90,11 @@ function _M.check(conf)
     if kind == "good" and conf.allowGoodBots then
         return "good"
     elseif kind == "bad" and conf.blockBadBots then
+        return "bad"
+    end
+    -- 空 UA 只在 high 档当可疑。善意 bot 一定有 UA，
+    -- 所以这里不需要再判 allowGoodBots。
+    if kind == nil and conf.level == "high" and (not ua or ua == "") then
         return "bad"
     end
     return nil

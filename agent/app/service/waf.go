@@ -576,6 +576,12 @@ func (w WAFService) UpdateOption(req request.WAFOptionUpdate) error {
 	if req.DisabledDetectors != "" {
 		opt.DisabledDetectors = req.DisabledDetectors
 	}
+	if req.SemanticLevel != "" {
+		opt.SemanticLevel = req.SemanticLevel
+	}
+	if req.BotLevel != "" {
+		opt.BotLevel = req.BotLevel
+	}
 	if err := global.DB.Save(&opt).Error; err != nil {
 		return err
 	}

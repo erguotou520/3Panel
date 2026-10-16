@@ -14,6 +14,8 @@ import {
     parseDisabledDetectors,
     formatDisabledDetectors,
     isInvalidPageColor,
+    WAF_LEVELS,
+    normalizeLevel,
 } from '@/api/modules/waf-helpers';
 
 // 带 bash 往返断言的 describe 全部用 describeWithBash：原生 Windows 上
@@ -414,5 +416,52 @@ describe('i18n 键存在性', () => {
                 expect(enKeys.has(k.replace('website.', ''))).toBe(true);
             }
         }
+    });
+});
+
+// ==================== 保护强度分档 ====================
+
+describe('WAF_LEVELS：强度分档取值', () => {
+    it('四档的 value 与后端 model / Lua 字面量一致', () => {
+        // 后端 model 默认 "balanced"；Lua semantic.lua / bot.lua 判的是
+        // "off" / "observe" / "high"。拼错任何一个都会归一到 balanced，
+        // 界面上选了却没效果。
+        expect(WAF_LEVELS.map((l) => l.value)).toEqual(['off', 'observe', 'balanced', 'high']);
+    });
+
+    it('每一档都有 label 与 desc 的 i18n 键', () => {
+        for (const l of WAF_LEVELS) {
+            expect(l.labelKey).toMatch(/^website\.wafLevel/);
+            expect(l.descKey).toMatch(/^website\.wafLevel.*Desc$/);
+        }
+    });
+
+    it('没有重复档位', () => {
+        const values = WAF_LEVELS.map((l) => l.value);
+        expect(new Set(values).size).toBe(values.length);
+    });
+});
+
+describe('normalizeLevel：空值归一', () => {
+    it('合法值原样返回', () => {
+        expect(normalizeLevel('off')).toBe('off');
+        expect(normalizeLevel('observe')).toBe('observe');
+        expect(normalizeLevel('balanced')).toBe('balanced');
+        expect(normalizeLevel('high')).toBe('high');
+    });
+
+    it('空值归一到 balanced（与 Lua setter 行为一致）', () => {
+        // 老数据没有这两列时后端返回空串。若界面显示空而实际跑 balanced，
+        // 用户会以为"没配"，排查时对不上。
+        expect(normalizeLevel('')).toBe('balanced');
+        expect(normalizeLevel(null)).toBe('balanced');
+        expect(normalizeLevel(undefined)).toBe('balanced');
+    });
+
+    it('脏数据也归一到 balanced，不会静默变成 off', () => {
+        // 归一成 off 会让整层防护消失，比显示错更危险
+        expect(normalizeLevel('OFF')).toBe('balanced');
+        expect(normalizeLevel('high ')).toBe('balanced');
+        expect(normalizeLevel('block')).toBe('balanced');
     });
 });

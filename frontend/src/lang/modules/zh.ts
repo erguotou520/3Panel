@@ -3380,6 +3380,18 @@ const message = {
         wafDetectorPrototypePollution: '原型污染',
         wafDetectorGraphql: 'GraphQL 注入',
         wafDetectorSensitivePath: '敏感路径',
+        wafSemanticLevel: '语义检测强度',
+        wafBotLevel: '机器人识别强度',
+        wafLevelOff: '关闭',
+        wafLevelOffDesc: '该层整体不生效，命中不会被检出。关闭期间这段防护完全消失。',
+        wafLevelObserve: '观察',
+        wafLevelObserveDesc:
+            '照常检测并记录日志，但一律不拦截。用于新规则上线前的观察期，或排查误伤时确认「如果开着会拦多少」。',
+        wafLevelBalanced: '平衡',
+        wafLevelBalancedDesc: '默认档。拦截明确的攻击特征，兼顾误伤风险。',
+        wafLevelHigh: '高强度',
+        wafLevelHighDesc:
+            '更高召回、更高开销。语义层会跑完全部检测器（而非只跑前置筛放过的）；机器人识别会把不带 User-Agent 的请求一并视为可疑。',
         wafDetectors: '关闭检测器',
         wafDetectorsTip: '勾选表示关闭对应检测器，关闭后该类攻击不再被检出。仅建议在确认误伤时临时关闭，排除完请恢复。',
         wafNotify: '攻击通知',

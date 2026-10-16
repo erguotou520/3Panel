@@ -1,4 +1,4 @@
-import type { WAFMode } from '@/api/modules/waf';
+import type { WAFMode, WAFProtectionLevel } from '@/api/modules/waf';
 
 /**
  * WAF 页面里的纯逻辑函数。
@@ -195,3 +195,22 @@ export const isInvalidPageColor = (color: string): boolean => {
 };
 
 export const NAMED_PAGE_COLORS = ['black', 'white', 'red', 'orange', 'yellow', 'green', 'blue', 'gray', 'grey'];
+
+/**
+ * 强度分档的四个取值 + 展示信息。
+ *
+ * value 必须与后端 model.WAFOption.SemanticLevel / BotLevel 的默认值
+ * 以及 Lua semantic.lua / bot.lua 判定的字面量一致。
+ */
+export const WAF_LEVELS: { value: WAFProtectionLevel; labelKey: string; descKey: string }[] = [
+    { value: 'off', labelKey: 'website.wafLevelOff', descKey: 'website.wafLevelOffDesc' },
+    { value: 'observe', labelKey: 'website.wafLevelObserve', descKey: 'website.wafLevelObserveDesc' },
+    { value: 'balanced', labelKey: 'website.wafLevelBalanced', descKey: 'website.wafLevelBalancedDesc' },
+    { value: 'high', labelKey: 'website.wafLevelHigh', descKey: 'website.wafLevelHighDesc' },
+];
+
+/** 把后端可能返回的空值归一到 balanced（与 Lua setter 的行为一致）。 */
+export const normalizeLevel = (lv?: string | null): WAFProtectionLevel => {
+    if (lv === 'off' || lv === 'observe' || lv === 'high') return lv;
+    return 'balanced';
+};

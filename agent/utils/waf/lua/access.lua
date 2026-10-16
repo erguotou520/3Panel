@@ -278,6 +278,8 @@ local function access_main()
     --
     -- 注意顺序：必须在任何 semantic 调用之前。
     semantic.set_disabled_detectors(site_cfg and site_cfg.disabled_detectors)
+    -- 强度分档。空/nil 由 setter 归一到 balanced。
+    semantic.set_level(site_cfg and site_cfg.semantic_level)
 
     -- 维护模式：挡住全部流量，状态码 503。
     -- 放在所有检测之前 —— 维护期间不该再产生任何攻击日志，
@@ -290,6 +292,12 @@ local function access_main()
     -- inspect_only 为真表示"本请求已加白但仍检测"：
     -- 后续所有拦截动作降级为仅记录，不再真的拒绝。
     local inspect_only = false
+    -- semantic_observe / bot_observe：对应层的强度是 observe 档。
+    -- 与 inspect_only 分开而不是复用同一个标志 ——
+    -- 两者的来源不同（一个是用户配的层强度，一个是白名单开关），
+    -- 混用一个标志会让"关了观察档但白名单仍降级"这类组合难以推理。
+    local semantic_observe = site_cfg and site_cfg.semantic_level == "observe"
+    local bot_observe = site_cfg and site_cfg.bot and site_cfg.bot.level == "observe"
     local res
     if rules.has_rules(state) then
         res = rules.check(state)
@@ -368,7 +376,7 @@ local function access_main()
             return -- 善意 bot 直接放行，跳过检测
         elseif bot_verdict == "bad" then
             log_event("deny", "bot", "scanner", nil, "blocked scanner user-agent", start_ms)
-            if not inspect_only then return deny(site_cfg) end
+            if not inspect_only and not bot_observe then return deny(site_cfg) end
         end
     else
         -- 未配置 bot：仍拦扫描器 UA，只是不放行任何"善意 bot"
@@ -376,7 +384,7 @@ local function access_main()
         if kind == "bad" then
             log_event("deny", "bot", "scanner", nil,
                 "blocked scanner user-agent (bot module not configured)", start_ms)
-            if not inspect_only then return deny(site_cfg) end
+            if not inspect_only and not bot_observe then return deny(site_cfg) end
         end
     end
 
@@ -416,7 +424,10 @@ local function access_main()
     local header_hit = inspect_headers()
     if header_hit then
         log_event("deny", "semantic", "header_injection", nil, header_hit, start_ms)
-        if not inspect_only then return deny(site_cfg, "header_injection") end
+        -- semantic_observe：观察档命中只记日志不拦。
+        if not inspect_only and not semantic_observe then
+            return deny(site_cfg, "header_injection")
+        end
     end
 
     -- WebSocket 升级请求：必须放在下面的 GET 快速路径**之前**。
@@ -441,7 +452,9 @@ local function access_main()
         local fast_hit = semantic.inspect_uri(uri)
         if fast_hit then
             log_event("deny", "semantic", fast_hit.type, nil, fast_hit.value, start_ms)
-            if not inspect_only then return deny(site_cfg, fast_hit.type) end
+            if not inspect_only and not semantic_observe then
+                return deny(site_cfg, fast_hit.type)
+            end
             -- inspect_only：快速路径已命中并记过一次，直接结束。
             -- 不 return 会继续走到 detect_request()，对同一 URI 再跑一遍
             -- semantic.inspect —— 同一次攻击写 2~3 条日志；而 deny 类日志
@@ -465,7 +478,9 @@ local function access_main()
     local atype, adetail, abody = detect_request(start_ms)
     if atype then
         log_event("deny", "semantic", atype, nil, adetail, start_ms, abody)
-        if not inspect_only then return deny(site_cfg, atype) end
+        if not inspect_only and not semantic_observe then
+            return deny(site_cfg, atype)
+        end
     end
 end
 

@@ -143,6 +143,12 @@ export const updateWAFCCConfig = (req: WAFCCConfig) => {
  */
 export type WAFMode = 'block' | 'observe' | 'maintenance';
 
+/**
+ * 保护强度分档。取值必须与后端 model + Lua semantic.lua / bot.lua 一致：
+ * 拼错时 Lua 会归一到 balanced，界面上选了却没效果。
+ */
+export type WAFProtectionLevel = 'off' | 'observe' | 'balanced' | 'high';
+
 export interface WAFBlockPage {
     title: string;
     body: string;
@@ -167,6 +173,10 @@ export interface WAFOption {
     blockPageTextColor?: string;
     /** 被关闭的语义检测器名，逗号分隔。空 = 全部启用 */
     disabledDetectors?: string;
+    /** 语义层强度：off / observe / balanced / high */
+    semanticLevel?: WAFProtectionLevel;
+    /** Bot 层强度：off / observe / balanced / high */
+    botLevel?: WAFProtectionLevel;
 }
 
 export const getWAFOption = (websiteId: number) => {

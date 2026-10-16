@@ -74,6 +74,10 @@ type WAFOptionUpdate struct {
 	BlockPageBody      string `json:"blockPageBody" validate:"max=2000"`
 	BlockPageBgColor   string `json:"blockPageBgColor" validate:"max=32"`
 	BlockPageTextColor string `json:"blockPageTextColor" validate:"max=32"`
+	// SemanticLevel / BotLevel 保护强度分档：off / observe / balanced / high。
+	// 空 = 保持原有值。取值必须与 Lua 侧一致。
+	SemanticLevel string `json:"semanticLevel" validate:"omitempty,oneof=off observe balanced high"`
+	BotLevel      string `json:"botLevel" validate:"omitempty,oneof=off observe balanced high"`
 	// DisabledDetectors 被关闭的语义检测器名，逗号分隔。空 = 全部启用。
 	DisabledDetectors string `json:"disabledDetectors" validate:"max=1000"`
 }

@@ -92,6 +92,24 @@ type WAFOption struct {
 	BlockPageBgColor   string `gorm:"varchar(32)" json:"blockPageBgColor"`
 	BlockPageTextColor string `gorm:"varchar(32)" json:"blockPageTextColor"`
 
+	// SemanticLevel / BotLevel 是保护强度分档，四档：
+	//   off        —— 该层整体不生效
+	//   observe    —— 照常检测，但命中只记日志不拦截
+	//   balanced   —— 平衡防护（默认）
+	//   high       —— 高强度
+	//
+	// 两档高强度都对应**已存在的真实机制**，不是造出来的档位：
+	//   · 语义层 high = 绕过 has_attack_candidate 前置快速筛，对每个请求
+	//     都跑全部 15 类检测。快速筛会漏（/a.bak 这类只有后缀、无任何
+	//     攻击特征的请求就是被它放过的），绕过它召回更高、CPU 开销更大。
+	//   · bot 层 high = 平衡档 + 把「空 User-Agent」当可疑。扫描器可以
+	//     配成不发 UA，而 classify 对空 UA 返回 nil（不分类）——这是真实缺口。
+	//
+	// 与 CC 的 action（deny/challenge/log）是不同维度：那个是「命中后怎么处置」，
+	// 这里是「这一层跑多深」。CC 保持原有 action 不变。
+	SemanticLevel string `gorm:"varchar(16);default:balanced" json:"semanticLevel"`
+	BotLevel      string `gorm:"varchar(16);default:balanced" json:"botLevel"`
+
 	// DisabledDetectors 是被关闭的语义检测器名列表（逗号分隔），
 	// 取值见 semantic.lua 的 _M.attack_types。
 	// 空 = 全部启用。用来临时关掉误伤率高的某一类检测。

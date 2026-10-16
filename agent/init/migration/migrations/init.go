@@ -1935,6 +1935,15 @@ var AddWAFOptionModeAndPage = &gormigrate.Migration{
 	},
 }
 
+var AddWAFProtectionLevels = &gormigrate.Migration{
+	ID: "20261016-add-waf-protection-levels",
+	Migrate: func(tx *gorm.DB) error {
+		// AutoMigrate 对已有表缺列走 ALTER TABLE ADD COLUMN，不重建表。
+		// 存量行落成 tag 里的默认值 balanced —— 与升级前行为一致。
+		return tx.AutoMigrate(&model.WAFOption{})
+	},
+}
+
 var AddFirewallRuleTable = &gormigrate.Migration{
 	ID: "20260819-add-firewall-v2-tables",
 	Migrate: func(tx *gorm.DB) error {

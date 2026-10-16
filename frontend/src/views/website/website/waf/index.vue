@@ -240,6 +240,46 @@
 
                         <el-divider class="my-1" />
 
+                        <!-- 保护强度分档。四档的差异都对应真实机制：
+                             语义层 high = 绕过前置快速筛（召回更高、CPU 更大）；
+                             bot 层 high = 额外把空 User-Agent 当可疑。
+                             CC 防护的 action（deny/challenge/log）是另一维度
+                             （命中后怎么处置），在上面那张卡里单独配。 -->
+                        <el-row :gutter="24">
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafSemanticLevel')">
+                                    <el-select v-model="option.semanticLevel" class="p-w-200">
+                                        <el-option
+                                            v-for="lv in levelOptions"
+                                            :key="lv.value"
+                                            :label="$t(lv.labelKey)"
+                                            :value="lv.value"
+                                        />
+                                    </el-select>
+                                    <div class="text-xs text-gray-400 mt-1">
+                                        {{ $t(levelDescKey(option.semanticLevel)) }}
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafBotLevel')">
+                                    <el-select v-model="option.botLevel" class="p-w-200">
+                                        <el-option
+                                            v-for="lv in levelOptions"
+                                            :key="lv.value"
+                                            :label="$t(lv.labelKey)"
+                                            :value="lv.value"
+                                        />
+                                    </el-select>
+                                    <div class="text-xs text-gray-400 mt-1">
+                                        {{ $t(levelDescKey(option.botLevel)) }}
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+
+                        <el-divider class="my-1" />
+
                         <!-- 检测器开关。默认全关（即全部启用）——
                              故意用「关掉哪些」而不是「启用哪些」的表述：
                              新增检测器时老配置不需要跟着改，默认就是启用。 -->
@@ -594,7 +634,9 @@ import {
     WAF_DETECTORS,
     WAF_LOG_SORT_OPTIONS,
     WAF_MODES,
+    WAF_LEVELS,
     NAMED_PAGE_COLORS,
+    normalizeLevel,
     type WAFLogSortKey,
 } from '@/api/modules/waf-helpers';
 import RuleDialog from './rule-dialog.vue';
@@ -622,6 +664,12 @@ const trendGranularity = ref<'day' | 'hour'>('day');
 // ============ 防护模式与检测器开关 ============
 const modeOptions = WAF_MODES;
 const detectorOptions = WAF_DETECTORS;
+const levelOptions = WAF_LEVELS;
+
+const levelDescKey = (lv?: string) => {
+    const item = WAF_LEVELS.find((x) => x.value === normalizeLevel(lv));
+    return item?.descKey ?? 'website.wafLevelBalancedDesc';
+};
 
 // 当前关掉的检测器（Set 便于 O(1) 判断，保存时才序列化成逗号串）。
 // 刻意不直接绑 option.disabledDetectors 字符串：用户点一次勾选框
@@ -770,6 +818,10 @@ const loadOption = async () => {
         if (!option.value.mode) {
             option.value.mode = 'block';
         }
+        // 强度同理：老数据没有这两列时后端返回空串，
+        // 归一成 balanced 让界面显示与实际行为一致。
+        option.value.semanticLevel = normalizeLevel(option.value.semanticLevel);
+        option.value.botLevel = normalizeLevel(option.value.botLevel);
         disabledDetectors.value = parseDisabledDetectors(option.value.disabledDetectors);
     }
 };

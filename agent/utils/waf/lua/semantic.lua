@@ -19,6 +19,18 @@ local function detector_off(name)
     return disabled_detectors ~= nil and disabled_detectors[name] == true
 end
 
+-- 语义层强度分档：off / observe / balanced / high。
+--
+-- 必须是模块级且声明在所有使用点之前（与 disabled_detectors 同理：
+-- 写在函数体内会让 setter 赋值成功、inspect 却永远读到 nil）。
+--
+-- high 档的语义是**绕过 has_attack_candidate 快速筛**。
+-- 那个筛子是性能优化（"绝大多数请求不含任何攻击语法"），但它会漏：
+-- /a.bak 这类"只有后缀、没有任何攻击特征"的请求就是被它放过的。
+-- 绕过它 = 对每个请求都跑全部 15 类检测，召回更高、CPU 开销更大。
+-- 这不是造出来的档位，是真实存在的 trade-off。
+local level = "balanced"
+
 -- ============ SQL 注入 ============
 -- SQL 语法结构指纹：识别「输入能构成合法 SQL 片段」而非命中关键字
 local SQL_LOGIC_OPS = {["or"]=true, ["and"]=true, ["xor"]=true}
@@ -963,10 +975,14 @@ end
 -- 对单个「参数值或 URI」跑全套检测，返回 {type=..., value=...} 或 nil
 function _M.inspect(value, uri)
     if not value or value == "" then return nil end
+    -- 强度为 off 时整体不检测。
+    if level == "off" then return nil end
     -- Most requests contain no syntax that can start a supported attack. Avoid
     -- repeated decoding/tokenization on this overwhelmingly common hot path.
     local lower = value:lower()
-    if not has_attack_candidate(lower) then
+    -- high 档绕过这个快速筛：它漏得过东西（/a.bak 就是被它放过的），
+    -- 绕过 = 对每个请求都跑全部检测器，召回更高、CPU 开销更大。
+    if level ~= "high" and not has_attack_candidate(lower) then
         return nil
     end
     -- exposure 走独立分支（不进 checks 数组），所以必须单独判开关，
@@ -1036,6 +1052,25 @@ function _M.get_disabled_detectors()
     return disabled_detectors
 end
 
+-- 设置强度分档。空/nil 按 balanced 处理（默认值）。
+function _M.set_level(lv)
+    if lv == "off" or lv == "observe" or lv == "high" then
+        level = lv
+    else
+        level = "balanced"
+    end
+end
+
+-- 仅供测试：当前强度分档
+function _M.get_level()
+    return level
+end
+
+-- 该层是否整体关闭。access.lua 与 inspect 内部都用它。
+function _M.is_off()
+    return level == "off"
+end
+
 -- URI-only fast gate for requests without query/body. Token lookup is cheaper
 -- than crossing into the large PCRE candidate matcher on every ordinary page
 -- and API path. Any encoded or syntax-bearing path still uses the full engine.
@@ -1049,6 +1084,7 @@ local URI_PLAIN_FIRST_SEGMENT = {
 
 function _M.inspect_uri(value)
     if not value or value == "" or value == "/" then return nil end
+    if level == "off" then return nil end
     -- A plain path cannot express encoding, traversal, SQL/XSS syntax or shell
     -- metacharacters. Scan bytes in JIT-compiled Lua instead of invoking a
     -- pattern engine; only known high-risk first segments need deeper work.
