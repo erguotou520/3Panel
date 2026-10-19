@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -47,6 +48,7 @@ type IWAFService interface {
 	CreateIPGroup(req request.WAFIPGroupCreate) error
 	UpdateIPGroup(req request.WAFIPGroupUpdate) error
 	DeleteIPGroup(id uint) error
+	GetGEOStatus() GEOStatus
 	GetCCConfig(websiteID uint) (*model.WAFCCConfig, error)
 	UpdateCCConfig(req request.WAFCCUpdate) error
 	GetOption(websiteID uint) (*model.WAFOption, error)
@@ -272,7 +274,14 @@ func (w WAFService) SyncRules() error {
 	if err := global.DB.Find(&ipGroups).Error; err != nil {
 		return err
 	}
-	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir, ipSetting.Enabled, ipGroups)
+	// GeoIP.mmdb 的路径与 utils/geo 保持一致（DataDir/geo/GeoIP.mmdb）。
+	// 文件不存在时 ResolveCountryCIDRs 返回 (nil, nil)，
+	// 导出结果里 geo.available = false，前端会提示规则未生效。
+	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir, ipSetting.Enabled,
+		wafutils.ExportOptions{
+			IPGroups: ipGroups,
+			Geo:      wafutils.GeoExport{MMDBPath: filepath.Join(global.Dir.DataDir, "geo", "GeoIP.mmdb")},
+		})
 }
 
 func (w WAFService) loadAllRules() []model.WAFRule {
@@ -446,6 +455,28 @@ func parseIPGroupCIDRs(raw string) ([]string, error) {
 }
 
 // ListIPGroups 返回对指定站点生效的 IP 组（本站 + 全局）。
+// GEOStatus 是地理数据的可用性。
+//
+// 单独暴露一个接口而不是塞进 rules.json 让前端自己判断：
+// 前端读不到 rules.json（在 agent 的数据目录里），
+// 而"地理规则是否真的生效"必须让用户看得见 ——
+// 否则配了 geo 规则、mmdb 又不存在时，界面一切正常但实际全部放行。
+type GEOStatus struct {
+	// Available 为 false 时，所有 geo 规则都不命中。
+	Available bool `json:"available"`
+	// Path 是 mmdb 的期望路径，便于用户排查"为什么不可用"。
+	Path string `json:"path"`
+}
+
+func (w WAFService) GetGEOStatus() GEOStatus {
+	p := filepath.Join(global.Dir.DataDir, "geo", "GeoIP.mmdb")
+	st, err := os.Stat(p)
+	return GEOStatus{
+		Available: err == nil && st.Size() > 0,
+		Path:      p,
+	}
+}
+
 func (w WAFService) ListIPGroups(websiteID uint) ([]model.WAFIPGroup, error) {
 	var groups []model.WAFIPGroup
 	err := global.DB.

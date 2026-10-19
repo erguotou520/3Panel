@@ -225,6 +225,33 @@ local function rule_hit(rule, dims)
         -- 方向正好与界面选择相反。
         if mop:sub(1, 4) == "not_" then return not hit end
         return hit
+    elseif mt == "geo" then
+        -- match_value 是国家码，支持逗号分隔多个：CN,US
+        local geo = dims.geo
+        if not geo or geo.available ~= true then
+            -- mmdb 不可用：不命中。allow 规则会因此不放行，
+            -- deny 规则会因此不拦 —— 两个方向都不理想，
+            -- 但"静默当成匹配一切"显然更危险。
+            return false
+        end
+        local countries = geo.countries
+        if type(countries) ~= "table" then return false end
+        local ip = dims.ip()
+        if not ip then return false end
+        local hit = false
+        for code in mv:gmatch("[^,]+") do
+            local list = countries[code:upper():match("^%s*(.-)%s*$")]
+            if type(list) == "table" then
+                for _, cidr in ipairs(list) do
+                    if iputils.in_cidr(ip, cidr) then hit = true break end
+                end
+            end
+            if hit then break end
+        end
+        -- 负向操作符同样生效：与 ip/cidr、ip_group 分支同一理由，
+        -- 否则「不属于某国」会被当成「属于某国」，方向正好相反。
+        if mop:sub(1, 4) == "not_" then return not hit end
+        return hit
     elseif mt == "ip" or mt == "cidr" then
         -- ip/cidr 走 CIDR 判定而非字符串匹配，match_op 原本被完全忽略。
         -- 但负向操作符必须在这里生效：用户给 IP 规则选 "not_exact" 时，
@@ -371,6 +398,13 @@ function _M.get_site_state_cached(site_id)
         -- state 有 5 秒 TTL 缓存，合并一次的代价可以忽略。
         ip_groups = merge_ip_groups(data.global and data.global.ip_groups,
             site and site.ip_groups),
+        -- 地理规则的国家码 -> CIDR 列表。由 exporter 在导出时解析
+        -- （Go 侧查 mmdb），数据面只需要做 CIDR 判定。
+        --
+        -- available=false 表示 mmdb 缺失或解析失败：此时 geo 规则
+        -- 一律不命中。这不是"静默失效" —— 导出结果里带了这个标记，
+        -- 前端会在规则列表上提示"地理数据缺失，规则当前不生效"。
+        geo = data.geo,
     }
     state_cache[site_id] = { data = data, state = state }
     return state
@@ -501,8 +535,9 @@ function _M.check(state)
         return nil
     end
     local dims = build_dim_values()
-    -- IP 组挂在 dims 上，供 rule_hit 的 ip_group 分支查。
+    -- IP 组与地理表挂在 dims 上，供 rule_hit 的 ip_group / geo 分支查。
     dims.ip_groups = state.ip_groups
+    dims.geo = state.geo
     -- 站点级优先：站点名单有任何命中（allow 或 deny 类）即返回，不再看全局
     if state.site then
         local site_res = eval_layer(site_compiled, site_rules, dims)

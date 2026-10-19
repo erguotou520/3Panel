@@ -2380,6 +2380,101 @@ rules_scenario("ip_group 多条中任一命中", {global = {
     base_dims()
     T.vars.remote_addr = "2.2.2.2"
 end, function(res) return res ~= nil end)
+
+-- ==================== 地理匹配（2026-10-19）====================
+-- 匹配发生在 Lua/OpenResty 侧，Go 不在请求路径上，所以数据面
+-- 不可能查 mmdb。exporter 在导出时把国家码解析成 CIDR 列表写进
+-- rules.json 的 geo 段，这里只做 CIDR 判定。
+print("=== 地理匹配 ===")
+
+local GEO_FIXTURE = {
+    available = true,
+    countries = {
+        CN = {"1.0.1.0/24", "223.5.5.0/24"},
+        US = {"8.8.8.0/24", "1.1.1.0/24"},
+    },
+}
+
+rules_scenario("geo 命中 CN 网段", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "1.0.1.5"
+end, function(res) return res ~= nil end)
+
+rules_scenario("geo 不命中他国网段", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "8.8.8.8"
+end, function(res) return res == nil end)
+
+-- 多国家：逗号分隔
+rules_scenario("geo 多国家任一命中", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN,US", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "8.8.8.8"
+end, function(res) return res ~= nil end)
+
+-- 小写国家码也要能匹配（用户手输时常见）
+rules_scenario("geo 小写国家码可匹配", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "cn", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "1.0.1.5"
+end, function(res) return res ~= nil end)
+
+-- 🔴 mmdb 不可用：一律不命中。绝不能退化成"匹配一切"
+rules_scenario("geo mmdb 不可用时不命中", {geo = {available = false}, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "1.0.1.5"
+end, function(res) return res == nil end)
+
+-- 完全没有 geo 段（老版本 rules.json）：不命中
+rules_scenario("geo 无 geo 段时不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "1.0.1.5"
+end, function(res) return res == nil end)
+
+-- 国家码在表里但列表为空（库里没这个国家的数据）：不命中
+rules_scenario("geo 国家无数据时不命中", {geo = {
+    available = true,
+    countries = {ZZ = {}},
+}, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "ZZ", match_op = "exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "1.0.1.5"
+end, function(res) return res == nil end)
+
+-- 负向：不属于该国时命中
+rules_scenario("geo + not_exact 不属于该国时命中", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "not_exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "8.8.8.8"
+end, function(res) return res ~= nil end)
+
+rules_scenario("geo + not_exact 属于该国时不命中", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "not_exact", action = "deny", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "1.0.1.5"
+end, function(res) return res == nil end)
+
+-- geo 规则与其它类型的规则共存时互不干扰
+rules_scenario("geo 规则与 ip 规则共存", {geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "ip-rule", priority = 20, match_type = "ip", match_value = "9.9.9.9", match_op = "exact", action = "deny", enabled = true},
+    {id = 2, name = "geo-rule", priority = 10, match_type = "geo", match_value = "US", match_op = "exact", action = "allow", enabled = true},
+}}}, function()
+    base_dims()
+    T.vars.remote_addr = "8.8.8.8"
+end, function(res) return res ~= nil and res.action == "allow" end)
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

@@ -47,6 +47,42 @@ export interface WAFLog {
     createdAt: string;
 }
 
+/**
+ * 地理规则可选的国家/地区码（ISO 3166-1 alpha-2）。
+ *
+ * 这里只列常用的，不是全集 —— 完整列表有 200+ 个，全塞进下拉会让
+ * 选择体验变差。用户需要冷门地区时可以先用 expr 或 IP 组替代。
+ * 列表本身不做白名单校验：后端解析时查不到的地区会在导出结果里
+ * 标记为 empty，前端据此提示「该地区无数据」。
+ *
+ * 说明：GeoIP 库对香港/澳门/台湾有独立的 ISO 码，按地区做流量匹配
+ * 是正常的运维需求；下拉标签统一标注为中国香港 / 中国澳门 / 中国台湾。
+ */
+export const WAF_GEO_COUNTRIES: { code: string; zh: string; en: string }[] = [
+    { code: 'CN', zh: '中国', en: 'China' },
+    { code: 'HK', zh: '中国香港', en: 'Hong Kong, China' },
+    { code: 'MO', zh: '中国澳门', en: 'Macao, China' },
+    { code: 'TW', zh: '中国台湾', en: 'Taiwan, China' },
+    { code: 'US', zh: '美国', en: 'United States' },
+    { code: 'JP', zh: '日本', en: 'Japan' },
+    { code: 'KR', zh: '韩国', en: 'South Korea' },
+    { code: 'SG', zh: '新加坡', en: 'Singapore' },
+    { code: 'IN', zh: '印度', en: 'India' },
+    { code: 'ID', zh: '印度尼西亚', en: 'Indonesia' },
+    { code: 'VN', zh: '越南', en: 'Vietnam' },
+    { code: 'TH', zh: '泰国', en: 'Thailand' },
+    { code: 'MY', zh: '马来西亚', en: 'Malaysia' },
+    { code: 'PH', zh: '菲律宾', en: 'Philippines' },
+    { code: 'AU', zh: '澳大利亚', en: 'Australia' },
+    { code: 'GB', zh: '英国', en: 'United Kingdom' },
+    { code: 'DE', zh: '德国', en: 'Germany' },
+    { code: 'FR', zh: '法国', en: 'France' },
+    { code: 'NL', zh: '荷兰', en: 'Netherlands' },
+    { code: 'RU', zh: '俄罗斯', en: 'Russia' },
+    { code: 'BR', zh: '巴西', en: 'Brazil' },
+    { code: 'CA', zh: '加拿大', en: 'Canada' },
+];
+
 export interface WAFRuleReorder {
     /** 有序的规则 ID 列表，第一个优先级最高 */
     ids: number[];
@@ -83,6 +119,16 @@ export interface WAFIPGroupCreate {
 export interface WAFIPGroupUpdate extends WAFIPGroupCreate {
     id: number;
 }
+
+export interface WAFGEOStatus {
+    available: boolean;
+    /** mmdb 的期望路径，便于用户排查"为什么不可用" */
+    path: string;
+}
+
+export const getWAFGEOStatus = () => {
+    return http.get<WAFGEOStatus>('/waf/geo/status');
+};
 
 export const listWAFIPGroups = (websiteId: number) => {
     return http.get<WAFIPGroup[]>(`/waf/ip-groups`, { websiteId });

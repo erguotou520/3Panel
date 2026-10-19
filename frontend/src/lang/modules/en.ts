@@ -3549,6 +3549,11 @@ const message = {
         wafProtect: 'protection',
         wafCCLimit: 'Request limit',
         wafCCWindow: 'Window (seconds)',
+        wafGeoHint:
+            'Match by source region. Regions are resolved to IP ranges from the system GeoIP database and written into the rules at export time. If the database is missing the rule does not take effect, and a warning is shown above the rule list.',
+        wafGeoUnavailable: 'Geo data unavailable — geo rules are not taking effect',
+        wafGeoUnavailableTip:
+            'GeoIP database not found (expected at {path}). Rules using geo matching will not match any request — if they are blocking rules, that traffic is currently being allowed.',
         wafIPGroupTitle: 'IP groups',
         wafIPGroupName: 'Group name',
         wafIPGroupNamePlaceholder: 'e.g. office / malicious_ips',

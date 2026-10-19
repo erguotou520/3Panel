@@ -29,7 +29,18 @@
                      rules.json 里的 map key，填错一个字符就是
                      「组不存在」且 Lua 侧静默放行 —— 界面上完全看不出异常。
                      禁用手输从根上消除这类错误。 -->
-                <el-select v-if="form.matchType === 'ip_group'" v-model="form.matchValue" class="p-w-300">
+                <!-- geo：多选地区码，提交时拼成逗号分隔（与后端 collectGeoCodes 的解析一致） -->
+                <el-select
+                    v-if="form.matchType === 'geo'"
+                    :model-value="geoSelected"
+                    multiple
+                    filterable
+                    class="p-w-300"
+                    @update:model-value="onGeoChange"
+                >
+                    <el-option v-for="c in geoCountries" :key="c.code" :label="geoLabel(c)" :value="c.code" />
+                </el-select>
+                <el-select v-else-if="form.matchType === 'ip_group'" v-model="form.matchValue" class="p-w-300">
                     <el-option v-for="g in availableIPGroups" :key="g.name" :label="g.name" :value="g.name">
                         <span>{{ g.name }}</span>
                         <span class="ml-2 text-xs text-gray-400">
@@ -41,6 +52,9 @@
                 <el-input v-else v-model="form.matchValue" type="textarea" :rows="2" />
                 <div v-if="form.matchType === 'ip_group'" class="text-xs text-gray-400 mt-1">
                     {{ $t('website.wafIPGroupHint') }}
+                </div>
+                <div v-if="form.matchType === 'geo'" class="text-xs text-gray-400 mt-1">
+                    {{ $t('website.wafGeoHint') }}
                 </div>
             </el-form-item>
             <el-form-item :label="$t('website.wafAction')">
@@ -76,14 +90,14 @@
 import { computed, reactive, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
-import { createWAFRule, updateWAFRule } from '@/api/modules/waf';
+import { createWAFRule, updateWAFRule, WAF_GEO_COUNTRIES } from '@/api/modules/waf';
 
 const drawerVisible = ref(false);
 const isEdit = ref(false);
 const formRef = ref();
 const websiteId = ref(0);
 
-const matchTypes = ['ip', 'cidr', 'ip_group', 'path', 'ua', 'referer', 'header', 'cookie', 'method', 'expr'];
+const matchTypes = ['ip', 'cidr', 'ip_group', 'geo', 'path', 'ua', 'referer', 'header', 'cookie', 'method', 'expr'];
 // 负向操作符（not_*）与正向一一对应，由 Lua 侧 rules.lua 的
 // match_ops 批量生成。这里手写列表必须与 DTO 的 oneof 白名单同步 ——
 // 少一个，界面上就选不到；多一个，保存会被后端校验拒绝。
@@ -131,6 +145,28 @@ const availableIPGroups = computed(() => ipGroups.value.filter((g: any) => g.ena
 const countCIDRs = (raw?: string): number => {
     if (!raw) return 0;
     return raw.split(/[\n\r,;\t ]+/).filter((v) => v.trim()).length;
+};
+
+// 地理规则：matchValue 存的是逗号分隔的地区码，但 UI 用多选。
+// 两边格式不同，需要一个中转的数组表示，否则每次勾选都要手动切分拼接。
+const geoCountries = WAF_GEO_COUNTRIES;
+const geoSelected = computed<string[]>(() =>
+    (form.matchValue || '')
+        .split(',')
+        .map((v) => v.trim().toUpperCase())
+        .filter(Boolean),
+);
+
+const onGeoChange = (codes: string[]) => {
+    // 统一大写并按字典序输出：顺序固定后，用户 diff 配置时能看出真正改了什么
+    form.matchValue = [...new Set(codes.map((c) => c.toUpperCase()))].sort().join(',');
+};
+
+/** 地区显示名：中文用 zh，其他语言回落到英文名 */
+const geoLabel = (c: { code: string; zh: string; en: string }) => {
+    const locale = (i18n.global.locale as any)?.value || 'zh';
+    const name = String(locale).startsWith('zh') ? c.zh : c.en;
+    return `${name} (${c.code})`;
 };
 
 const acceptParams = (params: { websiteId: number; rule: any; ipGroups?: any[] }) => {

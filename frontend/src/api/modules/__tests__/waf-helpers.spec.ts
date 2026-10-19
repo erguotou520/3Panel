@@ -601,3 +601,66 @@ describe('统计维度前后端字段名一致', () => {
         expect(new Set(frontendProps).size).toBe(frontendProps.length);
     });
 });
+
+// ==================== matchType 三处同步 ====================
+// matchType 出现在：前端 rule-dialog.vue 的下拉、后端 DTO 的 oneof 白名单、
+// Lua rules.lua 的 rule_hit 分支。
+//
+// 这里是一次真 bug 的回归：batch 3 加了 ip_group，batch 5 加了 geo，
+// 但 DTO 的 oneof 一直没更新 —— 界面上选「IP 组」保存会被后端直接拒绝。
+
+describe('matchType 前后端一致', () => {
+    const dialogSrc = readFileSync('src/views/website/website/waf/rule-dialog.vue', 'utf8');
+    const dtoSrc = readFileSync('../agent/app/dto/request/waf.go', 'utf8');
+    const rulesSrc = readFileSync('../agent/utils/waf/lua/rules.lua', 'utf8');
+
+    /** 前端下拉里的 matchTypes */
+    const frontendTypes = ((): string[] => {
+        const m = dialogSrc.match(/const matchTypes = \[([\s\S]*?)\];/);
+        if (!m?.[1]) return [];
+        return [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1] ?? '');
+    })();
+
+    /** 后端 DTO 的 oneof 白名单（取 Create 那一条） */
+    const backendTypes = ((): string[] => {
+        const m = dtoSrc.match(/MatchType\s+string[^\n]*oneof=([a-z_ ]+)/);
+        if (!m?.[1]) return [];
+        return m[1].trim().split(/\s+/);
+    })();
+
+    /** Lua rule_hit 里处理的 match_type 分支 */
+    const luaTypes = ((): string[] => {
+        const out = new Set<string>();
+        for (const m of rulesSrc.matchAll(/mt == "([a-z_]+)"/g)) {
+            if (m[1]) out.add(m[1]);
+        }
+        // ip/cidr 是合在同一个分支里的，上面已分别匹配到
+        return [...out];
+    })();
+
+    it('前端解析到 11 个类型', () => {
+        expect(frontendTypes).toHaveLength(11);
+    });
+
+    it('后端白名单解析到 11 个类型', () => {
+        expect(backendTypes).toHaveLength(11);
+    });
+
+    it('前端与后端完全一致', () => {
+        expect([...frontendTypes].sort()).toEqual([...backendTypes].sort());
+    });
+
+    it('Lua 对每个类型都有分支', () => {
+        for (const t of frontendTypes) {
+            expect(luaTypes).toContain(t);
+        }
+    });
+
+    it('ip_group 与 geo 在两处都必须在（本轮补的真 bug）', () => {
+        for (const t of ['ip_group', 'geo']) {
+            expect(frontendTypes).toContain(t);
+            expect(backendTypes).toContain(t);
+            expect(luaTypes).toContain(t);
+        }
+    });
+});

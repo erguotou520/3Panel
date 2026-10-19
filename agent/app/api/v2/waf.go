@@ -91,6 +91,16 @@ func (b *BaseApi) UpdateWAFRule(c *gin.Context) {
 }
 
 // @Tags WAF
+// @Summary Waf geo data availability
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/geo/status [get]
+func (b *BaseApi) GetWAFGEOStatus(c *gin.Context) {
+	helper.SuccessWithData(c, wafService.GetGEOStatus())
+}
+
+// @Tags WAF
 // @Summary List waf ip groups
 // @Param websiteId query integer true "websiteId"
 // @Success 200

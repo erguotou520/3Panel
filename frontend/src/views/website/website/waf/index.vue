@@ -464,6 +464,17 @@
                             </div>
                         </div>
                     </template>
+                    <!-- 地理数据缺失时必须显眼提示：geo 规则在 mmdb 不可用
+                         时一律不命中，界面不提示的话用户会以为已经拦住了。 -->
+                    <el-alert
+                        v-if="hasGeoRules && !geoStatus.available"
+                        :title="$t('website.wafGeoUnavailable')"
+                        :description="$t('website.wafGeoUnavailableTip', { path: geoStatus.path })"
+                        type="warning"
+                        :closable="false"
+                        show-icon
+                        class="mb-2"
+                    />
                     <el-alert
                         v-if="ruleSortMode"
                         :title="$t('website.wafSortTip')"
@@ -706,6 +717,7 @@ import {
     updateWAFWebhook,
     reorderWAFRules,
     listWAFIPGroups,
+    getWAFGEOStatus,
     createWAFIPGroup,
     updateWAFIPGroup,
     deleteWAFIPGroup,
@@ -989,6 +1001,23 @@ const loadIPGroups = async () => {
     ipGroups.value = res.data || [];
 };
 
+// 地理数据可用性。geo 规则依赖 GeoIP.mmdb，文件不在时规则一律不命中 ——
+// 必须让用户看见，否则界面一切正常但实际全部放行。
+const geoStatus = ref<{ available: boolean; path: string }>({ available: true, path: '' });
+
+const loadGeoStatus = async () => {
+    try {
+        const res = await getWAFGEOStatus();
+        geoStatus.value = res.data || { available: true, path: '' };
+    } catch (e) {
+        // 老版本后端没有这个接口：不当作"不可用"，避免误导。
+        geoStatus.value = { available: true, path: '' };
+    }
+};
+
+/** 规则列表里是否存在 geo 规则 —— 没有的话不必提示地理数据缺失 */
+const hasGeoRules = computed(() => rules.value.some((r: any) => r.matchType === 'geo'));
+
 const loadRules = async () => {
     const res = await searchWAFRules({ websiteId: props.websiteId });
     rules.value = res.data || [];
@@ -1238,6 +1267,7 @@ watch(logSort, () => {
 const loadAll = () => {
     loadRules();
     loadIPGroups();
+    loadGeoStatus();
     loadLogs();
     loadStat();
     loadCC();

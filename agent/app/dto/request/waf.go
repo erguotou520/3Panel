@@ -11,7 +11,7 @@ type WAFRuleCreate struct {
 	Scope      string `json:"scope" validate:"required,oneof=global site"`
 	WebsiteID  uint   `json:"websiteId"`
 	Priority   int    `json:"priority"`
-	MatchType  string `json:"matchType" validate:"required,oneof=ip cidr path ua referer header cookie method expr"`
+	MatchType  string `json:"matchType" validate:"required,oneof=ip cidr ip_group geo path ua referer header cookie method expr"`
 	MatchValue string `json:"matchValue" validate:"required"`
 	MatchOp    string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex not_exact not_contains not_prefix not_suffix not_wildcard not_regex"`
 	Action     string `json:"action" validate:"required,oneof=allow deny challenge log"`
@@ -25,7 +25,7 @@ type WAFRuleUpdate struct {
 	ID             uint   `json:"id" validate:"required"`
 	Name           string `json:"name" validate:"required"`
 	Priority       int    `json:"priority"`
-	MatchType      string `json:"matchType" validate:"required"`
+	MatchType      string `json:"matchType" validate:"required,oneof=ip cidr ip_group geo path ua referer header cookie method expr"`
 	MatchValue     string `json:"matchValue" validate:"required"`
 	MatchOp        string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex not_exact not_contains not_prefix not_suffix not_wildcard not_regex"`
 	Action         string `json:"action" validate:"required,oneof=allow deny challenge log"`

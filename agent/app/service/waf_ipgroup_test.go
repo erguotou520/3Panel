@@ -235,7 +235,7 @@ func TestIPGroupsExported(t *testing.T) {
 		{Name: "blank", Scope: model.WAFScopeGlobal, Enabled: true, CIDRs: "  \n\n "},
 		{Name: "site1", Scope: model.WAFScopeSite, WebsiteID: 1, Enabled: true, CIDRs: "172.16.0.0/12"},
 	}
-	if err := waf.ExportRules(nil, nil, nil, map[uint]bool{1: true}, dir, false, groups); err != nil {
+	if err := waf.ExportRules(nil, nil, nil, map[uint]bool{1: true}, dir, false, waf.ExportOptions{IPGroups: groups}); err != nil {
 		t.Fatalf("导出失败: %v", err)
 	}
 	doc := readRulesJSON(t, dir)
@@ -275,7 +275,7 @@ func TestIPGroupFieldNamesMatchLua(t *testing.T) {
 		{Name: "office", Scope: model.WAFScopeGlobal, Enabled: true, CIDRs: "10.0.0.0/8"},
 		{Name: "site1", Scope: model.WAFScopeSite, WebsiteID: 1, Enabled: true, CIDRs: "10.0.0.0/8"},
 	}
-	if err := waf.ExportRules(nil, nil, nil, map[uint]bool{1: true}, dir, false, groups); err != nil {
+	if err := waf.ExportRules(nil, nil, nil, map[uint]bool{1: true}, dir, false, waf.ExportOptions{IPGroups: groups}); err != nil {
 		t.Fatalf("导出失败: %v", err)
 	}
 	doc := readRulesJSON(t, dir)
@@ -287,5 +287,157 @@ func TestIPGroupFieldNamesMatchLua(t *testing.T) {
 	site, _ := doc["sites"].(map[string]any)["1"].(map[string]any)
 	if _, ok := site[luaSiteKey]; !ok {
 		t.Errorf("站点下应存在 %q，实际键 %v", luaSiteKey, keysOf(site))
+	}
+}
+
+// 没有 geo 规则时不该产出 geo 段 —— rules.json 保持小，
+// 数据面也不需要走 geo 分支。
+func TestGeoSectionAbsentWithoutGeoRules(t *testing.T) {
+	dir := t.TempDir()
+	rules := []model.WAFRule{{
+		Name: "ip-rule", MatchType: "ip", MatchValue: "1.2.3.4",
+		MatchOp: "exact", Action: "deny", Enabled: true,
+	}}
+	if err := waf.ExportRules(rules, nil, nil, map[uint]bool{1: true}, dir, false,
+		waf.ExportOptions{Geo: waf.GeoExport{MMDBPath: "/nonexistent.mmdb"}}); err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	doc := readRulesJSON(t, dir)
+	if _, ok := doc["geo"]; ok {
+		t.Errorf("没有 geo 规则时不应有 geo 段，实际 %v", doc["geo"])
+	}
+}
+
+// 有 geo 规则但 mmdb 缺失：导出不能失败（其它规则还要同步），
+// 但必须标 available=false —— 否则就是静默失效：
+// 用户以为拦住了，实际全部放行。
+func TestGeoSectionMarksUnavailableWhenMMDBMissing(t *testing.T) {
+	dir := t.TempDir()
+	rules := []model.WAFRule{{
+		Name: "geo-rule", MatchType: "geo", MatchValue: "CN",
+		MatchOp: "exact", Action: "deny", Enabled: true,
+	}}
+	err := waf.ExportRules(rules, nil, nil, map[uint]bool{1: true}, dir, false,
+		waf.ExportOptions{Geo: waf.GeoExport{MMDBPath: "/nonexistent/GeoIP.mmdb"}})
+	if err != nil {
+		t.Fatalf("mmdb 缺失不应让导出失败: %v", err)
+	}
+	doc := readRulesJSON(t, dir)
+	geo, ok := doc["geo"].(map[string]any)
+	if !ok {
+		t.Fatalf("应存在 geo 段，实际 %v", doc["geo"])
+	}
+	if avail, _ := geo["available"].(bool); avail {
+		t.Error("mmdb 缺失时 available 必须为 false（否则前端不会提示规则未生效）")
+	}
+}
+
+// geo 规则本身仍要正常导出 —— 不能因为地理数据缺失就把规则丢掉。
+func TestGeoRuleStillExportedWhenMMDBMissing(t *testing.T) {
+	dir := t.TempDir()
+	rules := []model.WAFRule{{
+		Name: "geo-rule", MatchType: "geo", MatchValue: "CN",
+		MatchOp: "exact", Action: "deny", Enabled: true, Priority: 10,
+	}}
+	if err := waf.ExportRules(rules, nil, nil, map[uint]bool{1: true}, dir, false,
+		waf.ExportOptions{Geo: waf.GeoExport{MMDBPath: "/nonexistent.mmdb"}}); err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	doc := readRulesJSON(t, dir)
+	global, _ := doc["global"].(map[string]any)
+	rulesArr, _ := global["rules"].([]any)
+	if len(rulesArr) != 1 {
+		t.Fatalf("geo 规则应照常导出，实际 %d 条", len(rulesArr))
+	}
+	r0, _ := rulesArr[0].(map[string]any)
+	if r0["match_type"] != "geo" {
+		t.Errorf("match_type 应为 geo，实际 %v", r0["match_type"])
+	}
+}
+
+// 地理段的字段名契约：Lua 侧读 geo.available / geo.countries。
+func TestGeoFieldNamesMatchLua(t *testing.T) {
+	dir := t.TempDir()
+	rules := []model.WAFRule{{
+		Name: "geo-rule", MatchType: "geo", MatchValue: "CN",
+		MatchOp: "exact", Action: "deny", Enabled: true,
+	}}
+	if err := waf.ExportRules(rules, nil, nil, map[uint]bool{1: true}, dir, false,
+		waf.ExportOptions{Geo: waf.GeoExport{MMDBPath: "/nonexistent.mmdb"}}); err != nil {
+		t.Fatalf("导出失败: %v", err)
+	}
+	doc := readRulesJSON(t, dir)
+	geo, _ := doc["geo"].(map[string]any)
+	if _, ok := geo["available"]; !ok {
+		t.Errorf("geo 段应含 available（Lua 侧据此判定是否可用），实际键 %v", keysOf(geo))
+	}
+	// countries 只在 available=true 时出现（omitempty），
+	// 这里锁住"不可用时不该有空的 countries 键"这个行为
+	if _, ok := geo["countries"]; ok {
+		t.Error("不可用时应省略 countries，避免 Lua 误判为空表可查")
+	}
+}
+
+// matchType 的合法取值必须三处一致：后端 DTO 白名单、Lua rule_hit 的分支、
+// 前端下拉。少一处就是「界面上能选、保存被拒」或「存进去了但不生效」。
+//
+// 这个测试是一次真 bug 的回归：batch 3 加了 ip_group、batch 5 加了 geo，
+// 但 DTO 的 oneof 一直没更新 —— 界面上选「IP 组」保存会被后端直接拒绝，
+// 因为当时的白名单还是 oneof=ip cidr path ua referer header cookie method expr。
+func TestRuleMatchTypeValidation(t *testing.T) {
+	valid := []string{"ip", "cidr", "ip_group", "geo", "path", "ua", "referer", "header", "cookie", "method", "expr"}
+	for _, mt := range valid {
+		req := request.WAFRuleCreate{
+			Name: "r", Scope: model.WAFScopeGlobal, MatchType: mt, MatchValue: "x", Action: "deny",
+		}
+		if err := validateReq(&req); err != nil {
+			t.Errorf("合法 matchType %q 应通过校验，实际 %v", mt, err)
+		}
+		// WAFRuleUpdate 没有 Scope 字段（更新不改作用范围）
+		upd := request.WAFRuleUpdate{
+			ID: 1, Name: "r", MatchType: mt, MatchValue: "x", Action: "deny",
+		}
+		if err := validateReq(&upd); err != nil {
+			t.Errorf("Update 也应接受 %q，实际 %v", mt, err)
+		}
+	}
+	for _, mt := range []string{"", "ipv6", "GEO", "ip_group ", "unknown"} {
+		req := request.WAFRuleCreate{
+			Name: "r", Scope: model.WAFScopeGlobal, MatchType: mt, MatchValue: "x", Action: "deny",
+		}
+		if err := validateReq(&req); err == nil {
+			t.Errorf("Create 的非法 matchType %q 应被拒绝", mt)
+		}
+		// Update 也必须拒绝 —— 早先 Update 只有 required、没有 oneof，
+		// 等于更新路径可以写进任意 match_type，绕过 Create 的白名单。
+		upd := request.WAFRuleUpdate{
+			ID: 1, Name: "r", MatchType: mt, MatchValue: "x", Action: "deny",
+		}
+		if mt != "" {
+			if err := validateReq(&upd); err == nil {
+				t.Errorf("Update 的非法 matchType %q 也应被拒绝（不能只校验 Create）", mt)
+			}
+		}
+	}
+}
+
+// 关键回归：ip_group 与 geo 必须能真正保存成功。
+// 只测 validateReq 不够 —— CreateRule 还要经过 service 层。
+func TestCreateGeoAndIPGroupRules(t *testing.T) {
+	setupWAFTestDB(t)
+	svc := newIPGroupSvc()
+
+	for _, mt := range []string{"geo", "ip_group"} {
+		if err := svc.CreateRule(request.WAFRuleCreate{
+			Name: "rule-" + mt, Scope: model.WAFScopeGlobal,
+			MatchType: mt, MatchValue: "CN", MatchOp: "exact", Action: "deny",
+		}); err != nil {
+			t.Errorf("matchType=%s 的规则应能创建，实际 %v", mt, err)
+		}
+	}
+	var n int64
+	global.DB.Model(&model.WAFRule{}).Count(&n)
+	if n != 2 {
+		t.Errorf("应创建 2 条规则，实际 %d 条", n)
 	}
 }

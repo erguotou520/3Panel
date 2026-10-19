@@ -120,6 +120,8 @@ type exportedRules struct {
 		// 站点级组在 siteEntry.ip_groups 里，同名时本站覆盖全局。
 		IPGroups map[string][]string `json:"ip_groups,omitempty"`
 	} `json:"global"`
+	// Geo 地理规则的解析结果。nil 表示本次没有 geo 规则，数据面不必加载。
+	Geo   *geoExportDTO        `json:"geo,omitempty"`
 	Sites map[string]siteEntry `json:"sites"`
 }
 
@@ -186,7 +188,7 @@ func (c *compiledRuleSet) add(rule ruleDTO) bool {
 // ExportRules 将 DB 中的名单与 CC/机器人/探测配置导出为数据面 rules.json（全局 + 站点两层）
 // ipGroups 用可变参数追加在末尾，而不是加进固定签名 ——
 // 现有 7 处调用（含测试）不必改，少一处改错的机会。
-func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options []model.WAFOption, enabledSites map[uint]bool, hostWebsiteDir string, iplistEnabled bool, ipGroups ...[]model.WAFIPGroup) error {
+func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options []model.WAFOption, enabledSites map[uint]bool, hostWebsiteDir string, iplistEnabled bool, opts ...ExportOptions) error {
 	data := exportedRules{Sites: map[string]siteEntry{}}
 	data.Global.Compiled = newCompiledRuleSet()
 	data.Global.IPListEnabled = iplistEnabled
@@ -197,32 +199,61 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 
 	// IP 组：只导出启用的。禁用组若还导出，Lua 侧查到就会命中，
 	// 「关闭」就成了摆设 —— 与 iplistEnabled 同样的处理思路。
-	if len(ipGroups) > 0 {
-		for _, g := range ipGroups[0] {
-			if !g.Enabled || g.Name == "" {
+	var exportOpts ExportOptions
+	if len(opts) > 0 {
+		exportOpts = opts[0]
+	}
+	for _, g := range exportOpts.IPGroups {
+		if !g.Enabled || g.Name == "" {
+			continue
+		}
+		cidrs := splitNonEmptyLines(g.CIDRs)
+		if len(cidrs) == 0 {
+			continue
+		}
+		if g.Scope == model.WAFScopeSite {
+			key := fmt.Sprintf("%d", g.WebsiteID)
+			site, ok := data.Sites[key]
+			if !ok {
 				continue
 			}
-			cidrs := splitNonEmptyLines(g.CIDRs)
-			if len(cidrs) == 0 {
-				continue
+			if site.IPGroups == nil {
+				site.IPGroups = map[string][]string{}
 			}
-			if g.Scope == model.WAFScopeSite {
-				key := fmt.Sprintf("%d", g.WebsiteID)
-				site, ok := data.Sites[key]
-				if !ok {
-					continue
-				}
-				if site.IPGroups == nil {
-					site.IPGroups = map[string][]string{}
-				}
-				site.IPGroups[g.Name] = cidrs
-				data.Sites[key] = site
-			} else {
-				if data.Global.IPGroups == nil {
-					data.Global.IPGroups = map[string][]string{}
-				}
-				data.Global.IPGroups[g.Name] = cidrs
+			site.IPGroups[g.Name] = cidrs
+			data.Sites[key] = site
+		} else {
+			if data.Global.IPGroups == nil {
+				data.Global.IPGroups = map[string][]string{}
 			}
+			data.Global.IPGroups[g.Name] = cidrs
+		}
+	}
+
+	// 地理规则：只解析**被启用规则引用到的**国家码。
+	// 把全世界都写进来会让 rules.json 膨胀到几 MB，
+	// 而绝大多数站点只关心自己那一两个国家。
+	geoCodes := collectGeoCodes(rules)
+	if len(geoCodes) > 0 && exportOpts.Geo.MMDBPath != "" {
+		countries, err := ResolveCountryCIDRs(exportOpts.Geo.MMDBPath, geoCodes, true)
+		if err != nil {
+			// 解析失败不能让整个导出失败 —— 其它规则还得同步。
+			// 但不静默吞掉：记日志，并且把 geo 标为不可用，
+			// 前端会提示"这些规则当前不生效"。
+			logGeoResolveFailure(err)
+			data.Geo = &geoExportDTO{Available: false}
+		} else if countries == nil {
+			// mmdb 不存在：同上，标记不可用而不是当作"没有国家数据"。
+			data.Geo = &geoExportDTO{Available: false}
+		} else {
+			dto := &geoExportDTO{Available: true, Countries: countries}
+			for _, code := range geoCodes {
+				if len(countries[code]) == 0 {
+					dto.Empty = append(dto.Empty, code)
+				}
+			}
+			sort.Strings(dto.Empty)
+			data.Geo = dto
 		}
 	}
 
@@ -366,6 +397,41 @@ func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options [
 		return err
 	}
 	return os.Rename(tmpName, target)
+}
+
+// ExportOptions 是导出的可选输入。用单一结构体而不是两个可变参数：
+// Go 不允许同一函数有多个 ...T，而这些都属于"不是每次都要传"的配置。
+//
+// 之所以要显式传 mmdb 路径而不是在 exporter 里读全局变量：
+// utils/waf 是被 service 层调用的纯工具包，让它依赖 global
+// 会把配置来源硬编码进来，测试也没法换成临时文件。
+type ExportOptions struct {
+	// IPGroups 是要导出的 IP 组（含禁用的，导出时按 Enabled 过滤）。
+	IPGroups []model.WAFIPGroup
+	// Geo 是地理规则导出配置。
+	Geo GeoExport
+}
+
+// GeoExport 控制地理规则的导出。
+type GeoExport struct {
+	// MMDBPath 是 GeoIP.mmdb 的路径。空字符串 = 本次不解析 geo。
+	MMDBPath string
+}
+
+// geoExportDTO 是 country code -> CIDR 列表的解析结果。
+//
+// 为什么是"解析成 CIDR"而不是在数据面查库：匹配发生在 Lua/OpenResty 侧，
+// Go 不在请求路径上。展开成 CIDR 后 Lua 复用已有的 in_cidr 判定。
+type geoExportDTO struct {
+	// Available 表示 mmdb 是否可用。false 时所有 geo 规则都不命中，
+	// 前端要据此提示用户「地理数据缺失，这些规则当前不生效」——
+	// 不能静默失效：用户会以为拦住了，实际全部放行。
+	Available bool `json:"available"`
+	// Countries 是 country code -> CIDR 列表。
+	// 值为空数组表示「库里没有这个国家的数据」，与「没有该键」区分开。
+	Countries map[string][]string `json:"countries,omitempty"`
+	// Empty 是库里查不到数据的国家码，便于前端一次性提示。
+	Empty []string `json:"empty,omitempty"`
 }
 
 // WAF 站点防护模式取值。必须与 Lua 侧 access.lua 判定用的字面量一致。

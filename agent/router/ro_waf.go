@@ -30,6 +30,9 @@ func (a *WAFRouter) InitRouter(Router *gin.RouterGroup) {
 		wafRouter.POST("/rules/update", baseApi.UpdateWAFRule)
 		wafRouter.POST("/rules/reorder", baseApi.ReorderWAFRules)
 
+		// 地理数据可用性：前端据此提示"geo 规则当前是否生效"
+		wafRouter.GET("/geo/status", baseApi.GetWAFGEOStatus)
+
 		// IP 组：可复用的 IP/CIDR 集合，供 match_type=ip_group 的规则引用
 		ipGroups := wafRouter.Group("/ip-groups")
 		{

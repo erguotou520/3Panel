@@ -3368,6 +3368,11 @@ const message = {
         wafProtect: '防护',
         wafCCLimit: '请求数上限',
         wafCCWindow: '窗口（秒）',
+        wafGeoHint:
+            '按来源地区匹配。地区数据由系统中的 GeoIP 库解析成 IP 段，导出时写入规则；GeoIP 库缺失时该规则不生效，规则列表顶部会提示。',
+        wafGeoUnavailable: '地理数据不可用，地理规则当前不生效',
+        wafGeoUnavailableTip:
+            '未找到 GeoIP 数据库（期望路径：{path}）。使用地理规则的条目不会匹配任何请求 —— 如果是拦截规则，这些流量当前会被放行。',
         wafIPGroupTitle: 'IP 组',
         wafIPGroupName: '组名',
         wafIPGroupNamePlaceholder: '如 office / malicious_ips',
