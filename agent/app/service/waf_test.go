@@ -51,23 +51,23 @@ func TestWAFStatLogs(t *testing.T) {
 		t.Fatalf("StatLogs: %v (SQLite 下 DATE_FORMAT 会在此失败)", err)
 	}
 	byType := map[string]int64{}
-	for _, it := range res["attackType"] {
+	for _, it := range res.AttackType {
 		byType[it.Key] = it.Count
 	}
 	if byType["sqli"] != 2 || byType["xss"] != 1 || byType["cc"] != 1 {
 		t.Fatalf("attackType wrong: %v", byType)
 	}
 	// Top IP：1.1.1.1 两次居首
-	if len(res["topIP"]) == 0 || res["topIP"][0].Key != "1.1.1.1" || res["topIP"][0].Count != 2 {
-		t.Fatalf("topIP wrong: %+v", res["topIP"])
+	if len(res.TopIP) == 0 || res.TopIP[0].Key != "1.1.1.1" || res.TopIP[0].Count != 2 {
+		t.Fatalf("topIP wrong: %+v", res.TopIP)
 	}
 	// 趋势按天归并：至少 2 天（今天 + 昨天/前天）
-	if len(res["trend"]) < 2 {
-		t.Fatalf("trend wrong: %+v", res["trend"])
+	if len(res.Trend) < 2 {
+		t.Fatalf("trend wrong: %+v", res.Trend)
 	}
-	for i := 1; i < len(res["trend"]); i++ {
-		if res["trend"][i-1].Key > res["trend"][i].Key {
-			t.Fatalf("trend not sorted: %+v", res["trend"])
+	for i := 1; i < len(res.Trend); i++ {
+		if res.Trend[i-1].Key > res.Trend[i].Key {
+			t.Fatalf("trend not sorted: %+v", res.Trend)
 		}
 	}
 }

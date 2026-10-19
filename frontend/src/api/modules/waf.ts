@@ -126,10 +126,56 @@ export interface WAFLogSearch {
     format?: string;
 }
 
+export interface WAFStatItem {
+    key: string;
+    count: number;
+}
+
+/**
+ * 汇总指标。
+ *
+ * 注意 AverageDurationMs 在空库时是 0 而不是 undefined ——
+ * 后端用 COALESCE 兜过底。前端直接渲染即可，不用再判空。
+ */
+export interface WAFStatSummary {
+    total: number;
+    denied: number;
+    allowed: number;
+    challenged: number;
+    logged: number;
+    uniqueIPs: number;
+    falsePositive: number;
+    avgDurationMs: number;
+    maxDurationMs: number;
+}
+
+/**
+ * 统计响应。
+ *
+ * 全部维度都保证是数组（无数据时是 []，不是 null）——
+ * 后端 nonNilItems 兜过底，所以前端 `.length` 不会抛。
+ */
 export interface WAFStat {
-    attackType: { key: string; count: number }[];
-    topIP: { key: string; count: number }[];
-    trend: { key: string; count: number }[];
+    summary: WAFStatSummary;
+    attackType: WAFStatItem[];
+    topIP: WAFStatItem[];
+    trend: WAFStatItem[];
+    /** 哪一层拦的：rules / subscription / bot / cc / probe / semantic / … */
+    layer: WAFStatItem[];
+    /** 处置构成：deny / allow / log / challenge */
+    action: WAFStatItem[];
+    /** 攻击来源国家/地区（日志入库时由 maxmind 解析） */
+    area: WAFStatItem[];
+    topPath: WAFStatItem[];
+    topUA: WAFStatItem[];
+    method: WAFStatItem[];
+    topRule: WAFStatItem[];
+    /** 站点排行（仅全局视角有意义） */
+    website: WAFStatItem[];
+    /** 处理耗时分布，固定 5 个桶 */
+    duration: WAFStatItem[];
+    /** 被标记为误报的攻击类型分布 */
+    falsePositive: WAFStatItem[];
 }
 
 export interface WAFStatRequest extends WAFLogSearch {

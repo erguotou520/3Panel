@@ -29,7 +29,7 @@ func TestWAFStatLogsTrendGroupsByDay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatLogs: %v", err)
 	}
-	trend := res["trend"]
+	trend := res.Trend
 	if len(trend) != 3 {
 		t.Fatalf("应聚合出 3 个日期桶，实际 %d: %+v", len(trend), trend)
 	}
@@ -65,7 +65,7 @@ func TestWAFStatLogsTrendSupportsHourGranularity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatLogs: %v", err)
 	}
-	trend := res["trend"]
+	trend := res.Trend
 	if len(trend) != 2 {
 		t.Fatalf("小时粒度应聚合出 2 个桶，实际 %d: %+v", len(trend), trend)
 	}
@@ -131,8 +131,8 @@ func TestWAFStatLogsTrendAggregatesInSQL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatLogs: %v", err)
 	}
-	if len(res["trend"]) > 7 {
-		t.Errorf("StatLogs.trend 返回 %d 个桶，超过 7 天跨度", len(res["trend"]))
+	if len(res.Trend) > 7 {
+		t.Errorf("StatLogs.trend 返回 %d 个桶，超过 7 天跨度", len(res.Trend))
 	}
 }
 
@@ -156,11 +156,11 @@ func TestWAFStatLogsTrendRespectsTimeRange(t *testing.T) {
 		t.Fatalf("StatLogs: %v", err)
 	}
 	total := int64(0)
-	for _, item := range res["trend"] {
+	for _, item := range res.Trend {
 		total += item.Count
 	}
 	if total != 1 {
-		t.Errorf("时间范围过滤后应只有 1 条，实际 %d: %+v", total, res["trend"])
+		t.Errorf("时间范围过滤后应只有 1 条，实际 %d: %+v", total, res.Trend)
 	}
 }
 
@@ -171,10 +171,10 @@ func TestWAFStatLogsTrendEmptyResultIsEmptySlice(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatLogs: %v", err)
 	}
-	if res["trend"] == nil {
+	if res.Trend == nil {
 		t.Error("无数据时 trend 应为空切片而非 nil，前端 v-for 与 .map 依赖这点")
 	}
-	if res["attackType"] == nil {
+	if res.AttackType == nil {
 		t.Error("无数据时 attackType 应为空切片而非 nil")
 	}
 }

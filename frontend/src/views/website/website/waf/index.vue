@@ -19,18 +19,35 @@
                     </template>
                     <!-- 概览数字先给结论，再给分布：三个 KPI 平铺一行，
                          趋势独占整行（时间维度需要宽度），类型与来源 IP 并排。 -->
+                    <!-- 汇总指标：先给结论（总量/拦截/独立 IP），再给处置质量
+                         （误报数、平均耗时）。用后端算好的 summary 而不是前端
+                         自己数分布——分布是 TopN 截断过的，数出来会偏小。 -->
                     <div class="waf-kpi">
                         <div class="waf-kpi-item">
-                            <span class="waf-kpi-value">{{ statTotal }}</span>
+                            <span class="waf-kpi-value">{{ stat.summary?.total || 0 }}</span>
                             <span class="waf-kpi-label">{{ $t('website.wafStatTotal') }}</span>
                         </div>
                         <div class="waf-kpi-item">
-                            <span class="waf-kpi-value">{{ stat.attackType?.length || 0 }}</span>
-                            <span class="waf-kpi-label">{{ $t('website.wafAttackType') }}</span>
+                            <span class="waf-kpi-value waf-kpi-danger">
+                                {{ stat.summary?.denied || 0 }}
+                            </span>
+                            <span class="waf-kpi-label">{{ $t('website.wafStatDenied') }}</span>
                         </div>
                         <div class="waf-kpi-item">
-                            <span class="waf-kpi-value">{{ stat.topIP?.length || 0 }}</span>
-                            <span class="waf-kpi-label">{{ $t('website.wafTopIP') }}</span>
+                            <span class="waf-kpi-value">{{ stat.summary?.uniqueIPs || 0 }}</span>
+                            <span class="waf-kpi-label">{{ $t('website.wafStatUniqueIPs') }}</span>
+                        </div>
+                        <div class="waf-kpi-item">
+                            <span class="waf-kpi-value">
+                                {{ formatDuration(stat.summary?.avgDurationMs) }}
+                            </span>
+                            <span class="waf-kpi-label">{{ $t('website.wafStatAvgDuration') }}</span>
+                        </div>
+                        <div class="waf-kpi-item">
+                            <span class="waf-kpi-value" :class="{ 'waf-kpi-warn': stat.summary?.falsePositive > 0 }">
+                                {{ stat.summary?.falsePositive || 0 }}
+                            </span>
+                            <span class="waf-kpi-label">{{ $t('website.wafStatFalsePositive') }}</span>
                         </div>
                     </div>
 
@@ -54,29 +71,26 @@
                         <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
                     </div>
 
+                    <!-- 10 个分布维度共用一套渲染：逐个复制模板会有 10 份
+                         几乎相同的 20 行结构，改样式时必然漏掉几处。
+                         维度清单见 statDimensions，新增维度只改那一处。 -->
                     <el-row :gutter="16" class="mt-3">
-                        <el-col :xs="24" :md="12">
-                            <div class="waf-stat-title">{{ $t('website.wafAttackType') }}</div>
-                            <div v-if="stat.attackType?.length" class="waf-bars">
-                                <div v-for="item in stat.attackType" :key="item.key" class="waf-bar-row">
-                                    <span class="waf-bar-name">{{ item.key || '-' }}</span>
-                                    <div class="waf-bar-track">
-                                        <div class="waf-bar-fill" :style="{ width: barWidth(item.count) }" />
-                                    </div>
-                                    <span class="waf-bar-value">{{ item.count }}</span>
-                                </div>
+                        <el-col v-for="d in statDimensions" :key="d.prop" :xs="24" :md="12">
+                            <div class="waf-stat-title">
+                                {{ $t(d.titleKey) }}
+                                <span v-if="d.hintKey" class="text-xs text-gray-400 font-normal">
+                                    {{ $t(d.hintKey) }}
+                                </span>
                             </div>
-                            <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
-                        </el-col>
-                        <el-col :xs="24" :md="12">
-                            <div class="waf-stat-title">{{ $t('website.wafTopIP') }}</div>
-                            <div v-if="stat.topIP?.length" class="waf-bars">
-                                <div v-for="item in stat.topIP" :key="item.key" class="waf-bar-row">
-                                    <span class="waf-bar-name waf-bar-ip">{{ item.key }}</span>
+                            <div v-if="statItems(d.prop).length" class="waf-bars">
+                                <div v-for="item in statItems(d.prop)" :key="item.key" class="waf-bar-row">
+                                    <span class="waf-bar-name" :title="item.key">
+                                        {{ d.labelFn ? d.labelFn(item.key) : item.key || '-' }}
+                                    </span>
                                     <div class="waf-bar-track">
                                         <div
-                                            class="waf-bar-fill waf-bar-fill-ip"
-                                            :style="{ width: barWidth(item.count) }"
+                                            class="waf-bar-fill"
+                                            :style="{ width: barWidth(item.count, statItems(d.prop)) }"
                                         />
                                     </div>
                                     <span class="waf-bar-value">{{ item.count }}</span>
@@ -801,18 +815,58 @@ const notify = ref<{ enable: boolean; method: WAFWebhookMethod; url: string }>({
     url: '',
 });
 
-// 三个分组各有自己的量级，KPI 的「拦截总数」用趋势之和而不是某一组的最大值，
-// 否则「攻击类型 3 种」这种计数会被当成事件总数显示。
-const statTotal = computed(() =>
-    (stat.value.trend || []).reduce((sum: number, item: any) => sum + (item.count || 0), 0),
-);
+// 统计维度清单。顺序即展示顺序。
+//
+// 每个维度按**自己的最大值**缩放条形宽度，而不是全局最大值：
+// 10 个维度的量级差异很大（layer 可能几千、误报可能只有 2），
+// 用全局最大值会让小量级维度的条形全是 3% 的短条，看不出相对高低。
+const statDimensions: {
+    prop: string;
+    titleKey: string;
+    hintKey?: string;
+    labelFn?: (k: string) => string;
+}[] = [
+    { prop: 'attackType', titleKey: 'website.wafAttackType' },
+    { prop: 'topIP', titleKey: 'website.wafTopIP' },
+    {
+        prop: 'layer',
+        titleKey: 'website.wafStatLayer',
+        hintKey: 'website.wafStatLayerHint',
+        // 层的取值是内部实现细节（rules/semantic/cc…），统一走 i18n 映射，
+        // 未知值不直接回显原始字符串。
+        labelFn: (k: string) => i18n.global.t(layerLabelKey(k)),
+    },
+    {
+        prop: 'action',
+        titleKey: 'website.wafStatAction',
+        labelFn: (k: string) => {
+            const keys: Record<string, string> = {
+                deny: 'website.wafStatActionDeny',
+                allow: 'website.wafStatActionAllow',
+                log: 'website.wafStatActionLog',
+                challenge: 'website.wafStatActionChallenge',
+            };
+            return i18n.global.t(keys[k] || 'website.wafStatActionUnknown');
+        },
+    },
+    { prop: 'area', titleKey: 'website.wafStatArea' },
+    { prop: 'topPath', titleKey: 'website.wafStatPath' },
+    { prop: 'topUA', titleKey: 'website.wafStatUA' },
+    { prop: 'method', titleKey: 'website.wafStatMethod' },
+    { prop: 'topRule', titleKey: 'website.wafStatRule' },
+    { prop: 'website', titleKey: 'website.wafStatWebsite', hintKey: 'website.wafStatWebsiteHint' },
+    { prop: 'duration', titleKey: 'website.wafStatDuration' },
+    { prop: 'falsePositive', titleKey: 'website.wafStatFalsePositiveType' },
+];
 
-const statMax = computed(() => {
-    const counts = [...(stat.value.attackType || []), ...(stat.value.topIP || [])].map((item: any) => item.count || 0);
-    return Math.max(1, ...counts);
-});
+/** 取某个维度的数据，缺字段时返回空数组（避免 v-for 拿到 undefined） */
+const statItems = (prop: string) => stat.value[prop] || [];
 
-const barWidth = (count: number) => `${Math.max(3, Math.round(((count || 0) / statMax.value) * 100))}%`;
+const barWidth = (count: number, items: any[]) => {
+    // 按本维度的最大值缩放。Math.max(1, ...) 防除零。
+    const max = Math.max(1, ...items.map((i: any) => i.count || 0));
+    return `${Math.max(3, Math.round(((count || 0) / max) * 100))}%`;
+};
 
 // VCharts/Line 的入参不是标准 echarts option：它自己拼 series 与 yAxis，
 // 只认 xData / yData / formatStr。传标准结构（xAxis/yAxis/series）会让
@@ -1296,6 +1350,14 @@ onMounted(() => {
     background-color: var(--el-color-primary);
 }
 /* 防护模式：三态按钮组，纵向排列让说明文字有位置 */
+/* KPI 的危险态：拦截数与误报数需要一眼可见 */
+.waf-kpi-danger {
+    color: var(--el-color-danger) !important;
+}
+.waf-kpi-warn {
+    color: var(--el-color-warning) !important;
+}
+
 .waf-mode-group {
     display: flex;
     flex-wrap: wrap;

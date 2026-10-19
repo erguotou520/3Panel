@@ -54,7 +54,7 @@ type IWAFService interface {
 	GetWebhookSetting() (map[string]interface{}, error)
 	UpdateWebhookSetting(req request.WAFWebhookUpdate) error
 	SearchLogs(req request.WAFLogSearch) (int64, []model.WAFLog, error)
-	StatLogs(req request.WAFLogSearch) (map[string][]WAFStatItem, error)
+	StatLogs(req request.WAFLogSearch) (*WAFStats, error)
 	ExportLogs(req request.WAFLogSearch) (string, []byte, error)
 	AddRuleFromLog(logID uint, action string) error
 	MarkFalsePositive(req request.WAFFalsePositiveOp) error
@@ -886,58 +886,6 @@ func wafLogOrder(req request.WAFLogSearch) string {
 		return "created_at " + dir + ", id " + dir
 	}
 	return col + " " + dir + ", id " + dir
-}
-
-type WAFStatItem struct {
-	Key   string `json:"key"`
-	Count int64  `json:"count"`
-}
-
-// StatLogs 聚合统计：攻击类型分布、Top 攻击源、时间趋势
-// 时间趋势在 Go 侧按天归并，避免依赖特定数据库的日期函数（agent 使用 SQLite）
-// 注意：gorm 链式条件不可复用（Group 等 clause 会泄漏到后续查询），每次查询取新链
-func (w WAFService) StatLogs(req request.WAFLogSearch) (map[string][]WAFStatItem, error) {
-	newBase := func() *gorm.DB {
-		db := global.DB.Model(&model.WAFLog{})
-		if req.WebsiteID > 0 {
-			db = db.Where("website_id = ?", req.WebsiteID)
-		}
-		if req.StartTime > 0 {
-			db = db.Where("created_at >= ?", time.Unix(req.StartTime, 0))
-		}
-		if req.EndTime > 0 {
-			db = db.Where("created_at <= ?", time.Unix(req.EndTime, 0))
-		}
-		return db
-	}
-	// 三个维度都初始化成空切片而非 nil：无数据时 JSON 序列化成 [] 而不是 null，
-	// 前端的 stat.attackType?.length 拿到的是 0 而不是抛错。
-	res := map[string][]WAFStatItem{
-		"attackType": {},
-		"topIP":      {},
-		"trend":      {},
-	}
-	var byType, byIP []WAFStatItem
-	if err := newBase().Select("attack_type as key, count(*) as count").Where("attack_type != ''").Group("attack_type").Scan(&byType).Error; err != nil {
-		return nil, err
-	}
-	if err := newBase().Select("ip as key, count(*) as count").Group("ip").Order("count desc").Limit(10).Scan(&byIP).Error; err != nil {
-		return nil, err
-	}
-	if byType == nil {
-		byType = []WAFStatItem{}
-	}
-	if byIP == nil {
-		byIP = []WAFStatItem{}
-	}
-	byTime, err := statLogsTrend(newBase(), req)
-	if err != nil {
-		return nil, err
-	}
-	res["attackType"] = byType
-	res["topIP"] = byIP
-	res["trend"] = byTime
-	return res, nil
 }
 
 // ExportLogs 导出日志（json/csv）

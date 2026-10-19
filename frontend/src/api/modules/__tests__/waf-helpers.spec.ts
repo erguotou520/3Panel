@@ -562,3 +562,42 @@ describe('IP 组组名规则前后端一致', () => {
         expect(WAF_IP_GROUP_NAME_PATTERN.test('a'.repeat(65))).toBe(false);
     });
 });
+
+// ==================== 统计维度契约 ====================
+// 前端 statDimensions 里的 prop 必须是后端 WAFStats 真实存在的 JSON 字段。
+// 拼错时界面只是渲染一片「暂无数据」，不报任何错 —— 而用户会以为
+// 那段日志真的没有，实际是字段名对不上。
+
+describe('统计维度前后端字段名一致', () => {
+    const indexSrc = readFileSync('src/views/website/website/waf/index.vue', 'utf8');
+    const statsSrc = readFileSync('../agent/app/service/waf_stats.go', 'utf8');
+
+    /** 前端 statDimensions 里声明的 prop */
+    // 多行写法（prop 与 titleKey 分两行）也要匹配，否则只能数到单行条目
+    const frontendProps = [...indexSrc.matchAll(/prop: '([A-Za-z]+)',\s*\n?\s*titleKey:/g)].map((m) => m[1] ?? '');
+
+    /** 后端 WAFStats 结构体的 json tag */
+    const backendFields = new Set([...statsSrc.matchAll(/json:"([A-Za-z]+)"/g)].map((m) => m[1] ?? ''));
+
+    it('前端声明了 12 个维度', () => {
+        expect(frontendProps).toHaveLength(12);
+    });
+
+    it('每个维度的 prop 都在后端有同名字段', () => {
+        for (const p of frontendProps) {
+            expect(backendFields.has(p)).toBe(true);
+        }
+    });
+
+    it('后端 summary 的字段前端都认识（KPI 用得到）', () => {
+        // KPI 卡片直接读 stat.summary.xxx，字段名错了会显示 0 而不是报错
+        for (const f of ['total', 'denied', 'uniqueIPs', 'avgDurationMs', 'falsePositive']) {
+            expect(backendFields.has(f)).toBe(true);
+            expect(indexSrc).toContain(`stat.summary?.${f}`);
+        }
+    });
+
+    it('维度清单里没有重复 prop', () => {
+        expect(new Set(frontendProps).size).toBe(frontendProps.length);
+    });
+});
