@@ -2565,6 +2565,27 @@ check("state 带 geo_ranges", type(st) == "table" and type(st.geo_ranges) == "ta
 check("state geo_ranges 含 CN", type(st.geo_ranges.CN) == "table" and #st.geo_ranges.CN.v4 > 0)
 check("state geo_ranges 不含 US 以外的空表崩溃", st.geo_ranges.ZZ == nil or type(st.geo_ranges.ZZ) == "table")
 
+
+-- ==================== Java 反序列化魔数的三种编码（2026-10-19）====================
+-- AC ED 00 05 是 Java 序列化流的固定头。实测发现：URL 编码的二进制形式能拦，
+-- 但十六进制字面量（aced0005）与 base64（rO0AB...）都放行 ——
+-- 前者是被 has_attack_candidate 快速筛提前挡掉（它不含攻击元字符），
+-- 后者是压根没有这条规则。
+print("=== Java 反序列化编码形式 ===")
+
+check("deser hex 魔数命中", sem.inspect("d=aced0005", "/") ~= nil)
+check("deser hex 魔数类型正确",
+    (sem.inspect("d=aced0005", "/") or {}).type == "deserialization")
+check("deser base64 魔数命中", sem.inspect("d=rO0ABXNyABFqYXZh", "/") ~= nil)
+check("deser base64 魔数类型正确",
+    (sem.inspect("d=rO0ABXNyABFqYXZh", "/") or {}).type == "deserialization")
+check("deser 大写 base64 也能命中", sem.inspect("d=RO0ABXNy", "/") ~= nil)
+
+-- 误伤：普通 base64（PNG 头、JWT、随机 token）不该被判成反序列化
+check("普通 PNG base64 不误判", sem.inspect("img=iVBORw0KGgoAAAANSUhEUg", "/") == nil)
+check("普通 base64 token 不误判",
+    sem.inspect("token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0", "/") == nil)
+check("普通文本不误判", sem.inspect("note=abcdef", "/") == nil)
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

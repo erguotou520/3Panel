@@ -709,7 +709,15 @@ function _M.detect_deserialization(value)
     end
     if s:find("hexasciiserializedmap", 1, true) or s:find("hashasciiserializedmap", 1, true) then return true end
     if s:match("o:%d+:[%\"']") or s:find("guzzlehttp\\", 1, true) then return true end
-    return s:find("aced0005", 1, true) ~= nil or s:find("\\xac\\xed\\x0\\x5", 1, true) ~= nil
+    -- Java 序列化流的固定魔数 AC ED 00 05。三种常见编码都要认：
+    --   · 原始二进制被 URL 解码后 → "\xac\xed..."（下面第二项）
+    --   · 十六进制字面量 → aced0005（渗透工具与文档里最常见）
+    --   · base64 → 以 rO0AB 开头（payload 走 form/JSON 字段时几乎都是这种）
+    -- 只认最后一种会漏掉前两种，反之亦然；三者都是同一个魔数的等价写法。
+    if s:find("aced0005", 1, true) or s:find("\\xac\\xed\\x0\\x5", 1, true) then return true end
+    -- base64 大小写敏感，而这里的 s 已 lower，故写 ro0ab。
+    -- 5 个字符的固定前缀，正常文本恰好撞上的概率可以忽略。
+    return s:find("ro0ab", 1, true) ~= nil
 end
 
 function _M.detect_xxe(value)
@@ -787,6 +795,10 @@ local function has_attack_candidate(lower)
         or lower:find("%.bak", 1, true) or lower:find("%.old", 1, true)
         or lower:find("%.orig", 1, true) or lower:find("%.swp", 1, true)
         or lower:find("%.swo", 1, true) or lower:find("%.save", 1, true)
+        -- Java 序列化魔数 AC ED 00 05 的三种编码。它们不含任何攻击元字符，
+        -- 不在这里放行就会被下面的快速筛提前 return nil，detect_deserialization
+        -- 里的判断永远走不到（aced0005 就曾因此完全失效）。
+        or lower:find("aced0005", 1, true) or lower:find("ro0ab", 1, true)
         or lower:find("%f[%w]id_rsa") or lower:find("%f[%w]credentials") then
         return true
     end
