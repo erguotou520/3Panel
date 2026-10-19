@@ -32,7 +32,7 @@
                         :key="`${selectedWebsite.id}-${wafEnabled}`"
                         :website-id="selectedWebsite.id"
                         :waf-enabled="wafEnabled"
-                        :show-ip-list="true"
+                        :show-i-p-list="true"
                         @tab-change="onTabChange"
                     />
                     <!-- 未安装 OpenResty 时只剩 IP 名单订阅可用 -->

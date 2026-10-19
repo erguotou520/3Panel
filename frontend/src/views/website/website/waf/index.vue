@@ -52,25 +52,30 @@
                                 show-word-limit
                             />
                         </el-form-item>
+                        <!-- 色板与色值分开摆：塞进 el-input 的 append 槽时，
+                             两个输入框在 flex 行里会被压到只剩一百多像素，
+                             颜色值根本看不全。 -->
                         <el-form-item :label="$t('website.wafBlockPageBgColor')">
                             <div class="field-row">
-                                <el-input v-model="option.blockPageBgColor" class="p-w-200">
-                                    <template #append>
-                                        <el-color-picker
-                                            v-model="option.blockPageBgColor"
-                                            :validate="isValidPageColorValue"
-                                        />
-                                    </template>
-                                </el-input>
-                                <el-input v-model="option.blockPageTextColor" class="p-w-200 ml-3">
-                                    <template #prepend>{{ $t('website.wafBlockPageTextColor') }}</template>
-                                    <template #append>
-                                        <el-color-picker
-                                            v-model="option.blockPageTextColor"
-                                            :validate="isValidPageColorValue"
-                                        />
-                                    </template>
-                                </el-input>
+                                <el-color-picker v-model="option.blockPageBgColor" :validate="isValidPageColorValue" />
+                                <el-input
+                                    v-model="option.blockPageBgColor"
+                                    class="p-w-200"
+                                    :placeholder="$t('website.wafBlockPageColorPlaceholder')"
+                                />
+                            </div>
+                        </el-form-item>
+                        <el-form-item :label="$t('website.wafBlockPageTextColor')">
+                            <div class="field-row">
+                                <el-color-picker
+                                    v-model="option.blockPageTextColor"
+                                    :validate="isValidPageColorValue"
+                                />
+                                <el-input
+                                    v-model="option.blockPageTextColor"
+                                    class="p-w-200"
+                                    :placeholder="$t('website.wafBlockPageColorPlaceholder')"
+                                />
                             </div>
                         </el-form-item>
                         <el-form-item v-if="pageColorInvalid">
@@ -563,7 +568,7 @@
                             </div>
                         </div>
                     </template>
-                    <el-form inline class="mb-2">
+                    <el-form class="waf-filter">
                         <el-form-item :label="$t('website.wafLogSort')">
                             <el-select v-model="logSort" class="p-w-200">
                                 <el-option
@@ -587,7 +592,7 @@
                                 <el-option label="log" value="log" />
                             </el-select>
                         </el-form-item>
-                        <el-form-item>
+                        <el-form-item class="waf-filter-range">
                             <el-date-picker
                                 v-model="logTimeRange"
                                 type="datetimerange"
@@ -596,10 +601,10 @@
                                 :end-placeholder="$t('commons.search.timeEnd')"
                             />
                         </el-form-item>
-                        <el-form-item>
+                        <div class="waf-filter-actions">
                             <el-button type="primary" @click="searchLogs">{{ $t('commons.button.search') }}</el-button>
                             <el-button @click="resetLogSearch">{{ $t('commons.button.reset') }}</el-button>
-                        </el-form-item>
+                        </div>
                     </el-form>
                     <el-table :data="logs" class="waf-table">
                         <template #empty>
@@ -634,7 +639,9 @@
                                 </el-descriptions>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="createdAt" :label="$t('commons.table.date')" width="170" />
+                        <el-table-column :label="$t('commons.table.date')" width="170">
+                            <template #default="{ row }">{{ formatTime(row.createdAt) }}</template>
+                        </el-table-column>
                         <el-table-column :label="$t('website.wafAttackType')" width="120">
                             <template #default="{ row }">
                                 <el-tag size="small" type="danger" effect="plain">{{ row.attackType }}</el-tag>
@@ -682,7 +689,7 @@
                                 <span v-else class="text-gray-400 text-xs">{{ $t('website.wafNoRule') }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column :label="$t('commons.table.operate')" width="250" fixed="right">
+                        <el-table-column :label="$t('commons.table.operate')" width="190" fixed="right">
                             <template #default="{ row }">
                                 <el-button link type="primary" @click="onLogRule(row, 'allow')">
                                     {{ $t('website.wafAddAllow') }}
@@ -691,7 +698,7 @@
                                     {{ $t('website.wafFalsePositiveMarked') }}
                                 </el-tag>
                                 <el-button v-else link type="warning" @click="onFalsePositive(row)">
-                                    {{ $t('website.wafFalsePositive') }}
+                                    {{ $t('website.wafFalsePositiveShort') }}
                                 </el-button>
                             </template>
                         </el-table-column>
@@ -723,6 +730,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import Sortable from 'sortablejs';
 import { ElMessageBox } from 'element-plus';
 import i18n from '@/lang';
+import { dateFormatSimpleWithSecond } from '@/utils/date';
 import { MsgSuccess, MsgWarning } from '@/utils/message';
 import VCharts from '@/components/v-charts/index.vue';
 import {
@@ -834,6 +842,10 @@ const onDetectorToggle = (name: string, checked: boolean | (string | number)[]) 
     }
     option.value.disabledDetectors = formatDisabledDetectors(disabledDetectors.value);
 };
+
+// 后端时间戳是 RFC3339 带时区（2026-10-19T16:16:17+08:00），
+// 直接渲染会在 170px 列里折成两行，也看不出本地时间。
+const formatTime = (v?: string) => (v ? dateFormatSimpleWithSecond(v) : '-');
 
 const logSort = ref<WAFLogSortKey>('time_desc');
 const sortOptions = WAF_LOG_SORT_OPTIONS;
@@ -984,7 +996,8 @@ const optionPayload = computed(() => ({
 }));
 const optionSnap = ref('');
 const optionDirty = computed(() => snapshot(optionPayload.value) !== optionSnap.value);
-const markOptionClean = () => {
+const markOptionClean = async () => {
+    await nextTick();
     optionSnap.value = snapshot(optionPayload.value);
 };
 
@@ -998,7 +1011,8 @@ const ccPayload = computed(() => ({
 }));
 const ccSnap = ref('');
 const ccDirty = computed(() => snapshot(ccPayload.value) !== ccSnap.value);
-const markCCClean = () => {
+const markCCClean = async () => {
+    await nextTick();
     ccSnap.value = snapshot(ccPayload.value);
 };
 
@@ -1009,7 +1023,8 @@ const notifyPayload = computed(() => ({
 }));
 const notifySnap = ref('');
 const notifyDirty = computed(() => snapshot(notifyPayload.value) !== notifySnap.value);
-const markNotifyClean = () => {
+const markNotifyClean = async () => {
+    await nextTick();
     notifySnap.value = snapshot(notifyPayload.value);
 };
 
@@ -1085,13 +1100,13 @@ const loadCC = async () => {
     if (res.data) {
         cc.value = res.data;
     }
-    markCCClean();
+    await markCCClean();
 };
 
 const saveCC = async () => {
     await updateWAFCCConfig(ccPayload.value);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    markCCClean();
+    await markCCClean();
 };
 
 const loadOption = async () => {
@@ -1105,7 +1120,7 @@ const loadOption = async () => {
         option.value.botLevel = normalizeLevel(option.value.botLevel);
         disabledDetectors.value = parseDisabledDetectors(option.value.disabledDetectors);
     }
-    markOptionClean();
+    await markOptionClean();
 };
 
 const saveOption = async () => {
@@ -1115,7 +1130,7 @@ const saveOption = async () => {
     }
     await updateWAFOption(optionPayload.value);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    markOptionClean();
+    await markOptionClean();
 };
 
 const loadNotify = async () => {
@@ -1123,7 +1138,7 @@ const loadNotify = async () => {
     if (res.data) {
         notify.value = { ...notify.value, ...res.data };
     }
-    markNotifyClean();
+    await markNotifyClean();
 };
 
 const notifyTesting = ref(false);
@@ -1155,7 +1170,7 @@ const saveNotify = async () => {
     }
     await updateWAFWebhook(notifyPayload.value as any);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    markNotifyClean();
+    await markNotifyClean();
 };
 
 const onCopyCurl = async (row: any) => {
@@ -1315,10 +1330,15 @@ watch(logSort, () => {
     loadLogs();
 });
 
-const loadProtect = () => {
-    loadOption();
-    loadCC();
-    loadNotify();
+let protectLoading = false;
+const loadProtect = async () => {
+    if (protectLoading) return;
+    protectLoading = true;
+    try {
+        await Promise.all([loadOption(), loadCC(), loadNotify()]);
+    } finally {
+        protectLoading = false;
+    }
 };
 
 watch(
@@ -1438,6 +1458,32 @@ onMounted(() => {
 
 .waf-table {
     width: 100%;
+}
+
+/* 日志筛选：grid 而不是 el-form inline。inline 布局下日期区间宽度过大时
+   换行顺序不可控（实测「搜索/重置」会被挤到下一行左侧、日期跑到右边）。 */
+.waf-filter {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: 0 16px;
+    align-items: start;
+    margin-bottom: 4px;
+}
+
+.waf-filter :deep(.el-form-item) {
+    margin-right: 0;
+    margin-bottom: 12px;
+}
+
+.waf-filter-range {
+    grid-column: span 2;
+}
+
+.waf-filter-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-bottom: 12px;
 }
 
 .mono {

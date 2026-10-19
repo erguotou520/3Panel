@@ -3333,6 +3333,7 @@ const message = {
         wafFalsePositive: '标记误报（放行 24 小时）',
         wafFalsePositiveMarked: '已标记误报',
         wafFalsePositiveUnmarked: '未标记',
+        wafFalsePositiveShort: '标记误报',
         wafFalsePositiveDone: '已标记误报并生成 24 小时站点放行规则',
         wafTTL: '有效期（秒）',
         wafTTLTip: '0 表示永久',
@@ -3424,6 +3425,7 @@ const message = {
         wafBlockPageTitlePlaceholder: '留空则使用默认标题',
         wafBlockPageBody: '拦截页正文',
         wafBlockPageBodyPlaceholder: '留空则使用默认正文',
+        wafBlockPageColorPlaceholder: '如 #f6f8fa 或英文颜色名',
         wafBlockPageBgColor: '背景色',
         wafBlockPageTextColor: '文字色',
         wafBlockPageColorTip:

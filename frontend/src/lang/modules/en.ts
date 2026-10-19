@@ -3514,6 +3514,7 @@ const message = {
         wafFalsePositive: 'False positive (allow 24h)',
         wafFalsePositiveMarked: 'False positive',
         wafFalsePositiveUnmarked: 'Not marked',
+        wafFalsePositiveShort: 'False positive',
         wafFalsePositiveDone: 'Marked as false positive and created a 24-hour site allow rule',
         wafTTL: 'TTL (seconds)',
         wafTTLTip: '0 means permanent',
@@ -3606,6 +3607,7 @@ const message = {
         wafBlockPageTitlePlaceholder: 'Leave empty to use the default title',
         wafBlockPageBody: 'Block page body',
         wafBlockPageBodyPlaceholder: 'Leave empty to use the default body',
+        wafBlockPageColorPlaceholder: 'e.g. #f6f8fa or a color name',
         wafBlockPageBgColor: 'Background colour',
         wafBlockPageTextColor: 'Text colour',
         wafBlockPageColorTip:
