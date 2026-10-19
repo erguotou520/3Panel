@@ -212,10 +212,10 @@ func TestWAFOptionPersistsNewFields(t *testing.T) {
 	want := request.WAFOptionUpdate{
 		WebsiteID:         7,
 		Mode:              waf.WAFModeObserve,
-		BlockPageTitle:    "维护中",
-		BlockPageBody:     "稍后再试",
-		BlockPageBgColor:  "#f6f8fa",
-		DisabledDetectors: "sqli",
+		BlockPageTitle:    strPtr("维护中"),
+		BlockPageBody:     strPtr("稍后再试"),
+		BlockPageBgColor:  strPtr("#f6f8fa"),
+		DisabledDetectors: strPtr("sqli"),
 	}
 	if err := svc.UpdateOption(want); err != nil {
 		t.Fatalf("UpdateOption: %v", err)
@@ -267,3 +267,6 @@ func readRulesJSON(t *testing.T, dir string) map[string]any {
 	}
 	return doc
 }
+
+// strPtr 用于可区分「未传」与「传空串」的字段。
+func strPtr(s string) *string { return &s }

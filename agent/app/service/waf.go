@@ -836,26 +836,31 @@ func (w WAFService) UpdateOption(req request.WAFOptionUpdate) error {
 	if req.ProbeMaxRPS > 0 {
 		opt.ProbeMaxRPS = req.ProbeMaxRPS
 	}
-	// Mode / 拦截页 / 检测器开关：空值保持原有。
+	// Mode / 拦截页 / 检测器开关：没传保持原有，传了空串就真的清空。
 	// 刻意不用 `= req.X` 直接赋值 —— 前端只提交部分字段时（老版本前端、
 	// 或某个调用方只想改 bot 开关），直接赋值会把没带的字段清空。
+	//
+	// 这几个字段用 *string 而不是 string，就是为了表达上面这两个状态：
+	// 用 string 时「清空自定义拦截页文案」「重新勾选全部检测器」都会传空串，
+	// 而 `!= ""` 判断会把它当成没改 —— 用户点了取消勾选、清空了输入框，
+	// 保存后一看什么都没变，且没有任何报错。
 	if req.Mode != "" {
 		opt.Mode = req.Mode
 	}
-	if req.BlockPageTitle != "" {
-		opt.BlockPageTitle = req.BlockPageTitle
+	if req.BlockPageTitle != nil {
+		opt.BlockPageTitle = *req.BlockPageTitle
 	}
-	if req.BlockPageBody != "" {
-		opt.BlockPageBody = req.BlockPageBody
+	if req.BlockPageBody != nil {
+		opt.BlockPageBody = *req.BlockPageBody
 	}
-	if req.BlockPageBgColor != "" {
-		opt.BlockPageBgColor = req.BlockPageBgColor
+	if req.BlockPageBgColor != nil {
+		opt.BlockPageBgColor = *req.BlockPageBgColor
 	}
-	if req.BlockPageTextColor != "" {
-		opt.BlockPageTextColor = req.BlockPageTextColor
+	if req.BlockPageTextColor != nil {
+		opt.BlockPageTextColor = *req.BlockPageTextColor
 	}
-	if req.DisabledDetectors != "" {
-		opt.DisabledDetectors = req.DisabledDetectors
+	if req.DisabledDetectors != nil {
+		opt.DisabledDetectors = *req.DisabledDetectors
 	}
 	if req.SemanticLevel != "" {
 		opt.SemanticLevel = req.SemanticLevel

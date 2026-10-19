@@ -70,16 +70,22 @@ type WAFOptionUpdate struct {
 	Mode string `json:"mode" validate:"omitempty,oneof=block observe maintenance"`
 	// 拦截页定制。留空 = 用内置默认样式。
 	// 刻意不接受 HTML 片段：这个页面会展示给所有访问者（含攻击者）。
-	BlockPageTitle     string `json:"blockPageTitle" validate:"max=200"`
-	BlockPageBody      string `json:"blockPageBody" validate:"max=2000"`
-	BlockPageBgColor   string `json:"blockPageBgColor" validate:"max=32"`
-	BlockPageTextColor string `json:"blockPageTextColor" validate:"max=32"`
+	//
+	// 这四个字段以及下面的 DisabledDetectors 用 *string：必须能区分
+	// 「本次没传」与「传了空串」。用 string 时 `if req.X != ""` 会把
+	// 「用户清空自定义文案 / 重新勾选全部检测器」当成没改，
+	// 界面上表现为取消勾选、清空输入框后保存无效。
+	BlockPageTitle     *string `json:"blockPageTitle" validate:"omitempty,max=200"`
+	BlockPageBody      *string `json:"blockPageBody" validate:"omitempty,max=2000"`
+	BlockPageBgColor   *string `json:"blockPageBgColor" validate:"omitempty,max=32"`
+	BlockPageTextColor *string `json:"blockPageTextColor" validate:"omitempty,max=32"`
 	// SemanticLevel / BotLevel 保护强度分档：off / observe / balanced / high。
 	// 空 = 保持原有值。取值必须与 Lua 侧一致。
 	SemanticLevel string `json:"semanticLevel" validate:"omitempty,oneof=off observe balanced high"`
 	BotLevel      string `json:"botLevel" validate:"omitempty,oneof=off observe balanced high"`
-	// DisabledDetectors 被关闭的语义检测器名，逗号分隔。空 = 全部启用。
-	DisabledDetectors string `json:"disabledDetectors" validate:"max=1000"`
+	// DisabledDetectors 被关闭的语义检测器名，逗号分隔。
+	// nil = 不修改；空串 = 全部启用（这是「重新勾选」的唯一表达方式）。
+	DisabledDetectors *string `json:"disabledDetectors" validate:"omitempty,max=1000"`
 }
 
 type WAFWebhookUpdate struct {
