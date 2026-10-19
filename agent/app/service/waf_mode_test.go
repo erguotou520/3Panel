@@ -252,3 +252,18 @@ func TestWAFGetOptionDefaultsModeToBlock(t *testing.T) {
 		t.Errorf("未配置时 Mode 应为空或 block，实际 %q", got.Mode)
 	}
 }
+
+// readRulesJSON 读回导出的 rules.json 并反序列化成通用 map。
+// 供需要检查原始 JSON 键名的测试使用（keysOf 这类 helper 只看单个 map）。
+func readRulesJSON(t *testing.T, dir string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(waf.HostWAFDir(dir), "rules.json"))
+	if err != nil {
+		t.Fatalf("read rules.json: %v", err)
+	}
+	var doc map[string]any
+	if err := json.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	return doc
+}

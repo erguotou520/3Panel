@@ -29,6 +29,15 @@ func (a *WAFRouter) InitRouter(Router *gin.RouterGroup) {
 		wafRouter.POST("/rules", baseApi.CreateWAFRule)
 		wafRouter.POST("/rules/update", baseApi.UpdateWAFRule)
 		wafRouter.POST("/rules/reorder", baseApi.ReorderWAFRules)
+
+		// IP 组：可复用的 IP/CIDR 集合，供 match_type=ip_group 的规则引用
+		ipGroups := wafRouter.Group("/ip-groups")
+		{
+			ipGroups.GET("", baseApi.ListWAFIPGroups)
+			ipGroups.POST("/create", baseApi.CreateWAFIPGroup)
+			ipGroups.POST("/update", baseApi.UpdateWAFIPGroup)
+			ipGroups.POST("/:id/delete", baseApi.DeleteWAFIPGroup)
+		}
 		wafRouter.DELETE("/rules/:id", baseApi.DeleteWAFRule)
 
 		wafRouter.POST("/logs/search", baseApi.SearchWAFLogs)

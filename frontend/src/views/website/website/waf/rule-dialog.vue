@@ -25,7 +25,23 @@
                 </el-select>
             </el-form-item>
             <el-form-item :label="$t('website.wafMatchValue')" prop="matchValue" :rules="rules.required">
-                <el-input v-model="form.matchValue" type="textarea" :rows="2" />
+                <!-- ip_group 用下拉而不是输入框：组名会直接成为
+                     rules.json 里的 map key，填错一个字符就是
+                     「组不存在」且 Lua 侧静默放行 —— 界面上完全看不出异常。
+                     禁用手输从根上消除这类错误。 -->
+                <el-select v-if="form.matchType === 'ip_group'" v-model="form.matchValue" class="p-w-300">
+                    <el-option v-for="g in availableIPGroups" :key="g.name" :label="g.name" :value="g.name">
+                        <span>{{ g.name }}</span>
+                        <span class="ml-2 text-xs text-gray-400">
+                            {{ $t(g.scope === 'site' ? 'website.wafScopeSite' : 'website.wafScopeGlobal') }}
+                            · {{ countCIDRs(g.cidrs) }}
+                        </span>
+                    </el-option>
+                </el-select>
+                <el-input v-else v-model="form.matchValue" type="textarea" :rows="2" />
+                <div v-if="form.matchType === 'ip_group'" class="text-xs text-gray-400 mt-1">
+                    {{ $t('website.wafIPGroupHint') }}
+                </div>
             </el-form-item>
             <el-form-item :label="$t('website.wafAction')">
                 <el-radio-group v-model="form.action">
@@ -57,7 +73,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
 import { createWAFRule, updateWAFRule } from '@/api/modules/waf';
@@ -67,8 +83,24 @@ const isEdit = ref(false);
 const formRef = ref();
 const websiteId = ref(0);
 
-const matchTypes = ['ip', 'cidr', 'path', 'ua', 'referer', 'header', 'cookie', 'method', 'expr'];
-const matchOps = ['exact', 'contains', 'prefix', 'suffix', 'wildcard', 'regex'];
+const matchTypes = ['ip', 'cidr', 'ip_group', 'path', 'ua', 'referer', 'header', 'cookie', 'method', 'expr'];
+// 负向操作符（not_*）与正向一一对应，由 Lua 侧 rules.lua 的
+// match_ops 批量生成。这里手写列表必须与 DTO 的 oneof 白名单同步 ——
+// 少一个，界面上就选不到；多一个，保存会被后端校验拒绝。
+const matchOps = [
+    'exact',
+    'contains',
+    'prefix',
+    'suffix',
+    'wildcard',
+    'regex',
+    'not_exact',
+    'not_contains',
+    'not_prefix',
+    'not_suffix',
+    'not_wildcard',
+    'not_regex',
+];
 
 const form = reactive<any>({
     id: 0,
@@ -88,8 +120,22 @@ const rules = reactive({
     required: [{ required: true, message: i18n.global.t('commons.inputRequired'), trigger: 'blur' }],
 });
 
-const acceptParams = (params: { websiteId: number; rule: any }) => {
+// 当前站点可见的 IP 组。传进来而不是抽屉自己拉 ——
+// 打开抽屉时父组件已经加载过，避免每次开抽屉都多一次请求。
+const ipGroups = ref<any[]>([]);
+
+/** 只列出启用的组：禁用组即使存在，数据面也不会导出它 */
+const availableIPGroups = computed(() => ipGroups.value.filter((g: any) => g.enabled));
+
+/** 统计组里的条目数，用于在下拉里一眼看出组的规模 */
+const countCIDRs = (raw?: string): number => {
+    if (!raw) return 0;
+    return raw.split(/[\n\r,;\t ]+/).filter((v) => v.trim()).length;
+};
+
+const acceptParams = (params: { websiteId: number; rule: any; ipGroups?: any[] }) => {
     websiteId.value = params.websiteId;
+    ipGroups.value = params.ipGroups || [];
     isEdit.value = !!params.rule;
     Object.assign(form, {
         id: params.rule?.id || 0,

@@ -91,6 +91,8 @@ type siteEntry struct {
 	BlockPage *blockPageDTO `json:"blockPage,omitempty"`
 	// DisabledDetectors 是被关闭的语义检测器名集合（Lua 侧转成 set 便于 O(1) 判断）。
 	DisabledDetectors []string `json:"disabled_detectors,omitempty"`
+	// IPGroups 是本站级 IP 组：name -> CIDR 列表。
+	IPGroups map[string][]string `json:"ip_groups,omitempty"`
 	// SemanticLevel 语义层强度分档：off / observe / balanced / high。
 	// balanced 是默认值，省略时 Lua 按 balanced 处理。
 	// high = 绕过 has_attack_candidate 快速筛（召回更高、CPU 开销更大）。
@@ -114,6 +116,9 @@ type exportedRules struct {
 		// IPListEnabled 为订阅黑名单总开关。数据面据此决定是否查名单 ——
 		// 关闭后必须完全跳过，否则「关闭」只是界面上的一个摆设。
 		IPListEnabled bool `json:"ipListEnabled"`
+		// IPGroups 是全局 IP 组：name -> CIDR 列表。
+		// 站点级组在 siteEntry.ip_groups 里，同名时本站覆盖全局。
+		IPGroups map[string][]string `json:"ip_groups,omitempty"`
 	} `json:"global"`
 	Sites map[string]siteEntry `json:"sites"`
 }
@@ -179,13 +184,46 @@ func (c *compiledRuleSet) add(rule ruleDTO) bool {
 }
 
 // ExportRules 将 DB 中的名单与 CC/机器人/探测配置导出为数据面 rules.json（全局 + 站点两层）
-func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options []model.WAFOption, enabledSites map[uint]bool, hostWebsiteDir string, iplistEnabled bool) error {
+// ipGroups 用可变参数追加在末尾，而不是加进固定签名 ——
+// 现有 7 处调用（含测试）不必改，少一处改错的机会。
+func ExportRules(rules []model.WAFRule, ccConfigs []model.WAFCCConfig, options []model.WAFOption, enabledSites map[uint]bool, hostWebsiteDir string, iplistEnabled bool, ipGroups ...[]model.WAFIPGroup) error {
 	data := exportedRules{Sites: map[string]siteEntry{}}
 	data.Global.Compiled = newCompiledRuleSet()
 	data.Global.IPListEnabled = iplistEnabled
 	for websiteID, enabled := range enabledSites {
 		key := fmt.Sprintf("%d", websiteID)
 		data.Sites[key] = siteEntry{Enabled: enabled, Compiled: newCompiledRuleSet()}
+	}
+
+	// IP 组：只导出启用的。禁用组若还导出，Lua 侧查到就会命中，
+	// 「关闭」就成了摆设 —— 与 iplistEnabled 同样的处理思路。
+	if len(ipGroups) > 0 {
+		for _, g := range ipGroups[0] {
+			if !g.Enabled || g.Name == "" {
+				continue
+			}
+			cidrs := splitNonEmptyLines(g.CIDRs)
+			if len(cidrs) == 0 {
+				continue
+			}
+			if g.Scope == model.WAFScopeSite {
+				key := fmt.Sprintf("%d", g.WebsiteID)
+				site, ok := data.Sites[key]
+				if !ok {
+					continue
+				}
+				if site.IPGroups == nil {
+					site.IPGroups = map[string][]string{}
+				}
+				site.IPGroups[g.Name] = cidrs
+				data.Sites[key] = site
+			} else {
+				if data.Global.IPGroups == nil {
+					data.Global.IPGroups = map[string][]string{}
+				}
+				data.Global.IPGroups[g.Name] = cidrs
+			}
+		}
 	}
 
 	sort.Slice(rules, func(i, j int) bool { return rules[i].Priority < rules[j].Priority })
@@ -351,6 +389,25 @@ const (
 	// WAFLevelHigh 高强度。语义层 = 绕过快速筛；bot 层 = 额外把空 UA 当可疑。
 	WAFLevelHigh = "high"
 )
+
+// splitNonEmptyLines 把换行分隔的文本拆成去掉空白的切片（跳空行）。
+// IP 组的 CIDRs 就是这种格式 —— 存库时用换行分隔，导出时拆回来。
+func splitNonEmptyLines(raw string) []string {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	parts := strings.Split(strings.ReplaceAll(raw, "\r\n", "\n"), "\n")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if v := strings.TrimSpace(p); v != "" {
+			out = append(out, v)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
 
 // splitAndTrim 把逗号分隔的列表拆成去掉空白的切片。
 // 空字符串返回 nil —— JSON 里 omitempty 会直接省掉该字段，

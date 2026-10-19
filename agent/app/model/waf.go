@@ -165,3 +165,34 @@ type WAFIPListSetting struct {
 }
 
 func (WAFIPListSetting) TableName() string { return "waf_iplist_settings" }
+
+// WAFIPGroup 是可复用的 IP/CIDR 集合。
+//
+// 解决的问题：一个「公司出口 IP 段」或「已知恶意网段」往往有几十上百条，
+// 此前只能为每一条各建一条规则 —— 规则表膨胀、界面上一片重复行，
+// 而且增删某一条就得翻很久。
+//
+// 设计取舍：CIDR 列表存在单个 text 列里（换行分隔），而不是
+// 「组表 + 明细表」两张。理由是这个功能的写入频率极低（通常几个月调一次），
+// 而条目数在百级 —— 两张表带来的 JOIN、级联删除、并发编辑复杂度
+// 换不来实际收益。代价是无法对单条 CIDR 做启停与审计，
+// 需要时再拆表即可，数据本身是平铺的、无迁移成本。
+//
+// Scope 与 WAFRule 一致：global 组对所有站点生效，site 组只对本站生效。
+// 同一个组名在两个 scope 下都存在时，site 组覆盖 global 组
+// （与规则列表「本站优先」的语义保持一致）。
+type WAFIPGroup struct {
+	BaseModel
+	Name      string `gorm:"varchar(64);not null;uniqueIndex:idx_waf_ip_group_scope" json:"name"`
+	Scope     string `gorm:"varchar(16);not null;default:global;uniqueIndex:idx_waf_ip_group_scope" json:"scope"`
+	WebsiteID uint   `gorm:"index" json:"websiteId"`
+	Enabled   bool   `gorm:"default:true" json:"enabled"`
+	Remark    string `gorm:"varchar(255)" json:"remark"`
+	// CIDRs 是换行分隔的 IP 或 CIDR。允许重复项（解析时会去重），
+	// 也允许空行与首尾空白 —— 用户手工粘贴列表时几乎总会带上这些。
+	CIDRs string `gorm:"type:text" json:"cidrs"`
+}
+
+func (w WAFIPGroup) TableName() string {
+	return "waf_ip_groups"
+}

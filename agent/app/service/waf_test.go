@@ -20,7 +20,7 @@ func setupWAFTestDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	for _, m := range []interface{}{&model.WAFRule{}, &model.WAFCCConfig{}, &model.WAFOption{}, &model.WAFLog{}} {
+	for _, m := range []interface{}{&model.WAFRule{}, &model.WAFCCConfig{}, &model.WAFOption{}, &model.WAFLog{}, &model.WAFIPGroup{}} {
 		if err := db.AutoMigrate(m); err != nil {
 			t.Fatalf("migrate: %v", err)
 		}

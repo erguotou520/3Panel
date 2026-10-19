@@ -168,6 +168,76 @@
                     <el-alert :title="$t('website.wafCCTip')" type="info" :closable="false" />
                 </el-card>
 
+                <!-- IP 组：可复用的 IP/CIDR 集合。
+                     一个「公司出口 IP 段」往往几十上百条，此前只能一条条建规则 ——
+                     规则表膨胀、界面上一片重复行。规则里用 match_type=ip_group 引用组名。 -->
+                <el-card shadow="never" class="mt-2">
+                    <template #header>
+                        <div class="card-header">
+                            <span>{{ $t('website.wafIPGroupTitle') }}</span>
+                            <el-button type="primary" plain @click="onNewIPGroup">
+                                {{ $t('commons.button.create') }}
+                            </el-button>
+                        </div>
+                    </template>
+                    <el-form label-width="140px">
+                        <el-form-item :label="$t('website.wafIPGroupName')" prop="name" :rules="ipGroupNameRules">
+                            <el-input
+                                v-model="ipGroupDraft.name"
+                                class="p-w-200"
+                                :placeholder="$t('website.wafIPGroupNamePlaceholder')"
+                            />
+                        </el-form-item>
+                        <el-form-item :label="$t('website.wafIPGroupScope')">
+                            <el-radio-group v-model="ipGroupDraft.scope">
+                                <el-radio value="global">{{ $t('website.wafScopeGlobal') }}</el-radio>
+                                <el-radio value="site">{{ $t('website.wafScopeSite') }}</el-radio>
+                            </el-radio-group>
+                        </el-form-item>
+                        <el-form-item :label="$t('website.wafIPGroupCIDRs')">
+                            <el-input
+                                v-model="ipGroupDraft.cidrs"
+                                type="textarea"
+                                :rows="5"
+                                :placeholder="$t('website.wafIPGroupCIDRsPlaceholder')"
+                            />
+                            <div class="text-xs text-gray-400 mt-1">
+                                {{ $t('website.wafIPGroupCIDRsTip') }}
+                            </div>
+                        </el-form-item>
+                        <el-form-item>
+                            <el-button type="primary" @click="onSaveIPGroup">
+                                {{ $t('commons.button.save') }}
+                            </el-button>
+                            <el-button @click="onResetIPGroupDraft">{{ $t('commons.button.reset') }}</el-button>
+                        </el-form-item>
+                    </el-form>
+
+                    <el-table :data="ipGroups" class="mt-2">
+                        <el-table-column prop="name" :label="$t('website.wafIPGroupName')" min-width="120" />
+                        <el-table-column :label="$t('website.wafIPGroupScope')" width="90">
+                            <template #default="{ row }">
+                                <el-tag size="small" type="info">
+                                    {{ $t(row.scope === 'site' ? 'website.wafScopeSite' : 'website.wafScopeGlobal') }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column :label="$t('website.wafIPGroupCount')" width="90">
+                            <template #default="{ row }">{{ countCIDRs(row.cidrs) }}</template>
+                        </el-table-column>
+                        <el-table-column :label="$t('commons.table.operate')" width="140" fixed="right">
+                            <template #default="{ row }">
+                                <el-button link type="primary" @click="onEditIPGroup(row)">
+                                    {{ $t('commons.button.edit') }}
+                                </el-button>
+                                <el-button link type="danger" @click="onDelIPGroup(row)">
+                                    {{ $t('commons.button.delete') }}
+                                </el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-card>
+
                 <!-- 防护模式三态 + 拦截页定制 + 检测器开关。
                      后端 model / exporter / Lua 数据面都已支持，
                      此前界面上没有任何入口，等于三个功能都不可用。 -->
@@ -621,6 +691,11 @@ import {
     updateWAFCCConfig,
     updateWAFWebhook,
     reorderWAFRules,
+    listWAFIPGroups,
+    createWAFIPGroup,
+    updateWAFIPGroup,
+    deleteWAFIPGroup,
+    WAF_IP_GROUP_NAME_PATTERN,
     type WAFWebhookMethod,
 } from '@/api/modules/waf';
 import {
@@ -772,6 +847,93 @@ const option = ref<any>({
     probeWindow: 60,
     probeMaxRPS: 120,
 });
+
+// IP 组：站点可见的全局组 + 本站组。加载一次，规则抽屉直接复用。
+const ipGroups = ref<any[]>([]);
+
+// 编辑草稿。id 为空表示新建。
+const ipGroupDraft = ref<any>({
+    id: null,
+    name: '',
+    scope: 'site',
+    cidrs: '',
+    enabled: true,
+    remark: '',
+});
+
+// 前端正则必须与后端 service 的 validateIPGroupName 完全一致 ——
+// 放宽一点就会让用户配出一个后端拒绝、界面上看不出问题的组。
+const ipGroupNameRules = {
+    required: true,
+    // eslint-disable-next-line @typescript-eslint/no-use-before-define
+    validator: (_r: unknown, value: string, cb: (e?: Error) => void) => {
+        if (!value || !WAF_IP_GROUP_NAME_PATTERN.test(value)) {
+            cb(new Error(i18n.global.t('website.wafIPGroupNameInvalid')));
+            return;
+        }
+        cb();
+    },
+};
+
+/** 统计组里的条目数。分隔符与后端 parseIPGroupCIDRs 保持一致。 */
+const countCIDRs = (raw?: string): number => {
+    if (!raw) return 0;
+    return raw.split(/[\n\r,;\t ]+/).filter((v) => v.trim()).length;
+};
+
+const onResetIPGroupDraft = () => {
+    ipGroupDraft.value = {
+        id: null,
+        name: '',
+        scope: 'site',
+        cidrs: '',
+        enabled: true,
+        remark: '',
+    };
+};
+
+const onNewIPGroup = () => {
+    onResetIPGroupDraft();
+};
+
+const onEditIPGroup = (row: any) => {
+    ipGroupDraft.value = { ...row };
+};
+
+const onSaveIPGroup = async () => {
+    const d = ipGroupDraft.value;
+    if (!WAF_IP_GROUP_NAME_PATTERN.test(d.name || '')) {
+        MsgWarning(i18n.global.t('website.wafIPGroupNameInvalid'));
+        return;
+    }
+    const payload = {
+        name: d.name,
+        scope: d.scope,
+        websiteId: d.scope === 'site' ? props.websiteId : 0,
+        enabled: d.enabled ?? true,
+        remark: d.remark || '',
+        cidrs: d.cidrs,
+    };
+    if (d.id) {
+        await updateWAFIPGroup({ ...payload, id: d.id });
+    } else {
+        await createWAFIPGroup(payload);
+    }
+    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+    onResetIPGroupDraft();
+    loadIPGroups();
+};
+
+const onDelIPGroup = async (row: any) => {
+    await deleteWAFIPGroup(row.id);
+    MsgSuccess(i18n.global.t('commons.msg.deleteSuccess'));
+    loadIPGroups();
+};
+
+const loadIPGroups = async () => {
+    const res = await listWAFIPGroups(props.websiteId);
+    ipGroups.value = res.data || [];
+};
 
 const loadRules = async () => {
     const res = await searchWAFRules({ websiteId: props.websiteId });
@@ -963,7 +1125,12 @@ watch(ruleSortMode, async (on) => {
 onUnmounted(destroyRuleSortable);
 
 const openRuleDialog = (rule?: any) => {
-    ruleDialogRef.value.acceptParams({ websiteId: props.websiteId, rule: rule ? { ...rule } : null });
+    ruleDialogRef.value.acceptParams({
+        websiteId: props.websiteId,
+        rule: rule ? { ...rule } : null,
+        // 规则里的 ip_group 匹配类型要从这里选组名
+        ipGroups: ipGroups.value,
+    });
 };
 const onDelRule = (row: any) => {
     deleteWAFRule(row.id).then(() => {
@@ -1016,6 +1183,7 @@ watch(logSort, () => {
 
 const loadAll = () => {
     loadRules();
+    loadIPGroups();
     loadLogs();
     loadStat();
     loadCC();

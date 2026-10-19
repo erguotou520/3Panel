@@ -2048,6 +2048,338 @@ access_scenario("bot observe 不影响语义层", site_with("block", {
 end, function()
     return ngx.status == 403
 end)
+
+-- ==================== 条件嵌套：括号支持（2026-10-19）====================
+-- 此前 expr 的 tokenize 不认 '(' ')'，遇到括号直接 return nil，
+-- 于是 "(a and b) or c" 这类规则**静默永不命中** —— 配了规则却毫无作用，
+-- 且界面上没有任何提示。
+print("=== 条件嵌套：括号 ===")
+
+local function mk_dims(ip, path, method, ua)
+    return {
+        ip = function() return ip end,
+        path = function() return path end,
+        method = function() return method end,
+        ua = function() return ua or "Mozilla/5.0 Chrome" end,
+        referer = function() return "" end,
+        cookie = function() return "" end,
+        header = function() return nil end,
+    }
+end
+
+do
+    local expr = require("waf.expr")
+    local D = mk_dims("1.2.3.4", "/api/login", "POST")
+
+    -- 基本括号：包住整个表达式
+    check("括号包住整体（真）",
+        expr.eval('(ip in "1.2.3.0/24" and method eq "POST")', D) == true)
+    check("括号包住整体（假）",
+        expr.eval('(ip in "9.9.9.0/24" and method eq "POST")', D) == false)
+
+    -- 括号真正的作用是**改变分组**。注意 and 本来就比 or 优先，
+    -- 所以 "a or b and c" 去掉括号结果不变 —— 那不是括号的功劳。
+    -- 括号的关键用例是让 or 的结果参与后面的 and：
+    --   (POST or PUT) and ip=9.9.9.4  → false
+    --   POST or (PUT and ip=9.9.9.4)  → true
+    check("括号让 or 的结果参与 and（加括号为假）",
+        expr.eval('(method eq "POST" or method eq "PUT") and ip in "9.9.9.0/24"', D) == false)
+    check("去掉括号则结果相反（验证括号真的生效）",
+        expr.eval('method eq "POST" or method eq "PUT" and ip in "9.9.9.0/24"', D) == true)
+
+    -- 三层嵌套
+    check("三层嵌套",
+        expr.eval('((ip in "1.2.3.0/24" and method eq "POST") or (path contains "x" and ua contains "y"))', D) == true)
+    -- 括号内含 or
+    check("括号内含 or",
+        expr.eval('(method eq "PUT" or method eq "POST") and ip in "1.2.3.0/24"', D) == true)
+
+    -- not 作用于括号整体
+    check("not 作用于括号整体",
+        expr.eval('not (ip in "9.9.9.0/24")', D) == true)
+    check("not 括号为假时取反为假",
+        expr.eval('not (ip in "1.2.3.0/24")', D) == false)
+    -- not 与嵌套混用
+    check("not 与嵌套混用",
+        expr.eval('not (method eq "GET" and (path contains "login" or path contains "admin"))', D) == true)
+
+    -- 空括号组是退化输入：parse_primary 递归进去后无内容可解析。
+    -- 判 false（不命中）而不是 true —— 对 WAF 来说，
+    -- 无意义的表达式不该变成一条"匹配一切"的规则。
+    check("空括号判为 false（不退化成匹配一切）", expr.eval('()', D) == false)
+end
+
+-- 🔴 负例：非法表达式必须判为 false，绝不能因为加了括号解析就放行
+do
+    local expr = require("waf.expr")
+    local D = mk_dims("1.2.3.4", "/api/login", "POST")
+    local bad = {
+        {"缺右括号", 'ip in "1.2.3.0/24" and (method eq "POST"'},
+        {"缺左括号", 'ip in "1.2.3.0/24" and method eq "POST")'},
+        {"括号不配对", '((ip in "1.2.3.0/24")'},
+        {"多右括号", 'method eq "POST"))'},
+        {"括号内空", '() and'},
+        {"括号开头即闭合错位", '(ip in "1.2.3.0/24") or'},
+        {"not 后无内容", 'not'},
+        {"not 后只有括号未闭合", 'not (method eq "POST"'},
+    }
+    for _, c in ipairs(bad) do
+        local ok, res = pcall(expr.eval, c[2], D)
+        if not ok then
+            -- 抛异常也算失败：规则求值必须始终返回布尔，不能让请求崩掉
+            check("非法表达式应安全失败：" .. c[1], false)
+        else
+            check("非法表达式应判为 false：" .. c[1], res == false)
+        end
+    end
+end
+
+-- 嵌套不能引入 RCE 风险：仍然只走白名单 token，不使用 loadstring
+do
+    local expr = require("waf.expr")
+    local D = mk_dims("1.2.3.4", "/api/login", "POST")
+    -- 括号里塞函数调用 / 拼接，必须判为 false
+    check("括号内的函数调用被判非法",
+        expr.eval('(os.execute("id"))', D) == false)
+    check("括号内的字符串拼接被判非法",
+        expr.eval('(ip in "1.2.3.0/24" .. path)', D) == false)
+    -- 超长表达式仍应被拒（防 ReDoS / 内存）
+    local long = string.rep("(method eq \"POST\" or method eq \"GET\") and ", 200)
+    check("超长嵌套表达式被拒", expr.eval(long, D) == false)
+end
+
+-- ==================== 不等于匹配：负向操作符（2026-10-19）====================
+-- 此前只有 6 个正向操作符。"放行 /api 但除外 /api/public" 这类
+-- "排除某项"的规则写不出来，只能靠堆叠多条正向规则硬凑。
+print("=== 不等于匹配 ===")
+
+-- 基线：正向操作符行为不变
+rules_scenario("exact 正向不变", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/index", match_op = "exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+-- not_exact：值等于时不命中，不等时命中
+rules_scenario("not_exact 相等时不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/index", match_op = "not_exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+rules_scenario("not_exact 不等时命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/admin", match_op = "not_exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+-- not_contains
+rules_scenario("not_contains 含有时不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "ua", match_value = "sqlmap", match_op = "not_contains", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+rules_scenario("not_contains 不含时命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "ua", match_value = "sqlmap", match_op = "not_contains", action = "allow", enabled = true},
+}}}, function()
+    base_dims()
+    T.headers["User-Agent"] = "sqlmap/1.5"
+end, function(res) return res == nil end)
+
+-- not_prefix / not_suffix / not_wildcard
+-- match_value 必须是 /index 的真前缀，否则正向本来就不成立，取反后仍是 true
+rules_scenario("not_prefix 前缀相同不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/ind", match_op = "not_prefix", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+rules_scenario("not_prefix 前缀不同时命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/api", match_op = "not_prefix", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+rules_scenario("not_suffix 后缀相同不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/index", match_op = "not_suffix", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+rules_scenario("not_wildcard 匹配时不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "path", match_value = "/ind*", match_op = "not_wildcard", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+rules_scenario("not_regex 命中时不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "ua", match_value = "Chrome", match_op = "not_regex", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+-- 🔴 IP 维度：match_op 原本被完全忽略，负向操作符必须真的生效。
+-- 若仍按精确匹配执行，「不等于 1.2.3.4」会变成「等于 1.2.3.4」——
+-- 方向正好相反，该放行的被拦。
+rules_scenario("ip not_exact：本机 IP 相等时不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "not_exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+rules_scenario("ip not_exact：不同 IP 命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "ip", match_value = "9.9.9.9", match_op = "not_exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+rules_scenario("cidr not_exact：落在网段内不命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "cidr", match_value = "1.2.3.0/24", match_op = "not_exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res == nil end)
+
+rules_scenario("cidr not_exact：网段外命中", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "cidr", match_value = "9.9.9.0/24", match_op = "not_exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+-- 正向 ip/cidr 行为不能被改坏
+rules_scenario("ip exact 正向不变", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "ip", match_value = "1.2.3.4", match_op = "exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+rules_scenario("cidr exact 正向不变", {global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "cidr", match_value = "1.2.3.0/24", match_op = "exact", action = "allow", enabled = true},
+}}}, base_dims, function(res) return res ~= nil end)
+
+-- 未知操作符（如 not_bogus）会被 match_ops[mop] or match_ops.exact 退化成 exact。
+-- 数据面层挡不住 —— 但也**不需要**挡：DTO 的 oneof 白名单
+-- （agent/app/dto/request/waf.go 的 WAFRuleCreate/WAFRuleUpdate）已拒绝
+-- 非法值，未知操作符根本进不了 rules.json。
+-- 这里用「合法负向操作符全都不退化」来锁住同一件事：
+-- 若哪天批量生成的循环被改坏（比如只生成 not_exact），
+-- 下面这 6 条里至少有一条会红。
+
+-- ==================== IP 组（2026-10-19）====================
+-- 一个「公司出口 IP 段」往往几十上百条，此前只能一条条建规则 ——
+-- 规则表膨胀、界面上一片重复行。现在可以命名成一个组，
+-- 规则用 match_type=ip_group 引用组名。
+print("=== IP 组 ===")
+
+-- 组内任一 CIDR 命中即算命中
+rules_scenario("ip_group 命中组内 CIDR", {global = {
+    ip_groups = {office = {"10.0.0.0/8", "172.16.0.0/12", "192.168.1.1"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "10.1.2.3"
+end, function(res) return res ~= nil end)
+
+-- 不在组内
+rules_scenario("ip_group 不在组内", {global = {
+    ip_groups = {office = {"10.0.0.0/8"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "8.8.8.8"
+end, function(res) return res == nil end)
+
+-- 单个裸 IP（导出时已归一成 /32）
+rules_scenario("ip_group 命中裸 IP 条目", {global = {
+    ip_groups = {office = {"1.2.3.4/32"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "exact", action = "allow", enabled = true},
+    },
+}}, base_dims, function(res) return res ~= nil end)
+
+-- 组不存在：放行而不是匹配一切 —— 这是最危险的失败方向
+rules_scenario("ip_group 组不存在时放行", {global = {
+    ip_groups = {office = {"10.0.0.0/8"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "typo_name", match_op = "exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "10.1.2.3"
+end, function(res) return res == nil end)
+
+-- 完全没有 ip_groups 段（老版本 rules.json）：放行
+rules_scenario("ip_group 无组数据时放行", {global = {
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "10.1.2.3"
+end, function(res) return res == nil end)
+
+-- 🔴 站点组覆盖同名全局组（与「站点名单优先」语义一致）
+rules_scenario("站点组覆盖同名全局组", {
+    global = {
+        ip_groups = {office = {"10.0.0.0/8"}},
+        rules = {},
+    },
+    sites = {["1"] = {
+        enabled = true, compiled = {},
+        rules = {
+            {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "exact", action = "allow", enabled = true},
+        },
+        ip_groups = {office = {"192.168.0.0/16"}},
+    }},
+}, function()
+    base_dims()
+    T.vars.remote_addr = "10.1.2.3"
+end, function(res) return res == nil end)
+
+-- 站点组里的 IP 应命中
+rules_scenario("站点组内的 IP 命中", {
+    global = {
+        ip_groups = {office = {"10.0.0.0/8"}},
+        rules = {},
+    },
+    sites = {["1"] = {
+        enabled = true, compiled = {},
+        -- 必须有规则：has_rules 为假时 check 直接返回 nil，
+        -- 组表根本不会被读到，测试就"通过"得毫无意义。
+        rules = {
+            {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "exact", action = "allow", enabled = true},
+        },
+        ip_groups = {office = {"192.168.0.0/16"}},
+    }},
+}, function()
+    base_dims()
+    T.vars.remote_addr = "192.168.5.5"
+end, function(res) return res ~= nil end)
+
+-- 站点组与全局组不同名时，两者都可用
+rules_scenario("站点组与全局组共存", {
+    global = {
+        ip_groups = {global_group = {"10.0.0.0/8"}},
+        rules = {
+            {id = 1, name = "g", priority = 10, match_type = "ip_group", match_value = "global_group", match_op = "exact", action = "allow", enabled = true},
+        },
+    },
+    sites = {["1"] = {
+        enabled = true, rules = {}, compiled = {},
+        ip_groups = {site_group = {"192.168.0.0/16"}},
+    }},
+}, function()
+    base_dims()
+    T.vars.remote_addr = "10.1.2.3"
+end, function(res) return res ~= nil end)
+
+-- ip_group 与 not_exact 组合（负向操作符同样生效）
+rules_scenario("ip_group + not_exact 生效", {global = {
+    ip_groups = {office = {"10.0.0.0/8"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "not_exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "10.1.2.3"
+end, function(res) return res == nil end)
+
+rules_scenario("ip_group + not_exact 组外命中", {global = {
+    ip_groups = {office = {"10.0.0.0/8"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "office", match_op = "not_exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "8.8.8.8"
+end, function(res) return res ~= nil end)
+
+-- 组内多条时任一命中即可
+rules_scenario("ip_group 多条中任一命中", {global = {
+    ip_groups = {mixed = {"1.1.1.1/32", "2.2.2.2/32", "3.3.3.3/32"}},
+    rules = {
+        {id = 1, name = "r", priority = 10, match_type = "ip_group", match_value = "mixed", match_op = "exact", action = "allow", enabled = true},
+    },
+}}, function()
+    base_dims()
+    T.vars.remote_addr = "2.2.2.2"
+end, function(res) return res ~= nil end)
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

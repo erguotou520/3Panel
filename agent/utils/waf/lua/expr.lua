@@ -18,6 +18,14 @@ local function tokenize(s)
             if not j then return nil end
             tokens[#tokens + 1] = {t = "str", v = s:sub(i + 1, j - 1)}
             i = j + 1
+        elseif c == "(" then
+            -- 括号支持条件嵌套：没有它 "(a and b) or c" 会因非法字符
+            -- 整个 tokenize 返回 nil，规则静默永不命中。
+            tokens[#tokens + 1] = {t = "lparen"}
+            i = i + 1
+        elseif c == ")" then
+            tokens[#tokens + 1] = {t = "rparen"}
+            i = i + 1
         elseif c == "[" then
             tokens[#tokens + 1] = {t = "lbracket"}
             i = i + 1
@@ -116,11 +124,42 @@ local function parse_cmp(tokens, pos, dims)
     return hit, pos
 end
 
--- 递归下降：or 表达式 = and 表达式 (or and 表达式)*
--- 前向声明（parse_and 定义在后）
+-- 递归下降：
+--   or      表达式 = and 表达式 (or and 表达式)*
+--   and     表达式 = primary 表达式 (and primary 表达式)*
+--   primary 表达式 = "(" or 表达式 ")" | "not" primary | 单个比较
+--
+-- primary 是递归的（括号里又是一个完整 or 表达式），所以支持任意层级嵌套。
+-- 前向声明（parse_and / parse_or 定义在后面或前面）
 local parse_and
+local parse_or
 
-local function parse_or(tokens, pos, dims)
+-- primary：括号子表达式 / not 取反 / 单个比较
+local function parse_primary(tokens, pos, dims)
+    local tk = tokens[pos]
+    if not tk then return nil, pos end
+    if tk.t == "lparen" then
+        local res, np = parse_or(tokens, pos + 1, dims)
+        if res == nil then return nil, np end
+        local close = tokens[np]
+        if not close or close.t ~= "rparen" then
+            return nil, np -- 缺右括号：判为非法表达式
+        end
+        return res, np + 1
+    end
+    if tk.t == "word" and tk.v == "not" then
+        local res, np = parse_primary(tokens, pos + 1, dims)
+        if res == nil then return nil, np end
+        return (not res), np
+    end
+    return parse_cmp(tokens, pos, dims)
+end
+
+-- 必须是 `parse_or = function` 而不是 `local function parse_or`：
+-- 后者等价于 `local parse_or = function`，会创建**新的** local，
+-- 把上面 `local parse_or` 那句前向声明永远留在 nil，
+-- 于是 parse_primary 里调用它报 "attempt to call a nil value"。
+parse_or = function(tokens, pos, dims)
     local left, np = parse_and(tokens, pos, dims)
     if left == nil then return nil, np end
     pos = np
@@ -136,13 +175,13 @@ local function parse_or(tokens, pos, dims)
 end
 
 parse_and = function(tokens, pos, dims)
-    local left, np = parse_cmp(tokens, pos, dims)
+    local left, np = parse_primary(tokens, pos, dims)
     if left == nil then return nil, np end
     pos = np
     while tokens[pos] and tokens[pos].t == "word" and tokens[pos].v == "and" do
         pos = pos + 1
         local right
-        right, np = parse_cmp(tokens, pos, dims)
+        right, np = parse_primary(tokens, pos, dims)
         if right == nil then return nil, np end
         left = left and right
         pos = np

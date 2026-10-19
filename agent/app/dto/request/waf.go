@@ -13,7 +13,7 @@ type WAFRuleCreate struct {
 	Priority   int    `json:"priority"`
 	MatchType  string `json:"matchType" validate:"required,oneof=ip cidr path ua referer header cookie method expr"`
 	MatchValue string `json:"matchValue" validate:"required"`
-	MatchOp    string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex"`
+	MatchOp    string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex not_exact not_contains not_prefix not_suffix not_wildcard not_regex"`
 	Action     string `json:"action" validate:"required,oneof=allow deny challenge log"`
 	TTL        int    `json:"ttl"`
 	Remark     string `json:"remark"`
@@ -27,7 +27,7 @@ type WAFRuleUpdate struct {
 	Priority       int    `json:"priority"`
 	MatchType      string `json:"matchType" validate:"required"`
 	MatchValue     string `json:"matchValue" validate:"required"`
-	MatchOp        string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex"`
+	MatchOp        string `json:"matchOp" validate:"omitempty,oneof=exact contains prefix suffix wildcard regex not_exact not_contains not_prefix not_suffix not_wildcard not_regex"`
 	Action         string `json:"action" validate:"required,oneof=allow deny challenge log"`
 	TTL            int    `json:"ttl"`
 	Enabled        bool   `json:"enabled"`
@@ -95,6 +95,33 @@ type WAFWebhookUpdate struct {
 // WAFRuleReorder 黑白名单拖动排序。
 // 传完整的目标顺序（按数组下标=最终优先级次序），而不是逐条传 priority：
 // 前端拖完只有一份最终顺序，让后端按顺序重新编号比前端算差值更不容易错。
+// WAFIPGroupCreate / Update 是 IP 组的增改。
+//
+// 刻意不接受"组名含空格或中文逗号"这类隐式约定 —— 组名会原样出现在
+// rules.json 里作为 map 的 key，用户在规则里填错一个字符就是
+// 「组不存在」且**没有任何报错**（Lua 查不到键只能放行）。
+// 所以组名只允许字母数字下划线短横线，长度上限 64。
+type WAFIPGroupCreate struct {
+	Name      string `json:"name" validate:"required,max=64"`
+	Scope     string `json:"scope" validate:"required,oneof=global site"`
+	WebsiteID uint   `json:"websiteId"`
+	Enabled   bool   `json:"enabled"`
+	Remark    string `json:"remark" validate:"max=255"`
+	// CIDRs 是换行或逗号分隔的 IP/CIDR。后端会去空白、去空项、去重。
+	// 单次上限 4096 条 —— 再多就该走订阅名单那种外部数据源了。
+	CIDRs string `json:"cidrs" validate:"max=65536"`
+}
+
+type WAFIPGroupUpdate struct {
+	ID        uint   `json:"id" validate:"required,gt=0"`
+	Name      string `json:"name" validate:"max=64"`
+	Scope     string `json:"scope" validate:"omitempty,oneof=global site"`
+	WebsiteID uint   `json:"websiteId"`
+	Enabled   bool   `json:"enabled"`
+	Remark    string `json:"remark" validate:"max=255"`
+	CIDRs     string `json:"cidrs" validate:"max=65536"`
+}
+
 type WAFRuleReorder struct {
 	// IDs 是有序的规则 ID 列表，第一个优先级最高（数字最小）。
 	IDs []uint `json:"ids" validate:"required,min=1,dive,gt=0"`

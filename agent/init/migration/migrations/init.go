@@ -1944,6 +1944,13 @@ var AddWAFProtectionLevels = &gormigrate.Migration{
 	},
 }
 
+var AddWAFIPGroups = &gormigrate.Migration{
+	ID: "20261019-add-waf-ip-groups",
+	Migrate: func(tx *gorm.DB) error {
+		return tx.AutoMigrate(&model.WAFIPGroup{})
+	},
+}
+
 var AddFirewallRuleTable = &gormigrate.Migration{
 	ID: "20260819-add-firewall-v2-tables",
 	Migrate: func(tx *gorm.DB) error {

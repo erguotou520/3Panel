@@ -3528,6 +3528,19 @@ const message = {
         wafProtect: 'protection',
         wafCCLimit: 'Request limit',
         wafCCWindow: 'Window (seconds)',
+        wafIPGroupTitle: 'IP groups',
+        wafIPGroupName: 'Group name',
+        wafIPGroupNamePlaceholder: 'e.g. office / malicious_ips',
+        wafIPGroupNameInvalid:
+            'Group names may only contain letters, digits, underscores and dashes (1-64 chars). The name is used verbatim as a match key, so special characters would make the rule never match.',
+        wafIPGroupScope: 'Scope',
+        wafIPGroupCIDRs: 'IP / CIDR list',
+        wafIPGroupCIDRsPlaceholder: '10.0.0.0/8\n192.168.1.1\n172.16.0.0/12',
+        wafIPGroupCIDRsTip:
+            'One per line; commas, semicolons and spaces also work. Bare IPs get /32 appended automatically. Duplicates and invalid entries are reported on save rather than silently dropped.',
+        wafIPGroupCount: 'Entries',
+        wafIPGroupHint:
+            'Pick a group name as the match value. With the IP group type, a request matches when any IP/CIDR in the group does.',
         wafModeTitle: 'Protection mode',
         wafMode: 'Mode',
         wafModeBlock: 'Block',

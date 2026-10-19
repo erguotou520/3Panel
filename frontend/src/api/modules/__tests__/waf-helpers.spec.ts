@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { WAF_IP_GROUP_NAME_PATTERN } from '@/api/modules/waf';
 import {
     buildCurlCommand,
     buildLogSortParam,
@@ -463,5 +464,101 @@ describe('normalizeLevel：空值归一', () => {
         expect(normalizeLevel('OFF')).toBe('balanced');
         expect(normalizeLevel('high ')).toBe('balanced');
         expect(normalizeLevel('block')).toBe('balanced');
+    });
+});
+
+// ==================== 匹配操作符契约 ====================
+// matchOp 有三处必须同步：前端下拉、Lua rules.lua 的 match_ops、
+// 后端 DTO 的 oneof 白名单。任何一处漏改，用户就会遇到
+// 「界面上选不到」或「保存被拒」或「配了不生效」。
+
+describe('matchOp 三处同步', () => {
+    const dialogSrc = readFileSync('src/views/website/website/waf/rule-dialog.vue', 'utf8');
+
+    /** 从 rule-dialog.vue 的 matchOps 数组里解析出操作符列表 */
+    const frontendOps = ((): string[] => {
+        const m = dialogSrc.match(/const matchOps = \[([\s\S]*?)\];/);
+        if (!m?.[1]) return [];
+        return [...m[1].matchAll(/'([a-z_]+)'/g)].map((x) => x[1] ?? '');
+    })();
+
+    /** 从后端 DTO 的 oneof 白名单里解析 */
+    const dtoSrc = readFileSync('../agent/app/dto/request/waf.go', 'utf8');
+    const backendOps = ((): string[] => {
+        const m = dtoSrc.match(/MatchOp\s+string[^\n]*oneof=([a-z_ ]+)/);
+        if (!m?.[1]) return [];
+        return m[1].trim().split(/\s+/);
+    })();
+
+    /** 从 Lua rules.lua 的批量生成循环里解析基名 */
+    const luaSrc = readFileSync('../agent/utils/waf/lua/rules.lua', 'utf8');
+    const luaBaseOps = ((): string[] => {
+        const m = luaSrc.match(/for _, base in ipairs\(\{\s*((?:"[a-z_]+"\s*,?\s*)+)\}\)/);
+        if (!m?.[1]) return [];
+        return [...m[1].matchAll(/"([a-z_]+)"/g)].map((x) => x[1] ?? '');
+    })();
+
+    it('前端解析到 12 个操作符', () => {
+        expect(frontendOps).toHaveLength(12);
+    });
+
+    it('后端 DTO 解析到 12 个操作符', () => {
+        expect(backendOps).toHaveLength(12);
+    });
+
+    it('Lua 批量生成 6 个基名', () => {
+        expect(luaBaseOps).toEqual(['exact', 'contains', 'prefix', 'suffix', 'wildcard', 'regex']);
+    });
+
+    it('前端与后端完全一致', () => {
+        expect([...frontendOps].sort()).toEqual([...backendOps].sort());
+    });
+
+    it('Lua 基名 + 派生的 not_ 前缀 == 前后端列表', () => {
+        const derived = [...luaBaseOps, ...luaBaseOps.map((b) => `not_${b}`)].sort();
+        expect(derived).toEqual([...frontendOps].sort());
+    });
+
+    it('每个负向操作符都有对应的正向（不会只生成一半）', () => {
+        for (const op of frontendOps.filter((o) => o.startsWith('not_'))) {
+            const base = op.slice(4);
+            expect(frontendOps).toContain(base);
+        }
+    });
+});
+
+// ==================== IP 组：组名契约 ====================
+// 组名会直接成为 rules.json 里的 map key。填错一个字符就是
+// 「组不存在」且 Lua 侧静默放行 —— 界面上看不出任何异常。
+// 所以前后端的组名规则必须逐字符一致。
+
+describe('IP 组组名规则前后端一致', () => {
+    const svcSrc = readFileSync('../agent/app/service/waf.go', 'utf8');
+
+    // Go 源码里的正则字面量就是前端这条正则的来源。
+    // 直接断言「Go 源码包含前端这条正则」——比解析 Go 语法取出来更稳，
+    // 也不会因为 Go 侧的写法调整（比如加了 var 前缀）就失效。
+    const FRONTEND_PATTERN_SOURCE = WAF_IP_GROUP_NAME_PATTERN.source;
+
+    it('Go 源码里包含前端这条正则', () => {
+        expect(svcSrc).toContain('`' + FRONTEND_PATTERN_SOURCE + '`');
+    });
+
+    it('接受合法组名', () => {
+        for (const name of ['office', 'office_v2', 'office-v2', 'Abc123', 'a', 'A_1-2']) {
+            expect(WAF_IP_GROUP_NAME_PATTERN.test(name)).toBe(true);
+        }
+    });
+
+    it('拒绝会破坏 map key 或匹配语义的组名', () => {
+        // 逗号/引号/空格/中文/点号都会破坏 rules.json 的 key 或匹配语义
+        for (const name of ['', ' ', 'a b', 'a,b', 'a.b', "a'b", 'a"b', 'a/b', '组名']) {
+            expect(WAF_IP_GROUP_NAME_PATTERN.test(name)).toBe(false);
+        }
+    });
+
+    it('长度上限 64', () => {
+        expect(WAF_IP_GROUP_NAME_PATTERN.test('a'.repeat(64))).toBe(true);
+        expect(WAF_IP_GROUP_NAME_PATTERN.test('a'.repeat(65))).toBe(false);
     });
 });

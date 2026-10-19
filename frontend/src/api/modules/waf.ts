@@ -13,6 +13,11 @@ export interface WAFRule {
     ttl?: number;
     enabled?: boolean;
     remark?: string;
+    /**
+     * matchType=ip_group 时 matchValue 填的是**组名**而非 IP/CIDR。
+     * 组名必须与 WAFIPGroup.name 完全一致 —— 填错时 Lua 查不到键会
+     * 静默放行，界面上看不出任何异常。
+     */
     /** 白名单「加白时仍检测」：放行但继续检测，只记日志不拦截 */
     keepInspecting?: boolean;
     createdAt?: string;
@@ -46,6 +51,54 @@ export interface WAFRuleReorder {
     /** 有序的规则 ID 列表，第一个优先级最高 */
     ids: number[];
 }
+
+export interface WAFIPGroup {
+    id?: number;
+    name: string;
+    scope: 'global' | 'site';
+    websiteId?: number;
+    enabled: boolean;
+    remark?: string;
+    /** 换行或逗号分隔的 IP/CIDR */
+    cidrs: string;
+}
+
+/**
+ * 组名会成为 rules.json 里的 map key，规则里填错一个字符就是
+ * 「组不存在」且没有任何报错。所以后端只接受字母数字下划线短横线，
+ * 这里的前端校验必须与之完全一致 —— 放宽一点就会让用户
+ * 配出一个后端拒绝、界面上看不出问题的组。
+ */
+export const WAF_IP_GROUP_NAME_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+
+export interface WAFIPGroupCreate {
+    name: string;
+    scope: 'global' | 'site';
+    websiteId: number;
+    enabled: boolean;
+    remark?: string;
+    cidrs: string;
+}
+
+export interface WAFIPGroupUpdate extends WAFIPGroupCreate {
+    id: number;
+}
+
+export const listWAFIPGroups = (websiteId: number) => {
+    return http.get<WAFIPGroup[]>(`/waf/ip-groups`, { websiteId });
+};
+
+export const createWAFIPGroup = (req: WAFIPGroupCreate) => {
+    return http.post('/waf/ip-groups/create', req);
+};
+
+export const updateWAFIPGroup = (req: WAFIPGroupUpdate) => {
+    return http.post('/waf/ip-groups/update', req);
+};
+
+export const deleteWAFIPGroup = (id: number) => {
+    return http.post(`/waf/ip-groups/${id}/delete`);
+};
 
 export const reorderWAFRules = (req: WAFRuleReorder) => {
     return http.post('/waf/rules/reorder', req);

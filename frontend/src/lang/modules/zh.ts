@@ -3347,6 +3347,18 @@ const message = {
         wafProtect: '防护',
         wafCCLimit: '请求数上限',
         wafCCWindow: '窗口（秒）',
+        wafIPGroupTitle: 'IP 组',
+        wafIPGroupName: '组名',
+        wafIPGroupNamePlaceholder: '如 office / malicious_ips',
+        wafIPGroupNameInvalid:
+            '组名只能包含字母、数字、下划线和短横线（1-64 个字符）。组名会直接用作匹配关键字，含特殊字符会导致规则匹配不到。',
+        wafIPGroupScope: '作用范围',
+        wafIPGroupCIDRs: 'IP / CIDR 列表',
+        wafIPGroupCIDRsPlaceholder: '10.0.0.0/8\n192.168.1.1\n172.16.0.0/12',
+        wafIPGroupCIDRsTip:
+            '每行一条，也支持逗号/分号/空格分隔。裸 IP 会自动补成 /32。重复项与非法项会在保存时报错，不会被静默忽略。',
+        wafIPGroupCount: '条目数',
+        wafIPGroupHint: '选择组名作为匹配值。规则选「IP 组」后，命中条件是该组内任一 IP/CIDR。',
         wafModeTitle: '防护模式',
         wafMode: '模式',
         wafModeBlock: '防护',

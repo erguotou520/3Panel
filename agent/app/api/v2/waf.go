@@ -91,6 +91,85 @@ func (b *BaseApi) UpdateWAFRule(c *gin.Context) {
 }
 
 // @Tags WAF
+// @Summary List waf ip groups
+// @Param websiteId query integer true "websiteId"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/ip-groups [get]
+func (b *BaseApi) ListWAFIPGroups(c *gin.Context) {
+	websiteID, err := helper.GetIntParamByKey(c, "websiteId")
+	if err != nil {
+		helper.BadRequest(c, err)
+		return
+	}
+	groups, err := wafService.ListIPGroups(websiteID)
+	if err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.SuccessWithData(c, groups)
+}
+
+// @Tags WAF
+// @Summary Create waf ip group
+// @Param request body request.WAFIPGroupCreate true "request"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/ip-groups/create [post]
+func (b *BaseApi) CreateWAFIPGroup(c *gin.Context) {
+	var req request.WAFIPGroupCreate
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := wafService.CreateIPGroup(req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// @Tags WAF
+// @Summary Update waf ip group
+// @Param request body request.WAFIPGroupUpdate true "request"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/ip-groups/update [post]
+func (b *BaseApi) UpdateWAFIPGroup(c *gin.Context) {
+	var req request.WAFIPGroupUpdate
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := wafService.UpdateIPGroup(req); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// @Tags WAF
+// @Summary Delete waf ip group
+// @Param id path integer true "id"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/ip-groups/:id/delete [post]
+func (b *BaseApi) DeleteWAFIPGroup(c *gin.Context) {
+	id, err := helper.GetParamID(c)
+	if err != nil {
+		helper.BadRequest(c, err)
+		return
+	}
+	if err := wafService.DeleteIPGroup(id); err != nil {
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// @Tags WAF
 // @Summary Reorder waf rules
 // @Param request body request.WAFRuleReorder true "request"
 // @Success 200

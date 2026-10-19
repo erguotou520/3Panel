@@ -133,6 +133,21 @@ match_ops.regex = function(v, p)
     return ok and res
 end
 
+-- 负向（不等于）操作符：语义是「不满足正向条件时命中」。
+--
+-- 批量生成而不是逐个写：negate 把正向函数的返回值取反，
+-- 保证 not_exact 与 exact 永远成对 —— 手写六遍很容易漏掉某个。
+--
+-- nil 的处理值得说明：正向函数对 nil 值一律返回 false（视为不匹配），
+-- 取反后会变成 true，即「字段缺失」被算作「满足不等于」。这是刻意的 ——
+-- allow 规则写 "not_contains" 时，请求没有这个 header 正是要放行的情况。
+for _, base in ipairs({"exact", "contains", "prefix", "suffix", "wildcard", "regex"}) do
+    local forward = match_ops[base]
+    match_ops["not_" .. base] = function(v, p)
+        return not forward(v, p)
+    end
+end
+
 -- 提取请求各维度当前值（惰性）。
 --
 -- 早先这里是立即求值：每请求都调 get_headers()、构造 8 字段的表和一个闭包，
@@ -188,8 +203,38 @@ end
 local function rule_hit(rule, dims)
     local mt, mv, mop = rule.match_type, rule.match_value, rule.match_op or "exact"
     local fn = match_ops[mop] or match_ops.exact
-    if mt == "ip" or mt == "cidr" then
-        return iputils.in_cidr(dims.ip(), mv)
+    if mt == "ip_group" then
+        -- match_value 是组名。组不存在时返回 false（放行）——
+        -- 这与「规则配错了但不该误拦流量」的取舍一致。
+        -- 界面侧用下拉选组名、不允许手输，拼错的概率很低。
+        --
+        -- 组表挂在 dims 上而不是沿调用链逐层传 state：
+        -- dims 已经在 rule_hit → eval_list → eval_layer → check 全链贯通，
+        -- 挂上去就不用改四个函数的签名。
+        local groups = dims.ip_groups
+        local list = groups and groups[mv]
+        if type(list) ~= "table" then return false end
+        local ip = dims.ip()
+        if not ip then return false end
+        local hit = false
+        for _, cidr in ipairs(list) do
+            if iputils.in_cidr(ip, cidr) then hit = true break end
+        end
+        -- 负向操作符在这里同样要生效（与 ip/cidr 分支同一理由）：
+        -- 「ip_group + not_exact」若仍按组内命中处理，
+        -- 方向正好与界面选择相反。
+        if mop:sub(1, 4) == "not_" then return not hit end
+        return hit
+    elseif mt == "ip" or mt == "cidr" then
+        -- ip/cidr 走 CIDR 判定而非字符串匹配，match_op 原本被完全忽略。
+        -- 但负向操作符必须在这里生效：用户给 IP 规则选 "not_exact" 时，
+        -- 若仍按精确匹配执行，判定方向与界面选的**正好相反** ——
+        -- 「不等于 1.2.3.4」变成「等于 1.2.3.4」，该放行的被拦。
+        local hit = iputils.in_cidr(dims.ip(), mv)
+        if mop:sub(1, 4) == "not_" then
+            return not hit
+        end
+        return hit
     elseif mt == "path" then
         return fn(dims.path(), mv) or fn(dims.raw_path(), mv)
     elseif mt == "ua" then
@@ -258,6 +303,29 @@ local function compiled_empty(compiled)
         and not next(compiled.referer or {}) and not next(compiled.cookie or {})
 end
 
+-- 合并全局与站点的 IP 组：同名时站点覆盖全局。
+-- 逐项拷贝而不是直接引用 rules.json 里的表 —— state 会被缓存，
+-- 直接引用意味着上游改了表内容缓存也跟着变（虽然 5s TTL 下
+-- 实际影响有限，但让缓存对象不可变更利于推理）。
+local function merge_ip_groups(global_groups, site_groups)
+    if type(global_groups) ~= "table" and type(site_groups) ~= "table" then
+        return nil
+    end
+    local out = {}
+    if type(global_groups) == "table" then
+        for name, list in pairs(global_groups) do
+            out[name] = list
+        end
+    end
+    if type(site_groups) == "table" then
+        for name, list in pairs(site_groups) do
+            out[name] = list
+        end
+    end
+    if next(out) == nil then return nil end
+    return out
+end
+
 function _M.get_site_state()
     load_rules()
     return _M.get_site_state_cached(config.get_site_id())
@@ -295,6 +363,14 @@ function _M.get_site_state_cached(site_id)
         -- 订阅黑名单总开关。缺省为 false：老版本 rules.json 没有这个字段，
         -- 此时按「未启用」处理，不能因为升级遗漏就默认开始拦 IP。
         global_iplist_enabled = (data.global and data.global.ipListEnabled) == true,
+        -- IP 组：组名 -> CIDR 列表。本站组覆盖同名全局组
+        --（与「站点名单优先于全局名单」的语义一致）。
+        --
+        -- 在这里合并而不是在 rule_hit 里现查：ip_group 是热路径上的
+        -- 匹配类型，每次请求都重新遍历两张表合并会明显拖慢名单查询。
+        -- state 有 5 秒 TTL 缓存，合并一次的代价可以忽略。
+        ip_groups = merge_ip_groups(data.global and data.global.ip_groups,
+            site and site.ip_groups),
     }
     state_cache[site_id] = { data = data, state = state }
     return state
@@ -379,6 +455,7 @@ local function eval_compiled(compiled, dims)
     return result
 end
 
+
 local function eval_layer(compiled, list, dims)
     local fast = eval_compiled(compiled, dims)
     local slow = eval_list(list, dims)
@@ -424,6 +501,8 @@ function _M.check(state)
         return nil
     end
     local dims = build_dim_values()
+    -- IP 组挂在 dims 上，供 rule_hit 的 ip_group 分支查。
+    dims.ip_groups = state.ip_groups
     -- 站点级优先：站点名单有任何命中（allow 或 deny 类）即返回，不再看全局
     if state.site then
         local site_res = eval_layer(site_compiled, site_rules, dims)

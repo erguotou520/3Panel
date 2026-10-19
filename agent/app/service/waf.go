@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
 	"path"
 	"regexp"
@@ -42,6 +43,10 @@ type IWAFService interface {
 	DeleteRule(id uint) error
 	// ReorderRules 按目标顺序重排优先级（黑白名单拖动排序）。
 	ReorderRules(req request.WAFRuleReorder) error
+	ListIPGroups(websiteID uint) ([]model.WAFIPGroup, error)
+	CreateIPGroup(req request.WAFIPGroupCreate) error
+	UpdateIPGroup(req request.WAFIPGroupUpdate) error
+	DeleteIPGroup(id uint) error
 	GetCCConfig(websiteID uint) (*model.WAFCCConfig, error)
 	UpdateCCConfig(req request.WAFCCUpdate) error
 	GetOption(websiteID uint) (*model.WAFOption, error)
@@ -261,7 +266,13 @@ func (w WAFService) SyncRules() error {
 	}
 	// 订阅黑名单开关随规则一起下发：数据面读到 false 就不再查名单。
 	ipSetting := w.getIPListSetting()
-	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir, ipSetting.Enabled)
+	// IP 组也要随每次同步下发：规则本身不携带组内容，
+	// 数据面按 match_value 里的组名去 rules.json 的 ip_groups 里查。
+	var ipGroups []model.WAFIPGroup
+	if err := global.DB.Find(&ipGroups).Error; err != nil {
+		return err
+	}
+	return wafutils.ExportRules(rules, ccs, options, enabledSites, confDir, ipSetting.Enabled, ipGroups)
 }
 
 func (w WAFService) loadAllRules() []model.WAFRule {
@@ -344,6 +355,170 @@ func (w WAFService) ListRules(req request.WAFRuleSearch) ([]model.WAFRule, error
 	}
 	err := db.Order("priority asc, id desc").Find(&rules).Error
 	return rules, err
+}
+
+// parseCIDROrIP 接受裸 IP 或 CIDR，返回归一化后的字符串。
+//
+// 裸 IP 统一补成 /32 或 /128：这样下游（Lua 的 in_cidr、导出到
+// rules.json 的格式）只需处理一种形态，不必到处判断有没有斜杠。
+// IPv4-mapped 的 IPv6（::ffff:1.2.3.4）会先 Unmap 成 IPv4 ——
+// 用户从 IPv4 网站复制地址时经常带上这层包装，不处理就匹配不上。
+func parseCIDROrIP(v string) (string, error) {
+	if strings.Contains(v, "/") {
+		p, err := netip.ParsePrefix(v)
+		if err != nil {
+			return "", err
+		}
+		// 拒绝主机位非零的前缀：1.2.3.4/24 在语义上等于 1.2.3.0/24，
+		// 但严格来说它不是合法前缀。放过去会让用户以为两条规则不同，
+		// 实际匹配范围完全一样。
+		if p.Masked() != p {
+			return "", fmt.Errorf("prefix %s has non-zero host bits (did you mean %s?)", v, p.Masked())
+		}
+		return p.String(), nil
+	}
+	a, err := netip.ParseAddr(v)
+	if err != nil {
+		return "", err
+	}
+	a = a.Unmap()
+	bits := 32
+	if a.Is6() {
+		bits = 128
+	}
+	return fmt.Sprintf("%s/%d", a.String(), bits), nil
+}
+
+// ipGroupNamePattern 限定组名为字母、数字、下划线、短横线。
+//
+// 不用 validator 的自定义 tag：那条路依赖 init/validator 的全局注册，
+// 而真正该保证"组名合法"的地方是 service —— 这里的校验对所有
+// 调用方都生效，不依赖调用链上恰好有人跑过校验。
+var ipGroupNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+func validateIPGroupName(name string) error {
+	if !ipGroupNamePattern.MatchString(name) {
+		return fmt.Errorf(
+			"invalid ip group name %q: only letters, digits, underscore and dash are allowed (1-64 chars)",
+			name)
+	}
+	return nil
+}
+
+// parseIPGroupCIDRs 把用户粘贴的文本解析成去重后的 CIDR 列表。
+//
+// 同时接受换行与逗号分隔 —— 用户从防火墙/云厂商控制台复制出来的
+// 几乎都是逗号分隔，而从文件里贴的是换行分隔，两种都得支持。
+//
+// 非法条目**直接报错**而不是跳过：组里的 IP 写错了却静默丢弃，
+// 用户会以为这条已经生效，实际防护范围比预期小 ——
+// 这类"看起来配好了"的偏差在安全配置里比直接报错危险得多。
+// 返回的错误里带上具体是第几行，便于用户定位。
+func parseIPGroupCIDRs(raw string) ([]string, error) {
+	const maxEntries = 4096
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '\n' || r == '\r' || r == ',' || r == ';' || r == '\t' || r == ' '
+	})
+	seen := make(map[string]bool, len(fields))
+	out := make([]string, 0, len(fields))
+	for i, f := range fields {
+		v := strings.TrimSpace(f)
+		if v == "" {
+			continue
+		}
+		// 必须用**归一化后**的值去重和落库，不能拿原串：
+		// 用户粘贴的列表里 "1.1.1.1" 与 "1.1.1.1/32" 语义相同，
+		// 按原串去重会当成两条，组内容平白膨胀，且导出后 Lua 侧
+		// 看到的是两种形态。
+		norm, err := parseCIDROrIP(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid IP/CIDR %q at entry %d: %w", v, i+1, err)
+		}
+		if !seen[norm] {
+			seen[norm] = true
+			out = append(out, norm)
+		}
+	}
+	if len(out) > maxEntries {
+		return nil, fmt.Errorf("ip group too large: %d entries (max %d)", len(out), maxEntries)
+	}
+	return out, nil
+}
+
+// ListIPGroups 返回对指定站点生效的 IP 组（本站 + 全局）。
+func (w WAFService) ListIPGroups(websiteID uint) ([]model.WAFIPGroup, error) {
+	var groups []model.WAFIPGroup
+	err := global.DB.
+		Where("scope = ? OR website_id = ?", model.WAFScopeGlobal, websiteID).
+		Order("scope asc, name asc").
+		Find(&groups).Error
+	return groups, err
+}
+
+func (w WAFService) CreateIPGroup(req request.WAFIPGroupCreate) error {
+	if err := validateIPGroupName(req.Name); err != nil {
+		return err
+	}
+	cidrs, err := parseIPGroupCIDRs(req.CIDRs)
+	if err != nil {
+		return err
+	}
+	if len(cidrs) == 0 {
+		return fmt.Errorf("ip group must contain at least one IP/CIDR")
+	}
+	g := model.WAFIPGroup{
+		Name: req.Name, Scope: req.Scope, WebsiteID: req.WebsiteID,
+		Enabled: req.Enabled, Remark: req.Remark,
+		CIDRs: strings.Join(cidrs, "\n"),
+	}
+	// 唯一索引在 (name, scope)，但 website_id 不在其中 ——
+	// 同名同 scope 的两个站点组会撞唯一键。这里提前给出可读错误。
+	if err := global.DB.Create(&g).Error; err != nil {
+		return fmt.Errorf("create ip group %q: %w", req.Name, err)
+	}
+	return w.syncDataPlane()
+}
+
+func (w WAFService) UpdateIPGroup(req request.WAFIPGroupUpdate) error {
+	var g model.WAFIPGroup
+	if err := global.DB.First(&g, req.ID).Error; err != nil {
+		return err
+	}
+	if req.Name != "" {
+		if err := validateIPGroupName(req.Name); err != nil {
+			return err
+		}
+		g.Name = req.Name
+	}
+	if req.Scope != "" {
+		g.Scope = req.Scope
+	}
+	if req.WebsiteID > 0 {
+		g.WebsiteID = req.WebsiteID
+	}
+	g.Enabled = req.Enabled
+	g.Remark = req.Remark
+	if req.CIDRs != "" {
+		cidrs, err := parseIPGroupCIDRs(req.CIDRs)
+		if err != nil {
+			return err
+		}
+		if len(cidrs) == 0 {
+			return fmt.Errorf("ip group must contain at least one IP/CIDR")
+		}
+		g.CIDRs = strings.Join(cidrs, "\n")
+	}
+	if err := global.DB.Save(&g).Error; err != nil {
+		return err
+	}
+	return w.syncDataPlane()
+}
+
+func (w WAFService) DeleteIPGroup(id uint) error {
+	if err := global.DB.Delete(&model.WAFIPGroup{}, id).Error; err != nil {
+		return err
+	}
+	return w.syncDataPlane()
 }
 
 func (w WAFService) CreateRule(req request.WAFRuleCreate) error {
