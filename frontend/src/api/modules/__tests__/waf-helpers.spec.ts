@@ -590,10 +590,12 @@ describe('统计维度前后端字段名一致', () => {
     });
 
     it('后端 summary 的字段前端都认识（KPI 用得到）', () => {
-        // KPI 卡片直接读 stat.summary.xxx，字段名错了会显示 0 而不是报错
+        // KPI 卡片直接读 summary.xxx，字段名错了会显示 0 而不是报错。
+        // 不锚定 `stat.` 前缀：统计被拆到独立页签后，取值移到了 kpiItems
+        // 这个 computed 里（stat.value.summary?.xxx），前缀会随重构变化。
         for (const f of ['total', 'denied', 'uniqueIPs', 'avgDurationMs', 'falsePositive']) {
             expect(backendFields.has(f)).toBe(true);
-            expect(indexSrc).toContain(`stat.summary?.${f}`);
+            expect(indexSrc).toContain(`summary?.${f}`);
         }
     });
 

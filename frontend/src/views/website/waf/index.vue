@@ -1,9 +1,11 @@
 <template>
     <div>
         <LayoutContent :title="$t('website.waf')" v-loading="loading">
+            <!-- 站点选择器与总开关只在站点维度页签显示：
+                 IP 名单订阅是全局配置，此时选中哪个站点都没有意义。 -->
             <template #leftToolBar>
                 <el-select
-                    v-if="activeTab === 'site' && openRestyExist"
+                    v-if="showSitePicker"
                     v-model="websiteId"
                     filterable
                     class="p-w-300"
@@ -19,33 +21,23 @@
                 </el-select>
             </template>
             <template #rightToolBar>
-                <!-- 总开关放在标题栏右侧（与站点选择器同一行），
-                     与其它功能页「标题 + 右侧操作」的布局保持一致。 -->
-                <el-switch
-                    v-if="activeTab === 'site' && selectedWebsite"
-                    v-model="wafEnabled"
-                    @change="onToggleWAF"
-                />
+                <el-switch v-if="showSitePicker" v-model="wafEnabled" @change="onToggleWAF" />
             </template>
             <template #main>
-                <!-- IP 黑名单订阅是全局配置，不依赖 OpenResty，未安装时也可用 -->
-                <el-tabs v-model="activeTab">
-                    <!-- WAF 防护在前：它是这个页面的主功能，IP 名单订阅是附属配置 -->
-                    <el-tab-pane v-if="openRestyExist" :label="$t('website.waf')" name="site">
-                        <!-- key 带 wafEnabled：启用/禁用都整体重建子页，
-                             避免依赖子组件 watch prop 的时机 -->
-                        <Waf
-                            v-if="selectedWebsite"
-                            :key="`${selectedWebsite.id}-${wafEnabled}`"
-                            :website-id="selectedWebsite.id"
-                            :waf-enabled="wafEnabled"
-                        />
-                        <el-empty v-else :description="$t('menu.website')" />
-                    </el-tab-pane>
-                    <el-tab-pane :label="$t('website.wafIPList')" name="iplist">
-                        <IPListSetting />
-                    </el-tab-pane>
-                </el-tabs>
+                <MainDiv :heightDiff="260">
+                    <!-- 所有页签都在 WAF 组件内部（防护/黑白名单/IP 组/统计/日志/名单订阅），
+                         这里不再套一层 el-tabs —— 两层页签会让「当前到底在哪一层」变得模糊。 -->
+                    <Waf
+                        v-if="openRestyExist && selectedWebsite"
+                        :key="`${selectedWebsite.id}-${wafEnabled}`"
+                        :website-id="selectedWebsite.id"
+                        :waf-enabled="wafEnabled"
+                        :show-ip-list="true"
+                        @tab-change="onTabChange"
+                    />
+                    <!-- 未安装 OpenResty 时只剩 IP 名单订阅可用 -->
+                    <IPListSetting v-else-if="!loading" />
+                </MainDiv>
             </template>
         </LayoutContent>
     </div>
@@ -59,14 +51,11 @@ import { operateWebsiteWAF } from '@/api/modules/waf';
 import { Website } from '@/api/interface/website';
 import Waf from '@/views/website/website/waf/index.vue';
 import IPListSetting from '@/views/website/website/waf/iplist-setting.vue';
+import MainDiv from '@/components/main-div/index.vue';
 import i18n from '@/lang';
 import { MsgSuccess } from '@/utils/message';
 
-// 站点页签是站点级配置，IP 名单页签是全局配置 —— 两者混在一个页面，
-// 页签切换时要把站点选择器一并收起来，否则会出现"选了站点但当前页用不上"。
-// WAF 防护排在前面，因此默认停在它；未安装 OpenResty 时自动回落到
-// IP 名单页签 —— 站点级 WAF 此时无从谈起。
-const activeTab = ref<'site' | 'iplist'>('site');
+const activeTab = ref('protect');
 const openRestyExist = ref(false);
 const loading = ref(false);
 
@@ -74,15 +63,14 @@ const websites = ref<Website.WebsiteDTO[]>([]);
 const websiteId = ref(0);
 const selectedWebsite = computed(() => websites.value.find((item) => item.id === websiteId.value));
 
-// 总开关状态以当前选中站点为准：切换站点时同步刷新，
-// 避免开关显示的是上一个站点的启用状态。
+// IP 名单订阅页签下不显示站点选择器与总开关
+const showSitePicker = computed(() => openRestyExist.value && activeTab.value !== 'iplist');
+
 const wafEnabled = ref(false);
 const syncWafEnabled = () => {
     wafEnabled.value = !!selectedWebsite.value?.wafEnabled;
 };
-// 重新拉站点列表：operateWebsiteWAF 不会就地改本地缓存，
-// 不重拉的话 syncWafEnabled 读到的还是操作前的 wafEnabled，
-// 开关会被弹回原状态（关闭时尤其明显——后端已禁用，界面仍显示开启）。
+
 const reloadWebsites = async () => {
     const response = await listWebsites();
     websites.value = (response.data || []).filter((item) => item.type !== 'stream');
@@ -105,20 +93,18 @@ const onToggleWAF = async (val: boolean) => {
     }
 };
 
+const onTabChange = (name: string) => {
+    activeTab.value = name;
+};
+
 onMounted(async () => {
     loading.value = true;
     try {
-        // 站点级 WAF 依附于 OpenResty。这里直接问一次安装状态，
-        // 不再挂 AppStatus 组件 —— 那条状态条会占掉页面顶部一整行，
-        // 而它承载的信息（是否安装）对本站点是常量的。
         const [installed, response] = await Promise.all([
             checkAppInstalled('openresty', '').catch(() => null),
             listWebsites(),
         ]);
         openRestyExist.value = !!installed?.data;
-        if (!openRestyExist.value && activeTab.value === 'site') {
-            activeTab.value = 'iplist';
-        }
         websites.value = (response.data || []).filter((item) => item.type !== 'stream');
         if (websites.value.length > 0) websiteId.value = websites.value[0].id;
         syncWafEnabled();

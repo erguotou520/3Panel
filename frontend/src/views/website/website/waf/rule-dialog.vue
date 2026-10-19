@@ -131,7 +131,7 @@ const form = reactive<any>({
     keepInspecting: false,
 });
 const rules = reactive({
-    required: [{ required: true, message: i18n.global.t('commons.inputRequired'), trigger: 'blur' }],
+    required: [{ required: true, message: i18n.global.t('commons.rule.requiredInput'), trigger: 'blur' }],
 });
 
 // 当前站点可见的 IP 组。传进来而不是抽屉自己拉 ——

@@ -1,285 +1,39 @@
 <template>
-    <div v-loading="loading">
+    <div v-loading="loading" class="waf-page">
         <!-- 总开关在容器页标题栏右侧（与站点选择器同一行），
-             本页只承载启用后的配置与数据：防护配置一个页签，
-             日志独立一个页签，结构与其它带列表的功能页保持一致。 -->
+             本页只承载启用后的配置与数据。 -->
         <el-empty v-if="!wafEnabled" :description="$t('website.wafDisabledTip')" :image-size="80" />
+
         <el-tabs v-else v-model="activeTab" class="waf-tabs" @tab-change="onTabChange">
-            <!-- 外层容器页签已叫「WAF 防护」，这里第一个内层页签必须换文案，
-                 否则用户看到两行「WAF 防护」。 -->
-            <el-tab-pane :label="$t('website.wafProtect')" name="protect">
-                <el-card shadow="never">
+            <!-- ============ 1. 防护配置 ============ -->
+            <el-tab-pane name="protect" :label="$t('website.wafProtect')">
+                <el-card shadow="never" class="waf-card">
                     <template #header>
                         <div class="card-header">
-                            <span>{{ $t('website.wafStat') }}</span>
-                            <el-button link type="primary" @click="loadStat">
-                                {{ $t('commons.button.refresh') }}
-                            </el-button>
-                        </div>
-                    </template>
-                    <!-- 概览数字先给结论，再给分布：三个 KPI 平铺一行，
-                         趋势独占整行（时间维度需要宽度），类型与来源 IP 并排。 -->
-                    <!-- 汇总指标：先给结论（总量/拦截/独立 IP），再给处置质量
-                         （误报数、平均耗时）。用后端算好的 summary 而不是前端
-                         自己数分布——分布是 TopN 截断过的，数出来会偏小。 -->
-                    <div class="waf-kpi">
-                        <div class="waf-kpi-item">
-                            <span class="waf-kpi-value">{{ stat.summary?.total || 0 }}</span>
-                            <span class="waf-kpi-label">{{ $t('website.wafStatTotal') }}</span>
-                        </div>
-                        <div class="waf-kpi-item">
-                            <span class="waf-kpi-value waf-kpi-danger">
-                                {{ stat.summary?.denied || 0 }}
-                            </span>
-                            <span class="waf-kpi-label">{{ $t('website.wafStatDenied') }}</span>
-                        </div>
-                        <div class="waf-kpi-item">
-                            <span class="waf-kpi-value">{{ stat.summary?.uniqueIPs || 0 }}</span>
-                            <span class="waf-kpi-label">{{ $t('website.wafStatUniqueIPs') }}</span>
-                        </div>
-                        <div class="waf-kpi-item">
-                            <span class="waf-kpi-value">
-                                {{ formatDuration(stat.summary?.avgDurationMs) }}
-                            </span>
-                            <span class="waf-kpi-label">{{ $t('website.wafStatAvgDuration') }}</span>
-                        </div>
-                        <div class="waf-kpi-item">
-                            <span class="waf-kpi-value" :class="{ 'waf-kpi-warn': stat.summary?.falsePositive > 0 }">
-                                {{ stat.summary?.falsePositive || 0 }}
-                            </span>
-                            <span class="waf-kpi-label">{{ $t('website.wafStatFalsePositive') }}</span>
-                        </div>
-                    </div>
-
-                    <div class="waf-stat-trend">
-                        <div class="waf-stat-title">
-                            {{ $t('website.wafTrend') }}
-                            <!-- 后端已支持 hour 粒度（trendGranularity），此前前端从未发送过，
-                                 一直是死代码。日粒度下小时级的峰值完全看不出来。 -->
-                            <el-radio-group v-model="trendGranularity" size="small" @change="loadStat">
-                                <el-radio-button value="day">{{ $t('website.wafTrendByDay') }}</el-radio-button>
-                                <el-radio-button value="hour">{{ $t('website.wafTrendByHour') }}</el-radio-button>
-                            </el-radio-group>
-                        </div>
-                        <VCharts
-                            v-if="stat.trend?.length"
-                            type="line"
-                            height="180px"
-                            :option="trendOption"
-                            class="waf-stat-chart"
-                        />
-                        <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
-                    </div>
-
-                    <!-- 10 个分布维度共用一套渲染：逐个复制模板会有 10 份
-                         几乎相同的 20 行结构，改样式时必然漏掉几处。
-                         维度清单见 statDimensions，新增维度只改那一处。 -->
-                    <el-row :gutter="16" class="mt-3">
-                        <el-col v-for="d in statDimensions" :key="d.prop" :xs="24" :md="12">
-                            <div class="waf-stat-title">
-                                {{ $t(d.titleKey) }}
-                                <span v-if="d.hintKey" class="text-xs text-gray-400 font-normal">
-                                    {{ $t(d.hintKey) }}
-                                </span>
+                            <div class="card-title">
+                                <span>{{ $t('website.wafModeTitle') }}</span>
+                                <span class="card-sub">{{ $t('website.wafProtectSub') }}</span>
                             </div>
-                            <div v-if="statItems(d.prop).length" class="waf-bars">
-                                <div v-for="item in statItems(d.prop)" :key="item.key" class="waf-bar-row">
-                                    <span class="waf-bar-name" :title="item.key">
-                                        {{ d.labelFn ? d.labelFn(item.key) : item.key || '-' }}
-                                    </span>
-                                    <div class="waf-bar-track">
-                                        <div
-                                            class="waf-bar-fill"
-                                            :style="{ width: barWidth(item.count, statItems(d.prop)) }"
-                                        />
-                                    </div>
-                                    <span class="waf-bar-value">{{ item.count }}</span>
-                                </div>
-                            </div>
-                            <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
-                        </el-col>
-                    </el-row>
-                </el-card>
-
-                <!-- 攻击通知：后端 pushWebhooks 自上线起就实现了（企微/钉钉/飞书/custom），
-                     但一直没有任何界面能配，等于功能闲置。这里补上配置入口。 -->
-                <el-card shadow="never" class="mt-2">
-                    <template #header>
-                        <div class="card-header">
-                            <span>{{ $t('website.wafNotify') }}</span>
-                            <div class="flex items-center gap-3">
-                                <el-switch v-model="notify.enable" @change="onNotifyToggle" />
-                                <el-button type="primary" plain @click="saveNotify">
-                                    {{ $t('commons.button.save') }}
-                                </el-button>
-                            </div>
-                        </div>
-                    </template>
-                    <el-form label-width="140px">
-                        <el-form-item :label="$t('website.wafNotifyMethod')">
-                            <el-select v-model="notify.method" :disabled="!notify.enable" class="p-w-200">
-                                <el-option
-                                    v-for="opt in notifyMethods"
-                                    :key="opt.value"
-                                    :label="$t(opt.labelKey)"
-                                    :value="opt.value"
-                                />
-                            </el-select>
-                        </el-form-item>
-                        <el-form-item :label="$t('website.wafNotifyURL')">
-                            <!-- 启用时地址必填：后端 required_if 也会拦一道，
-                                 这里是提前给反馈，不让用户提交完才看到报错。 -->
-                            <el-input
-                                v-model="notify.url"
-                                :disabled="!notify.enable"
-                                :placeholder="$t('website.wafNotifyURLPlaceholder')"
-                            />
-                        </el-form-item>
-                    </el-form>
-                    <el-alert :title="$t('website.wafNotifyTip')" type="info" :closable="false" />
-                </el-card>
-
-                <el-card shadow="never" class="mt-2">
-                    <template #header>
-                        <div class="card-header">
-                            <span>CC {{ $t('website.wafProtect') }}</span>
-                            <div class="flex items-center gap-3">
-                                <el-switch v-model="cc.enabled" @change="saveCC" />
-                                <el-button type="primary" plain :disabled="!cc.enabled" @click="saveCC">
-                                    {{ $t('commons.button.save') }}
-                                </el-button>
-                            </div>
-                        </div>
-                    </template>
-                    <!-- 关闭时把阈值等参数置灰但保留取值：直接隐藏会让用户
-                         重新开启后要再填一遍，配置也就无法"备而不用"。 -->
-                    <el-row :gutter="24">
-                        <el-col :xs="24" :md="12">
-                            <el-form label-width="120px">
-                                <el-form-item :label="$t('website.wafCCLimit')">
-                                    <el-input-number v-model="cc.limit" :min="1" :disabled="!cc.enabled" />
-                                </el-form-item>
-                                <el-form-item :label="$t('website.wafCCWindow')">
-                                    <el-input-number v-model="cc.window" :min="1" :disabled="!cc.enabled" />
-                                </el-form-item>
-                            </el-form>
-                        </el-col>
-                        <el-col :xs="24" :md="12">
-                            <el-form label-width="120px">
-                                <el-form-item :label="$t('website.wafAction')">
-                                    <el-select v-model="cc.action" :disabled="!cc.enabled" class="p-w-150">
-                                        <el-option label="deny" value="deny" />
-                                        <el-option label="challenge" value="challenge" />
-                                        <el-option label="log" value="log" />
-                                    </el-select>
-                                </el-form-item>
-                                <el-form-item :label="$t('website.wafCCByUri')">
-                                    <el-switch v-model="cc.byUri" :disabled="!cc.enabled" @change="saveCC" />
-                                </el-form-item>
-                            </el-form>
-                        </el-col>
-                    </el-row>
-                    <el-alert :title="$t('website.wafCCTip')" type="info" :closable="false" />
-                </el-card>
-
-                <!-- IP 组：可复用的 IP/CIDR 集合。
-                     一个「公司出口 IP 段」往往几十上百条，此前只能一条条建规则 ——
-                     规则表膨胀、界面上一片重复行。规则里用 match_type=ip_group 引用组名。 -->
-                <el-card shadow="never" class="mt-2">
-                    <template #header>
-                        <div class="card-header">
-                            <span>{{ $t('website.wafIPGroupTitle') }}</span>
-                            <el-button type="primary" plain @click="onNewIPGroup">
-                                {{ $t('commons.button.create') }}
-                            </el-button>
-                        </div>
-                    </template>
-                    <el-form label-width="140px">
-                        <el-form-item :label="$t('website.wafIPGroupName')" prop="name" :rules="ipGroupNameRules">
-                            <el-input
-                                v-model="ipGroupDraft.name"
-                                class="p-w-200"
-                                :placeholder="$t('website.wafIPGroupNamePlaceholder')"
-                            />
-                        </el-form-item>
-                        <el-form-item :label="$t('website.wafIPGroupScope')">
-                            <el-radio-group v-model="ipGroupDraft.scope">
-                                <el-radio value="global">{{ $t('website.wafScopeGlobal') }}</el-radio>
-                                <el-radio value="site">{{ $t('website.wafScopeSite') }}</el-radio>
-                            </el-radio-group>
-                        </el-form-item>
-                        <el-form-item :label="$t('website.wafIPGroupCIDRs')">
-                            <el-input
-                                v-model="ipGroupDraft.cidrs"
-                                type="textarea"
-                                :rows="5"
-                                :placeholder="$t('website.wafIPGroupCIDRsPlaceholder')"
-                            />
-                            <div class="text-xs text-gray-400 mt-1">
-                                {{ $t('website.wafIPGroupCIDRsTip') }}
-                            </div>
-                        </el-form-item>
-                        <el-form-item>
-                            <el-button type="primary" @click="onSaveIPGroup">
-                                {{ $t('commons.button.save') }}
-                            </el-button>
-                            <el-button @click="onResetIPGroupDraft">{{ $t('commons.button.reset') }}</el-button>
-                        </el-form-item>
-                    </el-form>
-
-                    <el-table :data="ipGroups" class="mt-2">
-                        <el-table-column prop="name" :label="$t('website.wafIPGroupName')" min-width="120" />
-                        <el-table-column :label="$t('website.wafIPGroupScope')" width="90">
-                            <template #default="{ row }">
-                                <el-tag size="small" type="info">
-                                    {{ $t(row.scope === 'site' ? 'website.wafScopeSite' : 'website.wafScopeGlobal') }}
-                                </el-tag>
-                            </template>
-                        </el-table-column>
-                        <el-table-column :label="$t('website.wafIPGroupCount')" width="90">
-                            <template #default="{ row }">{{ countCIDRs(row.cidrs) }}</template>
-                        </el-table-column>
-                        <el-table-column :label="$t('commons.table.operate')" width="140" fixed="right">
-                            <template #default="{ row }">
-                                <el-button link type="primary" @click="onEditIPGroup(row)">
-                                    {{ $t('commons.button.edit') }}
-                                </el-button>
-                                <el-button link type="danger" @click="onDelIPGroup(row)">
-                                    {{ $t('commons.button.delete') }}
-                                </el-button>
-                            </template>
-                        </el-table-column>
-                    </el-table>
-                </el-card>
-
-                <!-- 防护模式三态 + 拦截页定制 + 检测器开关。
-                     后端 model / exporter / Lua 数据面都已支持，
-                     此前界面上没有任何入口，等于三个功能都不可用。 -->
-                <el-card shadow="never" class="mt-2">
-                    <template #header>
-                        <div class="card-header">
-                            <span>{{ $t('website.wafModeTitle') }}</span>
-                            <el-button type="primary" plain @click="saveOption">
+                            <el-button type="primary" :disabled="!optionDirty" @click="saveOption">
                                 {{ $t('commons.button.save') }}
                             </el-button>
                         </div>
                     </template>
-                    <el-form label-width="140px">
+
+                    <el-form label-width="150px" label-position="left">
                         <el-form-item :label="$t('website.wafMode')">
-                            <el-radio-group v-model="option.mode" class="waf-mode-group">
-                                <el-radio-button v-for="m in modeOptions" :key="m.value" :value="m.value">
-                                    {{ $t(m.labelKey) }}
-                                </el-radio-button>
-                            </el-radio-group>
-                            <div class="text-xs text-gray-400 mt-1">
-                                {{ $t(currentModeDescKey) }}
+                            <div class="field-row">
+                                <el-radio-group v-model="option.mode" class="waf-mode-group">
+                                    <el-radio-button v-for="m in modeOptions" :key="m.value" :value="m.value">
+                                        {{ $t(m.labelKey) }}
+                                    </el-radio-button>
+                                </el-radio-group>
+                                <span class="field-tip">{{ $t(currentModeDescKey) }}</span>
                             </div>
                         </el-form-item>
 
-                        <el-divider class="my-1" />
+                        <el-divider class="waf-divider" />
 
-                        <!-- 拦截页定制。标题与正文会展示给所有访问者（含攻击者），
-                             后端已做 HTML 转义，这里只做长度与颜色格式的前置校验。 -->
                         <el-form-item :label="$t('website.wafBlockPageTitle')">
                             <el-input
                                 v-model="option.blockPageTitle"
@@ -299,74 +53,67 @@
                             />
                         </el-form-item>
                         <el-form-item :label="$t('website.wafBlockPageBgColor')">
-                            <el-input v-model="option.blockPageBgColor" class="p-w-200">
-                                <template #append>
-                                    <el-color-picker
-                                        v-model="option.blockPageBgColor"
-                                        :validate="isValidPageColorValue"
-                                    />
-                                </template>
-                            </el-input>
-                        </el-form-item>
-                        <el-form-item :label="$t('website.wafBlockPageTextColor')">
-                            <el-input v-model="option.blockPageTextColor" class="p-w-200">
-                                <template #append>
-                                    <el-color-picker
-                                        v-model="option.blockPageTextColor"
-                                        :validate="isValidPageColorValue"
-                                    />
-                                </template>
-                            </el-input>
+                            <div class="field-row">
+                                <el-input v-model="option.blockPageBgColor" class="p-w-200">
+                                    <template #append>
+                                        <el-color-picker
+                                            v-model="option.blockPageBgColor"
+                                            :validate="isValidPageColorValue"
+                                        />
+                                    </template>
+                                </el-input>
+                                <el-input v-model="option.blockPageTextColor" class="p-w-200 ml-3">
+                                    <template #prepend>{{ $t('website.wafBlockPageTextColor') }}</template>
+                                    <template #append>
+                                        <el-color-picker
+                                            v-model="option.blockPageTextColor"
+                                            :validate="isValidPageColorValue"
+                                        />
+                                    </template>
+                                </el-input>
+                            </div>
                         </el-form-item>
                         <el-form-item v-if="pageColorInvalid">
                             <el-alert :title="$t('website.wafBlockPageColorTip')" type="warning" :closable="false" />
                         </el-form-item>
 
-                        <el-divider class="my-1" />
+                        <el-divider class="waf-divider" />
 
-                        <!-- 保护强度分档。四档的差异都对应真实机制：
-                             语义层 high = 绕过前置快速筛（召回更高、CPU 更大）；
-                             bot 层 high = 额外把空 User-Agent 当可疑。
-                             CC 防护的 action（deny/challenge/log）是另一维度
-                             （命中后怎么处置），在上面那张卡里单独配。 -->
                         <el-row :gutter="24">
                             <el-col :xs="24" :md="12">
                                 <el-form-item :label="$t('website.wafSemanticLevel')">
-                                    <el-select v-model="option.semanticLevel" class="p-w-200">
-                                        <el-option
-                                            v-for="lv in levelOptions"
-                                            :key="lv.value"
-                                            :label="$t(lv.labelKey)"
-                                            :value="lv.value"
-                                        />
-                                    </el-select>
-                                    <div class="text-xs text-gray-400 mt-1">
-                                        {{ $t(levelDescKey(option.semanticLevel)) }}
+                                    <div class="field-row">
+                                        <el-select v-model="option.semanticLevel" class="p-w-150">
+                                            <el-option
+                                                v-for="lv in levelOptions"
+                                                :key="lv.value"
+                                                :label="$t(lv.labelKey)"
+                                                :value="lv.value"
+                                            />
+                                        </el-select>
+                                        <span class="field-tip">{{ $t(levelDescKey(option.semanticLevel)) }}</span>
                                     </div>
                                 </el-form-item>
                             </el-col>
                             <el-col :xs="24" :md="12">
                                 <el-form-item :label="$t('website.wafBotLevel')">
-                                    <el-select v-model="option.botLevel" class="p-w-200">
-                                        <el-option
-                                            v-for="lv in levelOptions"
-                                            :key="lv.value"
-                                            :label="$t(lv.labelKey)"
-                                            :value="lv.value"
-                                        />
-                                    </el-select>
-                                    <div class="text-xs text-gray-400 mt-1">
-                                        {{ $t(levelDescKey(option.botLevel)) }}
+                                    <div class="field-row">
+                                        <el-select v-model="option.botLevel" class="p-w-150">
+                                            <el-option
+                                                v-for="lv in levelOptions"
+                                                :key="lv.value"
+                                                :label="$t(lv.labelKey)"
+                                                :value="lv.value"
+                                            />
+                                        </el-select>
+                                        <span class="field-tip">{{ $t(levelDescKey(option.botLevel)) }}</span>
                                     </div>
                                 </el-form-item>
                             </el-col>
                         </el-row>
 
-                        <el-divider class="my-1" />
+                        <el-divider class="waf-divider" />
 
-                        <!-- 检测器开关。默认全关（即全部启用）——
-                             故意用「关掉哪些」而不是「启用哪些」的表述：
-                             新增检测器时老配置不需要跟着改，默认就是启用。 -->
                         <el-form-item :label="$t('website.wafDetectors')">
                             <div class="waf-detector-grid">
                                 <el-checkbox
@@ -376,96 +123,222 @@
                                     :label="$t(d.labelKey)"
                                     @change="onDetectorToggle(d.name, $event)"
                                 />
+                                <span class="field-tip block">{{ $t('website.wafDetectorsTip') }}</span>
                             </div>
                         </el-form-item>
-                        <el-form-item>
-                            <div class="text-xs text-gray-400">
-                                {{ $t('website.wafDetectorsTip') }}
-                            </div>
-                        </el-form-item>
-                    </el-form>
-                </el-card>
 
-                <el-card shadow="never" class="mt-2">
-                    <template #header>
-                        <div class="card-header">
-                            <span>{{ $t('website.wafBotProbe') }}</span>
-                            <div class="flex items-center gap-3">
-                                <el-switch v-model="option.botEnabled" @change="saveOption" />
-                                <el-button type="primary" plain @click="saveOption">
-                                    {{ $t('commons.button.save') }}
-                                </el-button>
-                            </div>
-                        </div>
-                    </template>
-                    <el-row :gutter="24">
-                        <el-col :xs="24" :md="12">
-                            <el-form label-width="180px">
-                                <el-form-item :label="$t('website.wafBotAllowGood')">
+                        <el-divider class="waf-divider" />
+
+                        <div class="section-title">{{ $t('website.wafBotProbe') }}</div>
+                        <el-row :gutter="24">
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafBotEnable')" label-width="170px">
+                                    <div class="field-row">
+                                        <el-switch v-model="option.botEnabled" />
+                                        <span class="field-tip">{{ $t('website.wafBotEnableTip') }}</span>
+                                    </div>
+                                </el-form-item>
+                                <el-form-item :label="$t('website.wafBotAllowGood')" label-width="170px">
                                     <el-switch v-model="option.allowGoodBots" :disabled="!option.botEnabled" />
                                 </el-form-item>
-                                <el-form-item :label="$t('website.wafBotBlockBad')">
+                                <el-form-item :label="$t('website.wafBotBlockBad')" label-width="170px">
                                     <el-switch v-model="option.blockBadBots" :disabled="!option.botEnabled" />
                                 </el-form-item>
-                                <el-form-item :label="$t('website.wafProbeEnable')">
-                                    <el-switch v-model="option.probeEnabled" @change="saveOption" />
+                            </el-col>
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafProbeEnable')" label-width="170px">
+                                    <div class="field-row">
+                                        <el-switch v-model="option.probeEnabled" />
+                                        <span class="field-tip">{{ $t('website.wafProbeEnableTip') }}</span>
+                                    </div>
                                 </el-form-item>
-                            </el-form>
-                        </el-col>
-                        <el-col :xs="24" :md="12">
-                            <el-form label-width="180px">
-                                <el-form-item :label="$t('website.wafProbeMaxURIs')">
-                                    <el-input-number
-                                        v-model="option.probeMaxURIs"
-                                        :min="1"
-                                        :disabled="!option.probeEnabled"
-                                    />
+                                <el-form-item :label="$t('website.wafProbeThreshold')" label-width="170px">
+                                    <div class="field-row">
+                                        <el-input-number
+                                            v-model="option.probeMaxURIs"
+                                            :min="1"
+                                            :disabled="!option.probeEnabled"
+                                            controls-position="right"
+                                            class="p-w-120"
+                                        />
+                                        <span class="field-unit">{{ $t('website.wafProbeURIs') }}</span>
+                                        <el-input-number
+                                            v-model="option.probeWindow"
+                                            :min="10"
+                                            :disabled="!option.probeEnabled"
+                                            controls-position="right"
+                                            class="p-w-120 ml-3"
+                                        />
+                                        <span class="field-unit">{{ $t('website.wafProbeWindowUnit') }}</span>
+                                    </div>
                                 </el-form-item>
-                                <el-form-item :label="$t('website.wafProbeWindow')">
-                                    <el-input-number
-                                        v-model="option.probeWindow"
-                                        :min="10"
-                                        :disabled="!option.probeEnabled"
-                                    />
-                                </el-form-item>
-                                <el-form-item :label="$t('website.wafProbeMaxRPS')">
+                                <el-form-item :label="$t('website.wafProbeMaxRPS')" label-width="170px">
                                     <el-input-number
                                         v-model="option.probeMaxRPS"
                                         :min="1"
                                         :disabled="!option.probeEnabled"
+                                        controls-position="right"
                                     />
                                 </el-form-item>
-                            </el-form>
-                        </el-col>
-                    </el-row>
+                            </el-col>
+                        </el-row>
+                    </el-form>
                 </el-card>
 
-                <el-card shadow="never" class="mt-2">
+                <el-card shadow="never" class="waf-card">
                     <template #header>
                         <div class="card-header">
-                            <span>{{ $t('website.wafRules') }}</span>
+                            <div class="card-title">
+                                <span>CC {{ $t('website.wafProtect') }}</span>
+                                <span class="card-sub">{{ $t('website.wafCCSub') }}</span>
+                            </div>
+                            <el-button type="primary" :disabled="!ccDirty" @click="saveCC">
+                                {{ $t('commons.button.save') }}
+                            </el-button>
+                        </div>
+                    </template>
+                    <el-form label-width="150px" label-position="left">
+                        <el-form-item :label="$t('commons.table.status')">
+                            <div class="field-row">
+                                <el-switch v-model="cc.enabled" />
+                                <span class="field-tip">{{ $t('website.wafCCEnableTip') }}</span>
+                            </div>
+                        </el-form-item>
+                        <el-row :gutter="24">
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafCCLimit')">
+                                    <div class="field-row">
+                                        <el-input-number
+                                            v-model="cc.limit"
+                                            :min="1"
+                                            :disabled="!cc.enabled"
+                                            controls-position="right"
+                                            class="p-w-150"
+                                        />
+                                        <span class="field-unit">{{ $t('website.wafCCLimitUnit') }}</span>
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafCCWindow')">
+                                    <div class="field-row">
+                                        <el-input-number
+                                            v-model="cc.window"
+                                            :min="1"
+                                            :disabled="!cc.enabled"
+                                            controls-position="right"
+                                            class="p-w-150"
+                                        />
+                                        <span class="field-unit">{{ $t('website.wafCCWindowUnit') }}</span>
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                        <el-row :gutter="24">
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafAction')">
+                                    <el-select v-model="cc.action" :disabled="!cc.enabled" class="p-w-150">
+                                        <el-option label="deny" value="deny" />
+                                        <el-option label="challenge" value="challenge" />
+                                        <el-option label="log" value="log" />
+                                    </el-select>
+                                </el-form-item>
+                            </el-col>
+                            <el-col :xs="24" :md="12">
+                                <el-form-item :label="$t('website.wafCCByUri')">
+                                    <div class="field-row">
+                                        <el-switch v-model="cc.byUri" :disabled="!cc.enabled" />
+                                        <span class="field-tip">{{ $t('website.wafCCByUriTip') }}</span>
+                                    </div>
+                                </el-form-item>
+                            </el-col>
+                        </el-row>
+                        <el-alert :title="$t('website.wafCCTip')" type="info" :closable="false" show-icon />
+                    </el-form>
+                </el-card>
+
+                <el-card shadow="never" class="waf-card">
+                    <template #header>
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span>{{ $t('website.wafNotify') }}</span>
+                                <span class="card-sub">{{ $t('website.wafNotifySub') }}</span>
+                            </div>
                             <div class="flex items-center gap-2">
-                                <!-- 拖动排序做成显式开关而非常驻：默认状态下拖手柄会
-                                     与表格的文本选择冲突，开着时整表可拖并给出保存入口。 -->
-                                <el-select v-if="ruleSortMode" v-model="ruleScope" class="p-w-120" @change="loadRules">
-                                    <el-option :label="$t('website.wafScopeSite')" value="site" />
-                                    <el-option :label="$t('website.wafScopeGlobal')" value="global" />
-                                </el-select>
-                                <el-switch v-model="ruleSortMode" />
-                                <el-button v-if="ruleSortMode" type="primary" plain @click="onSaveRuleOrder">
+                                <el-button :loading="notifyTesting" @click="testNotify">
+                                    {{ $t('website.wafNotifyTest') }}
+                                </el-button>
+                                <el-button type="primary" :disabled="!notifyDirty" @click="saveNotify">
                                     {{ $t('commons.button.save') }}
-                                </el-button>
-                                <el-button v-if="ruleSortMode" @click="onResetRuleOrder">
-                                    {{ $t('website.wafSortReset') }}
-                                </el-button>
-                                <el-button v-if="!ruleSortMode" type="primary" plain @click="openRuleDialog()">
-                                    {{ $t('commons.button.create') }}
                                 </el-button>
                             </div>
                         </div>
                     </template>
-                    <!-- 地理数据缺失时必须显眼提示：geo 规则在 mmdb 不可用
-                         时一律不命中，界面不提示的话用户会以为已经拦住了。 -->
+                    <el-form label-width="150px" label-position="left">
+                        <el-form-item :label="$t('commons.table.status')">
+                            <div class="field-row">
+                                <el-switch v-model="notify.enable" />
+                                <span class="field-tip">{{ $t('website.wafNotifyEnableTip') }}</span>
+                            </div>
+                        </el-form-item>
+                        <el-form-item :label="$t('website.wafNotifyMethod')">
+                            <el-select v-model="notify.method" :disabled="!notify.enable" class="p-w-200">
+                                <el-option
+                                    v-for="opt in notifyMethods"
+                                    :key="opt.value"
+                                    :label="$t(opt.labelKey)"
+                                    :value="opt.value"
+                                />
+                            </el-select>
+                        </el-form-item>
+                        <el-form-item :label="$t('website.wafNotifyURL')">
+                            <el-input
+                                v-model="notify.url"
+                                :disabled="!notify.enable"
+                                :placeholder="$t('website.wafNotifyURLPlaceholder')"
+                            />
+                            <div class="field-tip block">{{ $t('website.wafNotifyTip') }}</div>
+                        </el-form-item>
+                    </el-form>
+                </el-card>
+            </el-tab-pane>
+
+            <!-- ============ 2. 黑白名单 ============ -->
+            <el-tab-pane name="rules" :label="$t('website.wafRules')">
+                <el-card shadow="never" class="waf-card">
+                    <template #header>
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span>{{ $t('website.wafRules') }}</span>
+                                <span class="card-sub">{{ $t('website.wafRulesSub') }}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <template v-if="ruleSortMode">
+                                    <el-select v-model="ruleScope" class="p-w-120" @change="loadRules">
+                                        <el-option :label="$t('website.wafScopeSite')" value="site" />
+                                        <el-option :label="$t('website.wafScopeGlobal')" value="global" />
+                                    </el-select>
+                                    <el-button type="primary" plain @click="onSaveRuleOrder">
+                                        {{ $t('commons.button.save') }}
+                                    </el-button>
+                                    <el-button @click="onResetRuleOrder">
+                                        {{ $t('website.wafSortReset') }}
+                                    </el-button>
+                                </template>
+                                <el-button type="primary" plain @click="openRuleDialog()">
+                                    {{ $t('commons.button.create') }}
+                                </el-button>
+                                <el-tooltip :content="$t('website.wafSortTip')" placement="top">
+                                    <el-switch
+                                        v-model="ruleSortMode"
+                                        :active-text="$t('website.wafSortMode')"
+                                        inline-prompt
+                                    />
+                                </el-tooltip>
+                            </div>
+                        </div>
+                    </template>
+
                     <el-alert
                         v-if="hasGeoRules && !geoStatus.available"
                         :title="$t('website.wafGeoUnavailable')"
@@ -475,17 +348,11 @@
                         show-icon
                         class="mb-2"
                     />
-                    <el-alert
-                        v-if="ruleSortMode"
-                        :title="$t('website.wafSortTip')"
-                        type="info"
-                        :closable="false"
-                        class="mb-2"
-                    />
-                    <!-- 排序模式下只展示当前 scope 那一组。
-                         混合展示时拖动顺序会跨 scope，无法表达"本站规则优先于全局"
-                         这类真实语义，还容易在提交时误改全局规则的优先级。 -->
-                    <el-table ref="ruleTableRef" :data="displayRules" :row-key="'id'">
+
+                    <el-table ref="ruleTableRef" :data="displayRules" :row-key="'id'" class="waf-table">
+                        <template #empty>
+                            <el-empty :image-size="70" :description="$t('website.wafNoRules')" />
+                        </template>
                         <el-table-column v-if="ruleSortMode" width="44" class-name="rule-drag-col">
                             <template #default>
                                 <span class="rule-drag-handle" title="drag">⋮⋮</span>
@@ -493,16 +360,26 @@
                         </el-table-column>
                         <el-table-column prop="priority" :label="$t('website.wafPriority')" width="80" />
                         <el-table-column prop="name" :label="$t('commons.table.name')" min-width="120" />
-                        <el-table-column prop="scope" :label="$t('website.wafScope')" width="90" />
-                        <el-table-column prop="matchType" :label="$t('website.wafMatchType')" width="100" />
+                        <el-table-column :label="$t('website.wafScope')" width="90">
+                            <template #default="{ row }">
+                                <el-tag size="small" type="info">
+                                    {{ $t(row.scope === 'site' ? 'website.wafScopeSite' : 'website.wafScopeGlobal') }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="matchType" :label="$t('website.wafMatchType')" width="110">
+                            <template #default="{ row }">
+                                <span class="mono">{{ row.matchType }}</span>
+                            </template>
+                        </el-table-column>
                         <el-table-column
                             prop="matchValue"
                             :label="$t('website.wafMatchValue')"
                             min-width="160"
                             show-overflow-tooltip
                         />
-                        <el-table-column prop="matchOp" :label="$t('website.wafMatchOp')" width="90" />
-                        <el-table-column prop="action" :label="$t('website.wafAction')" width="90">
+                        <el-table-column prop="matchOp" :label="$t('website.wafMatchOp')" width="110" />
+                        <el-table-column :label="$t('website.wafAction')" width="90">
                             <template #default="{ row }">
                                 <el-tag
                                     :type="
@@ -517,20 +394,17 @@
                                 </el-tag>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="enabled" :label="$t('commons.table.status')" width="80">
+                        <el-table-column :label="$t('commons.table.status')" width="80">
                             <template #default="{ row }">
-                                <el-tag :type="row.enabled ? 'success' : 'info'">
-                                    {{ row.enabled ? 'on' : 'off' }}
+                                <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">
+                                    {{ row.enabled ? $t('website.wafStatusOn') : $t('website.wafStatusOff') }}
                                 </el-tag>
                             </template>
                         </el-table-column>
-                        <!-- 排序模式下隐藏编辑/删除：编辑保存会触发 @reload=loadRules，
-                             静默丢弃用户还没保存的拖动结果，且没有任何提示。
-                             先保存或恢复默认顺序，再切回普通模式操作。 -->
                         <el-table-column
                             v-if="!ruleSortMode"
                             :label="$t('commons.table.operate')"
-                            width="140"
+                            width="130"
                             fixed="right"
                         >
                             <template #default="{ row }">
@@ -546,12 +420,144 @@
                 </el-card>
             </el-tab-pane>
 
-            <el-tab-pane :label="$t('website.wafLogs')" name="logs">
-                <el-card shadow="never">
+            <!-- ============ 3. IP 组 ============ -->
+            <el-tab-pane name="ipgroup" :label="$t('website.wafIPGroupTitle')">
+                <el-card shadow="never" class="waf-card">
                     <template #header>
                         <div class="card-header">
-                            <span>{{ $t('website.wafLogs') }}</span>
-                            <div>
+                            <div class="card-title">
+                                <span>{{ $t('website.wafIPGroupTitle') }}</span>
+                                <span class="card-sub">{{ $t('website.wafIPGroupSub') }}</span>
+                            </div>
+                            <el-button type="primary" plain @click="onNewIPGroup">
+                                {{ $t('commons.button.create') }}
+                            </el-button>
+                        </div>
+                    </template>
+                    <el-table :data="ipGroups" class="waf-table">
+                        <template #empty>
+                            <el-empty :image-size="70" :description="$t('website.wafIPGroupEmpty')" />
+                        </template>
+                        <el-table-column prop="name" :label="$t('website.wafIPGroupName')" min-width="140">
+                            <template #default="{ row }">
+                                <span class="mono">{{ row.name }}</span>
+                            </template>
+                        </el-table-column>
+                        <el-table-column :label="$t('website.wafIPGroupScope')" width="100">
+                            <template #default="{ row }">
+                                <el-tag size="small" type="info">
+                                    {{ $t(row.scope === 'site' ? 'website.wafScopeSite' : 'website.wafScopeGlobal') }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column :label="$t('website.wafIPGroupCount')" width="100">
+                            <template #default="{ row }">{{ countCIDRs(row.cidrs) }}</template>
+                        </el-table-column>
+                        <el-table-column :label="$t('commons.table.status')" width="90">
+                            <template #default="{ row }">
+                                <el-tag :type="row.enabled ? 'success' : 'info'" effect="plain">
+                                    {{ row.enabled ? $t('website.wafStatusOn') : $t('website.wafStatusOff') }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column
+                            prop="remark"
+                            :label="$t('commons.table.description')"
+                            min-width="140"
+                            show-overflow-tooltip
+                        />
+                        <el-table-column :label="$t('commons.table.operate')" width="130" fixed="right">
+                            <template #default="{ row }">
+                                <el-button link type="primary" @click="onEditIPGroup(row)">
+                                    {{ $t('commons.button.edit') }}
+                                </el-button>
+                                <el-button link type="danger" @click="onDelIPGroup(row)">
+                                    {{ $t('commons.button.delete') }}
+                                </el-button>
+                            </template>
+                        </el-table-column>
+                    </el-table>
+                </el-card>
+            </el-tab-pane>
+
+            <!-- ============ 4. 统计 ============ -->
+            <el-tab-pane name="stat" :label="$t('website.wafStat')">
+                <div class="stat-toolbar">
+                    <el-radio-group v-model="trendGranularity" size="small" @change="loadStat">
+                        <el-radio-button value="day">{{ $t('website.wafTrendByDay') }}</el-radio-button>
+                        <el-radio-button value="hour">{{ $t('website.wafTrendByHour') }}</el-radio-button>
+                    </el-radio-group>
+                    <el-button link type="primary" @click="loadStat">
+                        {{ $t('commons.button.refresh') }}
+                    </el-button>
+                </div>
+
+                <!-- 每个指标一张卡：先给结论（5 个 KPI），再给趋势，最后是各维度分布。 -->
+                <el-row :gutter="12" class="stat-kpi-row">
+                    <el-col v-for="k in kpiItems" :key="k.key" :xs="12" :sm="8" :md="4">
+                        <el-card shadow="never" class="stat-kpi-card">
+                            <div class="stat-kpi-value" :class="k.class">{{ k.value }}</div>
+                            <div class="stat-kpi-label">{{ $t(k.labelKey) }}</div>
+                        </el-card>
+                    </el-col>
+                </el-row>
+
+                <el-card shadow="never" class="waf-card">
+                    <template #header>
+                        <div class="card-title">
+                            <span>{{ $t('website.wafTrend') }}</span>
+                            <span class="card-sub">{{ $t('website.wafTrendSub') }}</span>
+                        </div>
+                    </template>
+                    <VCharts
+                        v-if="stat.trend?.length"
+                        type="line"
+                        height="220px"
+                        :option="trendOption"
+                        class="waf-stat-chart"
+                    />
+                    <el-empty v-else :image-size="60" :description="$t('website.wafNoData')" />
+                </el-card>
+
+                <el-row :gutter="12">
+                    <el-col v-for="d in statDimensions" :key="d.prop" :xs="24" :sm="12" :lg="8">
+                        <el-card shadow="never" class="stat-dim-card">
+                            <template #header>
+                                <div class="card-title">
+                                    <span>{{ $t(d.titleKey) }}</span>
+                                    <span v-if="d.hintKey" class="card-sub">{{ $t(d.hintKey) }}</span>
+                                </div>
+                            </template>
+                            <div v-if="statItems(d.prop).length" class="waf-bars">
+                                <div v-for="item in statItems(d.prop)" :key="item.key" class="waf-bar-row">
+                                    <span class="waf-bar-name" :title="item.key">
+                                        {{ d.labelFn ? d.labelFn(item.key) : item.key || '-' }}
+                                    </span>
+                                    <div class="waf-bar-track">
+                                        <div
+                                            class="waf-bar-fill"
+                                            :style="{ width: barWidth(item.count, statItems(d.prop)) }"
+                                        />
+                                    </div>
+                                    <span class="waf-bar-value">{{ item.count }}</span>
+                                </div>
+                            </div>
+                            <el-empty v-else :image-size="50" :description="$t('website.wafNoData')" />
+                        </el-card>
+                    </el-col>
+                </el-row>
+            </el-tab-pane>
+
+            <!-- ============ 5. 攻击日志 ============ -->
+            <el-tab-pane name="logs" :label="$t('website.wafLogs')">
+                <el-card shadow="never" class="waf-card">
+                    <template #header>
+                        <div class="card-header">
+                            <div class="card-title">
+                                <span>{{ $t('website.wafLogs') }}</span>
+                                <span class="card-sub">{{ $t('website.wafLogsSub') }}</span>
+                            </div>
+                            <div class="flex items-center gap-2">
                                 <el-button plain @click="onExport('csv')">CSV</el-button>
                                 <el-button plain @click="onExport('json')">JSON</el-button>
                             </div>
@@ -595,13 +601,13 @@
                             <el-button @click="resetLogSearch">{{ $t('commons.button.reset') }}</el-button>
                         </el-form-item>
                     </el-form>
-                    <el-table :data="logs">
+                    <el-table :data="logs" class="waf-table">
+                        <template #empty>
+                            <el-empty :image-size="70" :description="$t('website.wafNoData')" />
+                        </template>
                         <el-table-column type="expand" width="44">
                             <template #default="{ row }">
                                 <el-descriptions :column="1" border class="m-2">
-                                    <!-- layer 与 durationMs 后端一直有值，但此前一列都没展示：
-                                         排查时看不出「是哪一层拦的」和「处理耗时多久」，
-                                         这两项恰恰是判断防护是否生效的关键。 -->
                                     <el-descriptions-item :label="$t('website.wafLayer')">
                                         <el-tag size="small" type="info">
                                             {{ $t(layerLabelKey(row.layer)) }}
@@ -629,14 +635,29 @@
                             </template>
                         </el-table-column>
                         <el-table-column prop="createdAt" :label="$t('commons.table.date')" width="170" />
-                        <el-table-column prop="attackType" :label="$t('website.wafAttackType')" width="110" />
-                        <el-table-column prop="action" :label="$t('website.wafAction')" width="80" />
-                        <el-table-column :label="$t('website.wafLayer')" width="110">
+                        <el-table-column :label="$t('website.wafAttackType')" width="120">
                             <template #default="{ row }">
-                                <el-tag size="small" type="info">{{ $t(layerLabelKey(row.layer)) }}</el-tag>
+                                <el-tag size="small" type="danger" effect="plain">{{ row.attackType }}</el-tag>
                             </template>
                         </el-table-column>
-                        <el-table-column prop="ip" label="IP" width="130" />
+                        <el-table-column :label="$t('website.wafAction')" width="90">
+                            <template #default="{ row }">
+                                <el-tag
+                                    size="small"
+                                    :type="row.action === 'deny' ? 'danger' : row.action === 'log' ? 'info' : 'warning'"
+                                >
+                                    {{ row.action }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column :label="$t('website.wafLayer')" width="110">
+                            <template #default="{ row }">
+                                <el-tag size="small" type="info" effect="plain">
+                                    {{ $t(layerLabelKey(row.layer)) }}
+                                </el-tag>
+                            </template>
+                        </el-table-column>
+                        <el-table-column prop="ip" label="IP" width="130" class-name="mono" />
                         <el-table-column prop="area" label="GeoIP" width="140" show-overflow-tooltip />
                         <el-table-column prop="method" :label="$t('website.wafMethod')" width="80" />
                         <el-table-column
@@ -656,15 +677,12 @@
                             width="130"
                             show-overflow-tooltip
                         >
-                            <!-- 只有命中名单规则的记录才有规则名；语义/CC/bot/订阅
-                                 层拦截时没有对应规则，显示占位符而不是空白单元格，
-                                 否则整列看上去像数据没加载出来。 -->
                             <template #default="{ row }">
                                 <span v-if="row.ruleName">{{ row.ruleName }}</span>
                                 <span v-else class="text-gray-400 text-xs">{{ $t('website.wafNoRule') }}</span>
                             </template>
                         </el-table-column>
-                        <el-table-column :label="$t('commons.table.operate')" width="270" fixed="right">
+                        <el-table-column :label="$t('commons.table.operate')" width="250" fixed="right">
                             <template #default="{ row }">
                                 <el-button link type="primary" @click="onLogRule(row, 'allow')">
                                     {{ $t('website.wafAddAllow') }}
@@ -679,7 +697,7 @@
                         </el-table-column>
                     </el-table>
                     <el-pagination
-                        class="mt-2"
+                        class="mt-3 justify-end"
                         layout="total, prev, pager, next"
                         :total="logTotal"
                         :page-size="logReq.pageSize"
@@ -688,9 +706,15 @@
                     />
                 </el-card>
             </el-tab-pane>
+
+            <!-- ============ 6. IP 名单订阅（仅独立页面） ============ -->
+            <el-tab-pane v-if="showIPList" name="iplist" :label="$t('website.wafIPList')">
+                <IPListSetting />
+            </el-tab-pane>
         </el-tabs>
 
         <RuleDialog ref="ruleDialogRef" @reload="loadRules" />
+        <IPGroupDrawer ref="ipGroupDrawerRef" @reload="loadIPGroups" />
     </div>
 </template>
 
@@ -715,13 +739,11 @@ import {
     updateWAFOption,
     updateWAFCCConfig,
     updateWAFWebhook,
+    testWAFWebhook,
     reorderWAFRules,
     listWAFIPGroups,
     getWAFGEOStatus,
-    createWAFIPGroup,
-    updateWAFIPGroup,
     deleteWAFIPGroup,
-    WAF_IP_GROUP_NAME_PATTERN,
     type WAFWebhookMethod,
 } from '@/api/modules/waf';
 import {
@@ -741,15 +763,30 @@ import {
     type WAFLogSortKey,
 } from '@/api/modules/waf-helpers';
 import RuleDialog from './rule-dialog.vue';
+import IPGroupDrawer from './ip-group-drawer.vue';
+import IPListSetting from './iplist-setting.vue';
 
-const props = defineProps({ websiteId: { type: Number, default: 0 }, wafEnabled: { type: Boolean, default: false } });
+const props = defineProps({
+    websiteId: { type: Number, default: 0 },
+    wafEnabled: { type: Boolean, default: false },
+    // 独立页面（/websites/waf）把 IP 名单订阅并进来，只在这一层出 tabs；
+    // 站点详情页里的 WAF 标签不显示它，避免两层 tabs 套娃。
+    showIPList: { type: Boolean, default: false },
+});
+
+// 外层页面据此收起站点选择器与总开关：IP 名单订阅是全局配置，
+// 当前页签下站点维度没有意义。
+const emit = defineEmits(['tab-change']);
 
 const loading = ref(false);
-const activeTab = ref<'protect' | 'logs'>('protect');
+const activeTab = ref<'protect' | 'rules' | 'ipgroup' | 'stat' | 'logs' | 'iplist'>('protect');
+
 const rules = ref<any[]>([]);
 const logs = ref<any[]>([]);
 const logTotal = ref(0);
 const ruleDialogRef = ref();
+const ipGroupDrawerRef = ref();
+
 const logReq = ref<any>({
     websiteId: props.websiteId,
     attackType: '',
@@ -772,9 +809,6 @@ const levelDescKey = (lv?: string) => {
     return item?.descKey ?? 'website.wafLevelBalancedDesc';
 };
 
-// 当前关掉的检测器（Set 便于 O(1) 判断，保存时才序列化成逗号串）。
-// 刻意不直接绑 option.disabledDetectors 字符串：用户点一次勾选框
-// 就要做一次字符串切分与重组，中间态容易出现重复逗号或空项。
 const disabledDetectors = ref<Set<string>>(new Set());
 
 const currentModeDescKey = computed(() => {
@@ -782,39 +816,28 @@ const currentModeDescKey = computed(() => {
     return m?.descKey ?? 'website.wafModeBlockDesc';
 });
 
-// 拦截页颜色的前置校验。后端 Lua 侧也有校验（safe_color），
-// 但那里是静默回退默认色 —— 用户填了不生效却不知道原因。
-// 所以这里提前给出提示，让用户知道填错了。
 const pageColorInvalid = computed(
     () =>
         isInvalidPageColor(option.value.blockPageBgColor || '') ||
         isInvalidPageColor(option.value.blockPageTextColor || ''),
 );
 
-// el-color-picker 的 validate：只接受后端 safe_color 也认的格式，
-// 否则选色器选了 #RGB 短格式，后端静默回退默认色。
 const isValidPageColorValue = (color: string) =>
     /^#[0-9a-fA-F]{6}$/.test(color) || NAMED_PAGE_COLORS.includes(color.toLowerCase());
 
 const onDetectorToggle = (name: string, checked: boolean | (string | number)[]) => {
-    // Element Plus 的 checkbox 在无 group 时 @change 第二个参数是 boolean
     const on = checked === true;
     if (on) {
         disabledDetectors.value.delete(name);
     } else {
         disabledDetectors.value.add(name);
     }
-    // 立即同步到 option：保存按钮用的是 option 快照
     option.value.disabledDetectors = formatDisabledDetectors(disabledDetectors.value);
 };
 
-// 排序是独立状态而不是直接塞进 logReq：loadLogs 要把排序映射成
-// 后端的 orderBy/order 两个字段，中间这层转换不该污染请求对象的形状。
 const logSort = ref<WAFLogSortKey>('time_desc');
 const sortOptions = WAF_LOG_SORT_OPTIONS;
 
-// 通知渠道取值必须与后端 constant/alert.go 一致（驼峰），
-// 写成小写会被 DTO 的 oneof 校验直接拒绝。
 const notifyMethods: { value: WAFWebhookMethod; labelKey: string }[] = [
     { value: 'weCom', labelKey: 'website.wafNotifyMethodWeCom' },
     { value: 'dingTalk', labelKey: 'website.wafNotifyMethodDingTalk' },
@@ -827,11 +850,7 @@ const notify = ref<{ enable: boolean; method: WAFWebhookMethod; url: string }>({
     url: '',
 });
 
-// 统计维度清单。顺序即展示顺序。
-//
-// 每个维度按**自己的最大值**缩放条形宽度，而不是全局最大值：
-// 10 个维度的量级差异很大（layer 可能几千、误报可能只有 2），
-// 用全局最大值会让小量级维度的条形全是 3% 的短条，看不出相对高低。
+// ============ 统计维度 ============
 const statDimensions: {
     prop: string;
     titleKey: string;
@@ -844,8 +863,6 @@ const statDimensions: {
         prop: 'layer',
         titleKey: 'website.wafStatLayer',
         hintKey: 'website.wafStatLayerHint',
-        // 层的取值是内部实现细节（rules/semantic/cc…），统一走 i18n 映射，
-        // 未知值不直接回显原始字符串。
         labelFn: (k: string) => i18n.global.t(layerLabelKey(k)),
     },
     {
@@ -871,38 +888,56 @@ const statDimensions: {
     { prop: 'falsePositive', titleKey: 'website.wafStatFalsePositiveType' },
 ];
 
-/** 取某个维度的数据，缺字段时返回空数组（避免 v-for 拿到 undefined） */
 const statItems = (prop: string) => stat.value[prop] || [];
 
 const barWidth = (count: number, items: any[]) => {
-    // 按本维度的最大值缩放。Math.max(1, ...) 防除零。
     const max = Math.max(1, ...items.map((i: any) => i.count || 0));
     return `${Math.max(3, Math.round(((count || 0) / max) * 100))}%`;
 };
 
-// VCharts/Line 的入参不是标准 echarts option：它自己拼 series 与 yAxis，
-// 只认 xData / yData / formatStr。传标准结构（xAxis/yAxis/series）会让
-// `props.option.yAxis ? yAxis : {...}` 命中前一个分支并取到空数组，
-// 轴渲染直接抛 "Cannot read properties of undefined (reading 'group')"。
-//
-// formatStr 必须给：组件用它拼纵轴名 '( xxx )'，tooltip 也会把值与它
-// 拼接，缺省就是纵轴 "( undefined )"、tooltip "5undefined"。
-// 给"次"而不是空串：空串会让纵轴只剩一对空括号，读起来像渲染坏了。
+// 每个 KPI 一张卡；命中数与误报需要一眼可见，用色区分而不是靠位置。
+const kpiItems = computed(() => [
+    { key: 'total', labelKey: 'website.wafStatTotal', value: stat.value.summary?.total ?? 0, class: '' },
+    { key: 'denied', labelKey: 'website.wafStatDenied', value: stat.value.summary?.denied ?? 0, class: 'danger' },
+    {
+        key: 'uniqueIPs',
+        labelKey: 'website.wafStatUniqueIPs',
+        value: stat.value.summary?.uniqueIPs ?? 0,
+        class: '',
+    },
+    {
+        key: 'avg',
+        labelKey: 'website.wafStatAvgDuration',
+        value: formatDuration(stat.value.summary?.avgDurationMs),
+        class: '',
+    },
+    {
+        key: 'fp',
+        labelKey: 'website.wafStatFalsePositive',
+        value: stat.value.summary?.falsePositive ?? 0,
+        class: stat.value.summary?.falsePositive > 0 ? 'warn' : '',
+    },
+]);
+
 const trendOption = computed(() => {
     const trend = stat.value.trend || [];
     return {
         xData: trend.map((item: any) => item.key),
         yData: [{ name: i18n.global.t('website.wafTrend'), data: trend.map((item: any) => item.count || 0) }],
         formatStr: i18n.global.t('website.wafTrendUnit'),
-        // 只有一个系列，图例是冗余的（右上角那一项还会重复轴标题）。
         legend: { show: false },
-        // top 必须容得下轴名 '( 次 )'：echarts 把轴名放在网格外侧，
-        // top=16/28 时它被画布上边缘裁掉（实测顶部行有残留像素），
-        // 34 起完整。取 36 留一点余量。
         grid: { left: 8, right: 16, top: 36, bottom: 8, containLabel: true },
     };
 });
-const cc = ref<any>({ websiteId: props.websiteId, limit: 0, window: 60, action: 'deny', byUri: false, enabled: false });
+
+const cc = ref<any>({
+    websiteId: props.websiteId,
+    limit: 0,
+    window: 60,
+    action: 'deny',
+    byUri: false,
+    enabled: false,
+});
 const option = ref<any>({
     websiteId: props.websiteId,
     botEnabled: false,
@@ -914,83 +949,84 @@ const option = ref<any>({
     probeMaxRPS: 120,
 });
 
-// IP 组：站点可见的全局组 + 本站组。加载一次，规则抽屉直接复用。
 const ipGroups = ref<any[]>([]);
 
-// 编辑草稿。id 为空表示新建。
-const ipGroupDraft = ref<any>({
-    id: null,
-    name: '',
-    scope: 'site',
-    cidrs: '',
-    enabled: true,
-    remark: '',
-});
-
-// 前端正则必须与后端 service 的 validateIPGroupName 完全一致 ——
-// 放宽一点就会让用户配出一个后端拒绝、界面上看不出问题的组。
-const ipGroupNameRules = {
-    required: true,
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define
-    validator: (_r: unknown, value: string, cb: (e?: Error) => void) => {
-        if (!value || !WAF_IP_GROUP_NAME_PATTERN.test(value)) {
-            cb(new Error(i18n.global.t('website.wafIPGroupNameInvalid')));
-            return;
-        }
-        cb();
-    },
-};
-
-/** 统计组里的条目数。分隔符与后端 parseIPGroupCIDRs 保持一致。 */
 const countCIDRs = (raw?: string): number => {
     if (!raw) return 0;
     return raw.split(/[\n\r,;\t ]+/).filter((v) => v.trim()).length;
 };
 
-const onResetIPGroupDraft = () => {
-    ipGroupDraft.value = {
-        id: null,
-        name: '',
-        scope: 'site',
-        cidrs: '',
-        enabled: true,
-        remark: '',
-    };
+// ============ 保存按钮的脏检查 ============
+//
+// 三张卡对应三个后端接口（option / cc / webhook），各自持有一份提交快照：
+// 内容与快照一致时保存按钮禁用。用显式 payload 而不是直接序列化 ref，
+// 是因为 ref 里还混着 id/createdAt 之类不参与提交的字段，
+// 它们变化会让「没有任何改动」也亮起来。
+const snapshot = (v: unknown) => JSON.stringify(v);
+
+const optionPayload = computed(() => ({
+    websiteId: props.websiteId,
+    botEnabled: option.value.botEnabled,
+    allowGoodBots: option.value.allowGoodBots,
+    blockBadBots: option.value.blockBadBots,
+    probeEnabled: option.value.probeEnabled,
+    probeMaxURIs: option.value.probeMaxURIs,
+    probeWindow: option.value.probeWindow,
+    probeMaxRPS: option.value.probeMaxRPS,
+    mode: option.value.mode,
+    blockPageTitle: option.value.blockPageTitle || '',
+    blockPageBody: option.value.blockPageBody || '',
+    blockPageBgColor: option.value.blockPageBgColor || '',
+    blockPageTextColor: option.value.blockPageTextColor || '',
+    semanticLevel: normalizeLevel(option.value.semanticLevel),
+    botLevel: normalizeLevel(option.value.botLevel),
+    disabledDetectors: formatDisabledDetectors(disabledDetectors.value),
+}));
+const optionSnap = ref('');
+const optionDirty = computed(() => snapshot(optionPayload.value) !== optionSnap.value);
+const markOptionClean = () => {
+    optionSnap.value = snapshot(optionPayload.value);
+};
+
+const ccPayload = computed(() => ({
+    websiteId: props.websiteId,
+    enabled: cc.value.enabled,
+    limit: cc.value.limit,
+    window: cc.value.window,
+    action: cc.value.action,
+    byUri: cc.value.byUri,
+}));
+const ccSnap = ref('');
+const ccDirty = computed(() => snapshot(ccPayload.value) !== ccSnap.value);
+const markCCClean = () => {
+    ccSnap.value = snapshot(ccPayload.value);
+};
+
+const notifyPayload = computed(() => ({
+    enable: notify.value.enable,
+    method: notify.value.method,
+    url: notify.value.url.trim(),
+}));
+const notifySnap = ref('');
+const notifyDirty = computed(() => snapshot(notifyPayload.value) !== notifySnap.value);
+const markNotifyClean = () => {
+    notifySnap.value = snapshot(notifyPayload.value);
 };
 
 const onNewIPGroup = () => {
-    onResetIPGroupDraft();
+    ipGroupDrawerRef.value.acceptParams({ websiteId: props.websiteId });
 };
 
 const onEditIPGroup = (row: any) => {
-    ipGroupDraft.value = { ...row };
-};
-
-const onSaveIPGroup = async () => {
-    const d = ipGroupDraft.value;
-    if (!WAF_IP_GROUP_NAME_PATTERN.test(d.name || '')) {
-        MsgWarning(i18n.global.t('website.wafIPGroupNameInvalid'));
-        return;
-    }
-    const payload = {
-        name: d.name,
-        scope: d.scope,
-        websiteId: d.scope === 'site' ? props.websiteId : 0,
-        enabled: d.enabled ?? true,
-        remark: d.remark || '',
-        cidrs: d.cidrs,
-    };
-    if (d.id) {
-        await updateWAFIPGroup({ ...payload, id: d.id });
-    } else {
-        await createWAFIPGroup(payload);
-    }
-    MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    onResetIPGroupDraft();
-    loadIPGroups();
+    ipGroupDrawerRef.value.acceptParams({ websiteId: props.websiteId, group: row });
 };
 
 const onDelIPGroup = async (row: any) => {
+    await ElMessageBox.confirm(
+        i18n.global.t('website.wafIPGroupDeleteConfirm', { name: row.name }),
+        i18n.global.t('commons.button.delete'),
+        { type: 'warning' },
+    );
     await deleteWAFIPGroup(row.id);
     MsgSuccess(i18n.global.t('commons.msg.deleteSuccess'));
     loadIPGroups();
@@ -1001,8 +1037,6 @@ const loadIPGroups = async () => {
     ipGroups.value = res.data || [];
 };
 
-// 地理数据可用性。geo 规则依赖 GeoIP.mmdb，文件不在时规则一律不命中 ——
-// 必须让用户看见，否则界面一切正常但实际全部放行。
 const geoStatus = ref<{ available: boolean; path: string }>({ available: true, path: '' });
 
 const loadGeoStatus = async () => {
@@ -1010,102 +1044,120 @@ const loadGeoStatus = async () => {
         const res = await getWAFGEOStatus();
         geoStatus.value = res.data || { available: true, path: '' };
     } catch (e) {
-        // 老版本后端没有这个接口：不当作"不可用"，避免误导。
         geoStatus.value = { available: true, path: '' };
     }
 };
 
-/** 规则列表里是否存在 geo 规则 —— 没有的话不必提示地理数据缺失 */
 const hasGeoRules = computed(() => rules.value.some((r: any) => r.matchType === 'geo'));
 
 const loadRules = async () => {
     const res = await searchWAFRules({ websiteId: props.websiteId });
     rules.value = res.data || [];
 };
+
 const loadLogs = async () => {
     const { orderBy, order } = buildLogSortParam(logSort.value);
     const res = await searchWAFLogs({ ...logReq.value, orderBy, order });
     logs.value = res.data?.items || [];
     logTotal.value = res.data?.total || 0;
 };
+
 const searchLogs = () => {
     logReq.value.page = 1;
     logReq.value.startTime = logTimeRange.value?.[0] ? Math.floor(new Date(logTimeRange.value[0]).getTime() / 1000) : 0;
     logReq.value.endTime = logTimeRange.value?.[1] ? Math.floor(new Date(logTimeRange.value[1]).getTime() / 1000) : 0;
     loadLogs();
 };
+
 const resetLogSearch = () => {
     logReq.value = { websiteId: props.websiteId, attackType: '', ip: '', action: '', page: 1, pageSize: 10 };
     logTimeRange.value = [];
     loadLogs();
 };
+
 const loadStat = async () => {
     const res = await statWAFLogs({ websiteId: props.websiteId, trendGranularity: trendGranularity.value });
     stat.value = res.data || { attackType: [], topIP: [], trend: [] };
 };
+
 const loadCC = async () => {
     const res = await getWAFCCConfig(props.websiteId);
     if (res.data) {
         cc.value = res.data;
     }
+    markCCClean();
 };
+
 const saveCC = async () => {
-    await updateWAFCCConfig({ ...cc.value, websiteId: props.websiteId });
+    await updateWAFCCConfig(ccPayload.value);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+    markCCClean();
 };
+
 const loadOption = async () => {
     const res = await getWAFOption(props.websiteId);
     if (res.data) {
         option.value = res.data;
-        // mode 兜底：老数据没有这一列时 GetOption 返回空串，
-        // 而 Lua 侧空串不等于 "observe"/"maintenance"，行为退化成 block。
-        // 这里显式补上，让界面显示与实际行为一致。
         if (!option.value.mode) {
             option.value.mode = 'block';
         }
-        // 强度同理：老数据没有这两列时后端返回空串，
-        // 归一成 balanced 让界面显示与实际行为一致。
         option.value.semanticLevel = normalizeLevel(option.value.semanticLevel);
         option.value.botLevel = normalizeLevel(option.value.botLevel);
         disabledDetectors.value = parseDisabledDetectors(option.value.disabledDetectors);
     }
+    markOptionClean();
 };
+
 const saveOption = async () => {
-    // 颜色非法时先拦一道。后端 Lua 的 safe_color 会静默回退默认色，
-    // 用户填了却不生效，且界面看不出原因 —— 那比报错更难排查。
     if (pageColorInvalid.value) {
         MsgWarning(i18n.global.t('website.wafBlockPageColorTip'));
         return;
     }
-    await updateWAFOption({ ...option.value, websiteId: props.websiteId });
+    await updateWAFOption(optionPayload.value);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+    markOptionClean();
 };
+
 const loadNotify = async () => {
     const res = await getWAFWebhook();
     if (res.data) {
         notify.value = { ...notify.value, ...res.data };
     }
+    markNotifyClean();
 };
-// 开关是「一点就发请求」的：请求失败时开关已经翻过去了，
-// 而配置没存上 —— UI 显示开启、实际没开，且没有重试入口。
-// 所以这里在失败时把开关拨回去。
-const onNotifyToggle = async (val: boolean) => {
+
+const notifyTesting = ref(false);
+// 用当前表单值测试，不要求先保存：配置对不对应该在点「保存」之前就能确认。
+const testNotify = async () => {
+    if (!notify.value.url.trim()) {
+        MsgWarning(i18n.global.t('website.wafNotifyURLRequired'));
+        return;
+    }
+    notifyTesting.value = true;
     try {
-        await saveNotify();
+        await testWAFWebhook({
+            enable: notify.value.enable,
+            method: notify.value.method,
+            url: notify.value.url.trim(),
+        } as any);
+        MsgSuccess(i18n.global.t('website.wafNotifyTestOk'));
     } catch (e) {
-        notify.value.enable = !val;
+        // 请求拦截器已把后端带回的上游原因弹出来，这里不重复提示
+    } finally {
+        notifyTesting.value = false;
     }
 };
 
 const saveNotify = async () => {
-    // 后端有 required_if 校验，这里先拦一道给出即时反馈
     if (notify.value.enable && !notify.value.url.trim()) {
         MsgWarning(i18n.global.t('website.wafNotifyURLRequired'));
         return;
     }
-    await updateWAFWebhook({ ...notify.value });
+    await updateWAFWebhook(notifyPayload.value as any);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
+    markNotifyClean();
 };
+
 const onCopyCurl = async (row: any) => {
     const cmd = buildCurlCommand({
         method: row.method,
@@ -1119,9 +1171,6 @@ const onCopyCurl = async (row: any) => {
         await navigator.clipboard.writeText(cmd);
         MsgSuccess(i18n.global.t('website.wafCurlCopied'));
     } catch (e) {
-        // 剪贴板 API 在非 HTTPS 环境下不可用。不能用 MsgWarning 展示：
-        // 它是 3 秒后自动消失的提示条，而攻击日志的 requestBody 动辄几百 KB，
-        // 塞进去既横向溢出又无法选中复制。改用对话框 + 全选，用户自己复制。
         ElMessageBox.alert(cmd, i18n.global.t('website.wafCopyCurl'), {
             confirmButtonText: i18n.global.t('commons.button.confirm'),
             type: 'warning',
@@ -1129,12 +1178,10 @@ const onCopyCurl = async (row: any) => {
         }).catch(() => undefined);
     }
 };
+
 // ============ 名单拖动排序 ============
-// sortable 只在「调整顺序」开关打开时初始化，关闭时销毁：
-// 常驻的拖拽手柄会和表格文本选择打架，且用户并不总能预期"拖一下会改配置"。
 const ruleSortMode = ref(false);
 const ruleTableRef = ref();
-// 非排序模式下展示全部（本站+全局），排序模式下只展示当前 scope 那一组
 const displayRules = computed(() =>
     ruleSortMode.value ? rules.value.filter((r: any) => r.scope === ruleScope.value) : rules.value,
 );
@@ -1157,12 +1204,9 @@ const setupRuleSortable = async () => {
         ghostClass: 'rule-drag-ghost',
         handle: '.rule-drag-handle',
         onEnd: (evt: any) => {
-            // 只改本地顺序，点「保存」才提交 —— 拖错了可以直接关开关丢弃。
             const list = [...displayRules.value];
             const [moved] = list.splice(evt.oldIndex, 1);
             list.splice(evt.newIndex, 0, moved);
-            // 同步重算本地 priority：否则表格里的数字还是拖动前的旧值，
-            // 用户看到"顺序变了但数字没变"，而提示文案恰好写的是"数字越小越先生效"。
             list.forEach((r: any, i: number) => {
                 r.priority = (i + 1) * 10;
             });
@@ -1171,10 +1215,6 @@ const setupRuleSortable = async () => {
     });
 };
 
-// 规则列表是「本站 + 全局」混合的（后端 ListRules 的过滤就是
-// scope=global OR website_id=当前站）。若把两类一起提交重排，
-// 在 A 站拖一下就会改到全局规则的优先级 —— B 站、C 站的行为跟着变，
-// 而那边的用户完全不知情。所以按 scope 分组，只提交当前 scope 那一组。
 const ruleScope = ref<'site' | 'global'>('site');
 
 const onSaveRuleOrder = async () => {
@@ -1200,7 +1240,6 @@ watch(ruleSortMode, async (on) => {
         setupRuleSortable();
     } else {
         destroyRuleSortable();
-        // 关闭时重拉一次：丢弃未保存的拖动结果。
         loadRules();
     }
 });
@@ -1211,22 +1250,24 @@ const openRuleDialog = (rule?: any) => {
     ruleDialogRef.value.acceptParams({
         websiteId: props.websiteId,
         rule: rule ? { ...rule } : null,
-        // 规则里的 ip_group 匹配类型要从这里选组名
         ipGroups: ipGroups.value,
     });
 };
+
 const onDelRule = (row: any) => {
     deleteWAFRule(row.id).then(() => {
         MsgSuccess(i18n.global.t('commons.msg.deleteSuccess'));
         loadRules();
     });
 };
+
 const onLogRule = (row: any, action: string) => {
     createRuleFromWAFLog(row.id, action).then(() => {
         MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
         loadRules();
     });
 };
+
 const onFalsePositive = (row: any) => {
     markWAFFalsePositive(row.id).then(() => {
         MsgSuccess(i18n.global.t('website.wafFalsePositiveDone'));
@@ -1234,9 +1275,8 @@ const onFalsePositive = (row: any) => {
         loadRules();
     });
 };
+
 const onExport = (format: string) => {
-    // 导出必须带上当前排序：漏掉的话表格按"耗时"排、导出文件却按时间排，
-    // 用户拿导出做分析会得出相反的结论 —— 这比报错危险得多。
     const { orderBy, order } = buildLogSortParam(logSort.value);
     exportWAFLogs({ ...logReq.value, orderBy, order, format }).then((res) => {
         const blob = new Blob([res as any]);
@@ -1249,121 +1289,238 @@ const onExport = (format: string) => {
     });
 };
 
-// 日志页签每次切入都重查一次：拦截事件由 cron 约每分钟入库，
-// 停留防护页签期间日志会持续增长，切回时若沿用旧数据会误导计数。
+// 每个页签按需加载：首屏只拉防护配置，规则/日志/统计各自在切入时再查。
+// 日志由 cron 每分钟入库，每次切回都要重查，否则计数会停留在旧值。
+const tabLoaded = ref<Record<string, boolean>>({});
 const onTabChange = (name: string | number) => {
-    if (name === 'logs') {
+    const tab = String(name);
+    emit('tab-change', tab);
+    if (tab === 'protect') return;
+    if (tab === 'rules') {
+        loadRules();
+        loadGeoStatus();
+        loadIPGroups();
+    } else if (tab === 'ipgroup') {
+        loadIPGroups();
+    } else if (tab === 'stat') {
+        loadStat();
+    } else if (tab === 'logs') {
         loadLogs();
     }
+    tabLoaded.value[tab] = true;
 };
 
-// 排序改变后要回到第一页：停在第 5 页再改排序，页码对新顺序往往越界，
-// 用户看到的是空列表而不是"排序变了"。
 watch(logSort, () => {
     logReq.value.page = 1;
     loadLogs();
 });
 
-const loadAll = () => {
-    loadRules();
-    loadIPGroups();
-    loadGeoStatus();
-    loadLogs();
-    loadStat();
-    loadCC();
+const loadProtect = () => {
     loadOption();
-    // 通知是全局配置（不区分站点），但这个页面是站点维度的入口，
-    // 放这里是因为 WAF 的配置项原本就都集中在这一个页签里。
+    loadCC();
     loadNotify();
 };
 
-// 总开关移到了容器页标题栏：启用/禁用后这里靠 prop 变化感知，
-// 启用时拉全量配置（禁用时模板直接渲染空态，无需请求）。
 watch(
     () => props.wafEnabled,
     (val) => {
         if (val) {
             activeTab.value = 'protect';
-            loadAll();
+            tabLoaded.value = {};
+            loadProtect();
         }
     },
 );
 
 onMounted(() => {
     if (props.wafEnabled) {
-        loadAll();
+        loadProtect();
     }
 });
 </script>
 
 <style scoped>
+.waf-page {
+    padding-bottom: 8px;
+}
+
+/* 页签：与 Element 默认样式区分一点，避免和上级页签混在一起看不出来 */
+.waf-tabs :deep(.el-tabs__header) {
+    margin-bottom: 12px;
+}
+
+.waf-card {
+    margin-bottom: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+}
+
+.waf-card:last-child {
+    margin-bottom: 0;
+}
+
 .card-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-}
-.mt-2 {
-    margin-top: 12px;
-}
-.mt-3 {
-    margin-top: 16px;
-}
-/* KPI 平铺：先给结论，再给分布 */
-.waf-kpi {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 12px;
-    margin-bottom: 20px;
 }
-.waf-kpi-item {
+
+.card-title {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
-    padding: 14px 16px;
-    border: 1px solid var(--el-border-color-lighter);
-    border-radius: 6px;
-    background-color: var(--el-fill-color-blank);
-}
-.waf-kpi-value {
-    font-size: 24px;
+    align-items: baseline;
+    gap: 8px;
+    font-size: 14px;
     font-weight: 600;
-    line-height: 1.2;
+    color: var(--el-text-color-primary);
 }
-.waf-kpi-label {
+
+.card-sub {
     font-size: 12px;
+    font-weight: 400;
     color: var(--el-text-color-secondary);
 }
-.waf-stat-title {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 10px;
-    font-size: 14px;
+
+.section-title {
+    margin: 4px 0 10px;
+    font-size: 13px;
     font-weight: 600;
     color: var(--el-text-color-regular);
 }
+
+/* 控件与其后的说明文字必须留出间距。
+   之前用 mt-1 只给了 4px 且仍在同一行，读起来是「按钮+紧贴的一串灰字」。 */
+.field-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+
+.field-tip {
+    flex: 1 1 auto;
+    min-width: 180px;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--el-text-color-secondary);
+}
+
+.field-tip.block {
+    display: block;
+    margin-top: 4px;
+    min-width: 100%;
+}
+
+.field-unit {
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+}
+
+.field-unit + .el-input-number {
+    margin-left: 12px;
+}
+
+.waf-divider {
+    margin: 6px 0 14px;
+}
+
+.waf-mode-group {
+    display: inline-flex;
+}
+
+/* 检测器：两列以上网格，15 项能在一屏内看完 */
+.waf-detector-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+    gap: 2px 16px;
+    width: 100%;
+}
+
+.waf-table {
+    width: 100%;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+/* ============ 统计 ============ */
+.stat-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.stat-kpi-row {
+    margin-bottom: 4px;
+}
+
+.stat-kpi-card {
+    margin-bottom: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+}
+
+.stat-kpi-card :deep(.el-card__body) {
+    padding: 14px 16px;
+}
+
+.stat-kpi-value {
+    font-size: 24px;
+    font-weight: 600;
+    line-height: 1.2;
+    color: var(--el-text-color-primary);
+}
+
+.stat-kpi-value.danger {
+    color: var(--el-color-danger);
+}
+
+.stat-kpi-value.warn {
+    color: var(--el-color-warning);
+}
+
+.stat-kpi-label {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--el-text-color-secondary);
+}
+
+.stat-dim-card {
+    height: calc(100% - 12px);
+    margin-bottom: 12px;
+    border: 1px solid var(--el-border-color-lighter);
+}
+
+.stat-dim-card :deep(.el-card__header) {
+    padding: 10px 16px;
+}
+
+.stat-dim-card :deep(.el-card__body) {
+    padding: 12px 16px;
+}
+
 /* 横向条形：比一列 el-tag 更易比较大小，且长 IP 不会撑破布局 */
 .waf-bars {
     display: flex;
     flex-direction: column;
     gap: 8px;
 }
+
 .waf-bar-row {
     display: flex;
     align-items: center;
     gap: 10px;
 }
+
 .waf-bar-name {
-    flex: 0 0 96px;
+    flex: 0 0 110px;
     overflow: hidden;
     font-size: 13px;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
-.waf-bar-ip {
-    flex-basis: 130px;
-    font-family: monospace;
-}
+
 .waf-bar-track {
     flex: 1;
     height: 8px;
@@ -1371,57 +1528,35 @@ onMounted(() => {
     border-radius: 4px;
     background-color: var(--el-fill-color);
 }
+
 .waf-bar-fill {
     height: 100%;
     border-radius: 4px;
     background-color: var(--el-color-danger);
 }
-.waf-bar-fill-ip {
-    background-color: var(--el-color-primary);
-}
-/* 防护模式：三态按钮组，纵向排列让说明文字有位置 */
-/* KPI 的危险态：拦截数与误报数需要一眼可见 */
-.waf-kpi-danger {
-    color: var(--el-color-danger) !important;
-}
-.waf-kpi-warn {
-    color: var(--el-color-warning) !important;
+
+.waf-bar-value {
+    flex: 0 0 auto;
+    min-width: 36px;
+    font-size: 13px;
+    text-align: right;
+    color: var(--el-text-color-regular);
 }
 
-.waf-mode-group {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-}
-
-/* 检测器开关：两列网格，15 项在一屏内看得完 */
-.waf-detector-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-    gap: 4px 12px;
-    width: 100%;
-}
-
-/* 拖动手柄：只在排序模式出现，视觉上要明显可抓 */
+/* 拖动手柄：只在排序模式出现 */
 .rule-drag-handle {
     cursor: grab;
     color: var(--el-text-color-placeholder);
     letter-spacing: -2px;
     user-select: none;
 }
+
 .rule-drag-handle:active {
     cursor: grabbing;
 }
+
 .rule-drag-ghost {
     opacity: 0.5;
     background: var(--el-color-primary-light-9);
-}
-
-.waf-bar-value {
-    flex: 0 0 auto;
-    min-width: 32px;
-    font-size: 13px;
-    text-align: right;
-    color: var(--el-text-color-regular);
 }
 </style>

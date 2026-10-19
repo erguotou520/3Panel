@@ -349,6 +349,11 @@ export const updateWAFWebhook = (req: WAFWebhookSetting) => {
     return http.post(`/waf/webhook/update`, req);
 };
 
+/** 用表单当前值发一条测试消息，不要求先保存。失败时后端会带回上游原话。 */
+export const testWAFWebhook = (req: WAFWebhookSetting) => {
+    return http.post(`/waf/webhook/test`, req);
+};
+
 export const operateWebsiteWAF = (websiteId: number, operate: 'enable' | 'disable') => {
     return http.post(`/waf/website/op`, { websiteId, operate });
 };

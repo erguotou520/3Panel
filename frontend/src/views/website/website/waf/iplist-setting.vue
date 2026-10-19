@@ -117,6 +117,9 @@ const form = reactive({
     autoUpdate: true,
     intervalHours: 12,
     reportEnabled: false,
+    // 后端 model 里有 ReportURL：漏带这个字段时保存会把它写成空串。
+    // 界面上暂不暴露输入框，但必须原样读回来再提交。
+    reportUrl: '',
 });
 
 const status = reactive<WAFIPListStatus>({
@@ -143,6 +146,7 @@ const load = async () => {
             autoUpdate: data?.autoUpdate !== false,
             intervalHours: data?.intervalHours || 12,
             reportEnabled: !!data?.reportEnabled,
+            reportUrl: data?.reportUrl || '',
         });
     } catch (error) {
         MsgError(i18n.global.t('commons.msg.operationFailed'));
