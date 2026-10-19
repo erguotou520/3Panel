@@ -234,16 +234,27 @@ local function rule_hit(rule, dims)
             -- 但"静默当成匹配一切"显然更危险。
             return false
         end
+        local ranges = dims.geo_ranges
         local countries = geo.countries
-        if type(countries) ~= "table" then return false end
+        if type(ranges) ~= "table" and type(countries) ~= "table" then
+            return false
+        end
         local ip = dims.ip()
         if not ip then return false end
         local hit = false
         for code in mv:gmatch("[^,]+") do
-            local list = countries[code:upper():match("^%s*(.-)%s*$")]
-            if type(list) == "table" then
-                for _, cidr in ipairs(list) do
-                    if iputils.in_cidr(ip, cidr) then hit = true break end
+            local key = code:upper():match("^%s*(.-)%s*$")
+            local compiled = ranges and ranges[key]
+            if compiled then
+                -- 快路径：区间表二分，约 14 次比较搞定近万条 CIDR
+                if iputils.in_ranges(ip, compiled) then hit = true break end
+            else
+                -- 兼容路径：没有预编译表时退回逐条判定（老版本 rules.json）
+                local list = countries[key]
+                if type(list) == "table" then
+                    for _, cidr in ipairs(list) do
+                        if iputils.in_cidr(ip, cidr) then hit = true break end
+                    end
                 end
             end
             if hit then break end
@@ -353,6 +364,27 @@ local function merge_ip_groups(global_groups, site_groups)
     return out
 end
 
+-- compile_geo_ranges 把「国家码 -> CIDR 字符串列表」预编译成区间表。
+--
+-- 为什么必须预编译：一次 geo 匹配要判定近万条 CIDR，若在请求路径上逐条
+-- 交给 iputils.in_cidr，每条都要重新切分字符串、解析点分十进制；
+-- 预编译后每请求只做 log2(1e4) ≈ 14 次比较。编译本身发生在 rules.json
+-- 加载时（5 秒 TTL），不在请求路径上。
+local function compile_geo_ranges(geo)
+    if type(geo) ~= "table" or geo.available ~= true then
+        return nil
+    end
+    local countries = geo.countries
+    if type(countries) ~= "table" then
+        return nil
+    end
+    local out = {}
+    for code, list in pairs(countries) do
+        out[code] = iputils.prepare_cidrs(list)
+    end
+    return out
+end
+
 function _M.get_site_state()
     load_rules()
     return _M.get_site_state_cached(config.get_site_id())
@@ -405,6 +437,9 @@ function _M.get_site_state_cached(site_id)
         -- 一律不命中。这不是"静默失效" —— 导出结果里带了这个标记，
         -- 前端会在规则列表上提示"地理数据缺失，规则当前不生效"。
         geo = data.geo,
+        -- 预编译后的区间表（国家码 -> {v4=区间, v6=区间}）。
+        -- 保留原 countries 字段是为了排查时能直接看到导出的 CIDR 原文。
+        geo_ranges = compile_geo_ranges(data.geo),
     }
     state_cache[site_id] = { data = data, state = state }
     return state
@@ -538,6 +573,7 @@ function _M.check(state)
     -- IP 组与地理表挂在 dims 上，供 rule_hit 的 ip_group / geo 分支查。
     dims.ip_groups = state.ip_groups
     dims.geo = state.geo
+    dims.geo_ranges = state.geo_ranges
     -- 站点级优先：站点名单有任何命中（allow 或 deny 类）即返回，不再看全局
     if state.site then
         local site_res = eval_layer(site_compiled, site_rules, dims)

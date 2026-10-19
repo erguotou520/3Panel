@@ -2475,6 +2475,96 @@ rules_scenario("geo 规则与 ip 规则共存", {geo = GEO_FIXTURE, global = {ru
     base_dims()
     T.vars.remote_addr = "8.8.8.8"
 end, function(res) return res ~= nil and res.action == "allow" end)
+
+-- ==================== geo 区间预编译（2026-10-19）====================
+-- 为什么要有这一层：geo 规则的国家段实测 CN 就有近万条 CIDR，
+-- 逐条 iputils.in_cidr 会在请求路径上反复切分字符串解析点分十进制。
+-- 预编译成 [start,end] 区间后每请求只做二分，约 14 次比较。
+print("=== geo 区间预编译 ===")
+
+local ipu = require("waf.iputils")
+
+local R = ipu.prepare_cidrs({"1.0.1.0/24", "223.5.5.0/24", "10.0.0.0/8"})
+check("ranges /8 内命中", ipu.in_ranges("10.1.2.3", R))
+check("ranges /8 末地址", ipu.in_ranges("10.255.255.255", R))
+check("ranges /8 外不命中", not ipu.in_ranges("11.0.0.1", R))
+check("ranges /24 内命中", ipu.in_ranges("1.0.1.200", R))
+check("ranges /24 边界高位", ipu.in_ranges("1.0.1.255", R))
+check("ranges /24 外不命中", not ipu.in_ranges("1.0.2.1", R))
+check("ranges 空表不命中", not ipu.in_ranges("1.0.1.1", ipu.prepare_cidrs({})))
+check("ranges nil 表不命中", not ipu.in_ranges("1.0.1.1", nil))
+check("ranges 非法 IP 不命中", not ipu.in_ranges("999.0.0.1", R))
+check("ranges 非法 CIDR 被跳过", not ipu.in_ranges("999.0.0.1", ipu.prepare_cidrs({"999.0.0.0/8"})))
+
+-- 嵌套/重叠输入：不合并的话二分只能定位到「最后一个起点」，
+-- 内层段会被外层段的末尾比较误判。
+local N = ipu.prepare_cidrs({"10.0.0.0/8", "10.1.0.0/16", "10.1.2.0/24"})
+check("ranges 嵌套段命中内层", ipu.in_ranges("10.1.2.9", N))
+check("ranges 嵌套段命中外层", ipu.in_ranges("10.9.9.9", N))
+check("ranges 嵌套段外不命中", not ipu.in_ranges("11.1.2.9", N))
+check("ranges 嵌套合并为单区间", #N.v4 == 1)
+
+-- IPv6：按 32 字符十六进制比较，与 128 位数值序一致
+local V6 = ipu.prepare_cidrs({"2400:3200::/32", "240e::/20"})
+check("ranges v6 命中", ipu.in_ranges("2400:3200::1", V6))
+check("ranges v6 末地址", ipu.in_ranges("2400:3200:ffff:ffff:ffff:ffff:ffff:ffff", V6))
+check("ranges v6 外不命中", not ipu.in_ranges("2400:3201::1", V6))
+check("ranges v6 短写命中", ipu.in_ranges("240e::1", V6))
+check("ranges v6 表不含 v4", not ipu.in_ranges("1.0.1.1", V6))
+
+-- 裸 IP（无斜杠）按 /32 处理
+local S = ipu.prepare_cidrs({"1.2.3.4"})
+check("ranges 裸 IP 命中", ipu.in_ranges("1.2.3.4", S))
+check("ranges 裸 IP 相邻不命中", not ipu.in_ranges("1.2.3.5", S))
+
+-- 与 in_cidr 结果必须一致：区间化最容易错在边界与 /0
+local cidrs = {"1.2.3.0/24", "0.0.0.0/0", "10.0.0.0/8"}
+local RC = ipu.prepare_cidrs(cidrs)
+local agree = true
+for _, sip in ipairs({"1.2.3.4", "1.2.3.255", "1.2.4.0", "255.255.255.255", "0.0.0.0", "10.7.8.9"}) do
+    local want = false
+    for _, c in ipairs(cidrs) do
+        if ip.in_cidr(sip, c) then want = true end
+    end
+    if ipu.in_ranges(sip, RC) ~= want then agree = false end
+end
+check("ranges 与 in_cidr 结果一致", agree)
+
+-- 规模测试：5000 条区间上判定 2000 次。
+-- 逐条解析版本在这个规模下单次约 1ms 量级；区间版应在 0.05ms 以内。
+local big = {}
+for i = 0, 4999 do
+    big[#big + 1] = string.format("%d.%d.%d.0/24",
+        1 + math.floor(i / 32768), math.floor(i / 256) % 256, i % 256)
+end
+local tb = ipu.prepare_cidrs(big)
+check("ranges 5000 条编译非空", #tb.v4 > 0)
+check("ranges 5000 条命中已知网段", ipu.in_ranges("1.0.0.5", tb))
+local t0 = os.clock()
+for i = 1, 2000 do
+    ipu.in_ranges(string.format("1.%d.%d.0", (i * 7) % 256, i % 256), tb)
+end
+local per_call_ms = (os.clock() - t0) / 2000 * 1000
+check("ranges 5000 条单次判定 < 0.2ms", per_call_ms < 0.2)
+
+-- 预编译必须真的挂到 state 上：否则 geo 分支会退回逐条解析，
+-- 功能测试依然全绿，只有线上延迟会变差。
+reset_state()
+reset_modules()
+write_rules({geo = GEO_FIXTURE, global = {rules = {
+    {id = 1, name = "r", priority = 10, match_type = "geo", match_value = "CN", match_op = "exact", action = "deny", enabled = true},
+}}})
+T.vars.waf_rules_path = RULES_FILE
+T.vars.waf_site_id = "1"
+T.now = T.now + 10
+base_dims()
+local rules_mod = require("waf.rules")
+rules_mod.check()
+local st = rules_mod.get_site_state_cached("1")
+check("state 带 geo_ranges", type(st) == "table" and type(st.geo_ranges) == "table")
+check("state geo_ranges 含 CN", type(st.geo_ranges.CN) == "table" and #st.geo_ranges.CN.v4 > 0)
+check("state geo_ranges 不含 US 以外的空表崩溃", st.geo_ranges.ZZ == nil or type(st.geo_ranges.ZZ) == "table")
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

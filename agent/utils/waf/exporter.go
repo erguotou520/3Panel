@@ -3,6 +3,7 @@
 package waf
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -29,16 +30,40 @@ func HostWAFDir(hostWebsiteDir string) string {
 
 // DeployLuaModules 将内置 Lua 模块写入宿主机 WAF 目录（挂载给 OpenResty 容器）
 func DeployLuaModules(luaFiles map[string][]byte, hostWebsiteDir string) error {
+	_, err := deployLuaModules(luaFiles, hostWebsiteDir, false)
+	return err
+}
+
+// DeployLuaModulesIfChanged 与 DeployLuaModules 相同，但内容未变的文件跳过写入，
+// 并返回是否真的有文件被更新。
+//
+// 供周期性检查使用：升级 agent 后已启用 WAF 的站点不会重新走「首次开启」流程，
+// 需要主动把新 Lua 推下去；而每分钟无条件重写 20 个文件纯属浪费。
+// 返回值让调用方决定要不要 reload —— Lua 模块进的是 package.loaded 缓存，
+// 只改文件不 reload，worker 仍跑旧代码。
+func DeployLuaModulesIfChanged(luaFiles map[string][]byte, hostWebsiteDir string) (bool, error) {
+	return deployLuaModules(luaFiles, hostWebsiteDir, true)
+}
+
+func deployLuaModules(luaFiles map[string][]byte, hostWebsiteDir string, skipUnchanged bool) (bool, error) {
 	dir := HostWAFDir(hostWebsiteDir)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		return false, err
 	}
+	changed := false
 	for name, content := range luaFiles {
-		if err := os.WriteFile(filepath.Join(dir, name), content, 0644); err != nil {
-			return err
+		dest := filepath.Join(dir, name)
+		if skipUnchanged {
+			if old, err := os.ReadFile(dest); err == nil && bytes.Equal(old, content) {
+				continue
+			}
 		}
+		if err := os.WriteFile(dest, content, 0644); err != nil {
+			return changed, err
+		}
+		changed = true
 	}
-	return nil
+	return changed, nil
 }
 
 type ruleDTO struct {

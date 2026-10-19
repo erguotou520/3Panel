@@ -108,12 +108,16 @@ func (b *BaseApi) GetWAFGEOStatus(c *gin.Context) {
 // @Security Timestamp
 // @Router /waf/ip-groups [get]
 func (b *BaseApi) ListWAFIPGroups(c *gin.Context) {
-	websiteID, err := helper.GetIntParamByKey(c, "websiteId")
+	// websiteId 走 query（前端 GET /waf/ip-groups?websiteId=N）。
+	// 这里必须用 c.Query 而不是 GetIntParamByKey —— 后者只读 gin 的 path 参数，
+	// 而该路由没有 :websiteId 段，用了会让这个接口恒定返回
+	// "error websiteId in path"，界面上的 IP 组列表永远为空。
+	websiteID, err := strconv.ParseUint(c.Query("websiteId"), 10, 64)
 	if err != nil {
 		helper.BadRequest(c, err)
 		return
 	}
-	groups, err := wafService.ListIPGroups(websiteID)
+	groups, err := wafService.ListIPGroups(uint(websiteID))
 	if err != nil {
 		helper.InternalServer(c, err)
 		return

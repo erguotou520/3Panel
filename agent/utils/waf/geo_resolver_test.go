@@ -1,9 +1,12 @@
 package waf
 
 import (
+	"fmt"
 	"net"
 	"net/netip"
+	"os"
 	"testing"
+	"time"
 
 	"github.com/3panel-dev/3panel/agent/app/model"
 )
@@ -205,5 +208,110 @@ func TestResolveCountryCIDRsNoCodes(t *testing.T) {
 	}
 	if got == nil || len(got) != 0 {
 		t.Errorf("无国家码时应返回空 map，实际 %v", got)
+	}
+}
+
+// 国家码在 mmdb 里有三个可能位置。面板资源包实际下发的 GeoLite2-City
+// 变体用的是**顶层 iso**（{country:{en,zh}, iso:"CN", ...}），
+// 只认 country.iso_code 时整库都读成空串 —— 文件能打开、网段能遍历，
+// 但所有国家的 CIDR 列表都是 []，geo 规则静默失效。
+func TestGeoRecordCountryCode(t *testing.T) {
+	var top geoRecord
+	top.ISO = "cn"
+	if got := top.countryCode(); got != "CN" {
+		t.Errorf("顶层 iso 应为 CN，实际 %q", got)
+	}
+
+	var isoCode geoRecord
+	isoCode.Country.ISOCode = "jp"
+	if got := isoCode.countryCode(); got != "JP" {
+		t.Errorf("country.iso_code 应为 JP，实际 %q", got)
+	}
+
+	var innerISO geoRecord
+	innerISO.Country.ISO = "de"
+	if got := innerISO.countryCode(); got != "DE" {
+		t.Errorf("country.iso 应为 DE，实际 %q", got)
+	}
+
+	var reg geoRecord
+	reg.RegisteredCountry.ISOCode = "fr"
+	if got := reg.countryCode(); got != "FR" {
+		t.Errorf("registered_country 应为 FR，实际 %q", got)
+	}
+
+	var empty geoRecord
+	if got := empty.countryCode(); got != "" {
+		t.Errorf("无国家信息应为空串，实际 %q", got)
+	}
+}
+
+// 国家级判定不需要比 /24（IPv4）和 /32（IPv6）更细。
+// 不收敛的话，本机 City 库的 CN 会产出 2.7 万条 IPv4 + 2.7 万条 IPv6，
+// 数据面每个请求都要线性扫一遍。
+func TestCoarsenPrefix(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"1.2.3.4/32", "1.2.3.0/24"},
+		{"1.2.3.0/25", "1.2.3.0/24"},
+		{"1.2.0.0/16", "1.2.0.0/16"},           // 已经比 /24 粗，保持
+		{"2400:3200::1/128", "2400:3200::/32"}, // IPv6 收敛到 /32
+		{"2400:3200::/29", "2400:3200::/29"},   // 已经比 /32 粗，保持
+	}
+	for _, tt := range tests {
+		got := coarsenPrefix(mustPrefix(t, tt.in)).String()
+		if got != tt.want {
+			t.Errorf("coarsenPrefix(%s) = %s，期望 %s", tt.in, got, tt.want)
+		}
+	}
+}
+
+// 收敛后仍超限时逐档退到 /16、/12、/8，而不是按地址顺序截断。
+// 截断会放行本国地址空间的后半段，且日志里看不出异常。
+func TestAggregateToShrinksWithoutTruncating(t *testing.T) {
+	// 造 300 个同 /16 下的 /24，收敛到 /16 后应只剩 1 条
+	in := make([]netip.Prefix, 0, 300)
+	for i := 0; i < 300; i++ {
+		in = append(in, mustPrefix(t, fmt.Sprintf("10.1.%d.0/24", i%256)))
+	}
+	got := aggregateTo(in, 16, 32)
+	if len(got) != 1 || got[0].String() != "10.1.0.0/16" {
+		t.Fatalf("/16 收敛应合并成 1 条，实际 %d 条: %v", len(got), got)
+	}
+}
+
+// 缓存 key 必须带 mmdb 的 size/mtime：库里换了数据却命中旧缓存，
+// 表现是「更新了 GeoIP 库但拦截范围没变」，排查成本很高。
+func TestGeoCacheKeyTracksMMDBChange(t *testing.T) {
+	f, err := os.CreateTemp(t.TempDir(), "geo-*.mmdb")
+	if err != nil {
+		t.Fatalf("create temp: %v", err)
+	}
+	path := f.Name()
+	if _, err := f.WriteString("aaaa"); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	_ = f.Close()
+
+	k1 := geoCacheKeyOf(path, []string{"cn", "us"}, true)
+
+	// 同内容同大小，但 mtime 变了（模拟库被替换成同样大小的新文件）
+	future := time.Now().Add(2 * time.Hour)
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatalf("chtimes: %v", err)
+	}
+	k2 := geoCacheKeyOf(path, []string{"cn", "us"}, true)
+	if k1 == k2 {
+		t.Fatal("mmdb mtime 变化后缓存 key 必须变化")
+	}
+
+	// 国家码顺序不同但集合相同 → 同一个 key
+	if geoCacheKeyOf(path, []string{"us", "cn"}, true) != k2 {
+		t.Error("国家码顺序不应影响缓存 key")
+	}
+	// merge 开关是 key 的一部分
+	if geoCacheKeyOf(path, []string{"cn", "us"}, false) == k2 {
+		t.Error("merge 开关应参与缓存 key")
 	}
 }

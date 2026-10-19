@@ -13,11 +13,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/3panel-dev/3panel/agent/app/dto/request"
 	"github.com/3panel-dev/3panel/agent/app/model"
 	"github.com/3panel-dev/3panel/agent/app/repo"
+	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/files"
 	"github.com/3panel-dev/3panel/agent/utils/geo"
@@ -238,11 +240,84 @@ func wafInjectServer(website *model.Website, enable bool) error {
 // ==================== 名单 CRUD ====================
 
 // SyncRules 导出名单 + CC 配置到数据面 rules.json
+// refreshLuaModules 用二进制内置的 Lua 覆盖宿主机上的 WAF 模块。
+//
+// 只在 waf 目录已存在时写（即真的有站点开过 WAF），避免在从未启用的机器上
+// 凭空建目录。失败不阻断规则同步：rules.json 新格式对旧 Lua 大多向后兼容，
+// 而阻断会让「改一条 IP 规则」直接失败，影响面更大。
+// luaReloadOnce 保证本进程确认过一次「数据面 Lua 与二进制一致」。
+//
+// 为什么需要：升级后 Lua 文件可能早已是最新版（上一次部署写过），
+// changed 为 false，于是永远不 reload —— 而 OpenResty worker 里跑的
+// 仍是升级前 require 进来的旧模块。进程启动后的第一轮同步无条件 reload 一次，
+// 之后只在文件真的变化时 reload。
+var luaReloadOnce sync.Once
+
+func refreshLuaModules(confDir string) {
+	dir := wafutils.HostWAFDir(confDir)
+	if _, err := os.Stat(dir); err != nil {
+		return
+	}
+	luaFiles, err := wafutils.LuaFiles()
+	if err != nil {
+		return
+	}
+	changed, err := wafutils.DeployLuaModulesIfChanged(luaFiles, confDir)
+	if err != nil {
+		// 不阻断规则同步：写盘失败（磁盘满/只读）时让用户仍能改规则，
+		// 但必须留痕 —— 否则「改完规则没反应」会被当成规则引擎的锅。
+		if global.LOG != nil {
+			global.LOG.Errorf("[WAF] 刷新数据面 Lua 模块失败: %v", err)
+		}
+		return
+	}
+	first := false
+	luaReloadOnce.Do(func() { first = true })
+	if changed || first {
+		reloadDataPlaneLua()
+	}
+}
+
+// reloadDataPlaneLua 让 OpenResty 重新加载 Lua 模块。
+//
+// 为什么非要 reload：Lua 模块被 require 进 package.loaded 后就常驻在 worker
+// 内存里，改文件不会自动生效 —— 只有重建 worker 才会重新读取。少了这一步，
+// 「Lua 文件已更新」和「数据面跑的是新逻辑」是两件事。
+func reloadDataPlaneLua() {
+	install, err := getAppInstallByKey("openresty")
+	if err != nil || install.ContainerName == "" {
+		return
+	}
+	if err := opNginx(install.ContainerName, constant.NginxReload); err != nil && global.LOG != nil {
+		global.LOG.Errorf("[WAF] reload openresty 失败: %v", err)
+	}
+}
+
+// RefreshDataPlaneLua 供定时任务调用：把二进制内置的 Lua 推给数据面。
+//
+// 覆盖的是「升级后无人操作」这个场景：用户升级面板后可能只改一条 IP 规则，
+// 甚至什么都不改，而数据面还在跑旧 Lua。每分钟检查一次（内容不变则零写入），
+// 保证新版本的数据面逻辑在升级后一分钟内自动生效。
+func RefreshDataPlaneLua() {
+	confDir, err := wafHostConfDir()
+	if err != nil {
+		return
+	}
+	refreshLuaModules(confDir)
+}
+
 func (w WAFService) SyncRules() error {
 	confDir, err := wafHostConfDir()
 	if err != nil {
 		return err
 	}
+	// 每次同步前把内置 Lua 模块刷一遍（幂等覆盖）。
+	//
+	// 为什么不能只在「首次开启 WAF」时部署：升级 agent 二进制后，已启用 WAF
+	// 的站点不会重新走 SetWebsiteWAF(enable=true)，于是数据面继续跑**旧 Lua**，
+	// 而 rules.json 已经是新格式 —— 新字段被老代码忽略、新规则类型被跳过，
+	// 表现是「升了级但新功能不生效」，且日志里没有任何线索。
+	refreshLuaModules(confDir)
 	var rules []model.WAFRule
 	if err := global.DB.Where("enabled = ?", true).Order("priority asc").Find(&rules).Error; err != nil {
 		return err
