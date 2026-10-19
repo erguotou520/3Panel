@@ -57,6 +57,7 @@ type IWAFService interface {
 	UpdateOption(req request.WAFOptionUpdate) error
 	GetWebhookSetting() (map[string]interface{}, error)
 	UpdateWebhookSetting(req request.WAFWebhookUpdate) error
+	TestWebhook(req request.WAFWebhookUpdate) error
 	SearchLogs(req request.WAFLogSearch) (int64, []model.WAFLog, error)
 	StatLogs(req request.WAFLogSearch) (*WAFStats, error)
 	ExportLogs(req request.WAFLogSearch) (string, []byte, error)
@@ -901,6 +902,28 @@ func (w WAFService) GetWebhookSetting() (map[string]interface{}, error) {
 		res["url"] = item.Value
 	}
 	return res, nil
+}
+
+// TestWebhook 用**表单当前值**发一条测试消息（不要求先保存）。
+//
+// 为什么值得单独做一个接口：钉钉/企微的机器人有一堆安全设置（关键词、
+// 加签、IP 白名单），配错的表现都是「一条消息也收不到」，而唯一的反馈
+// 只有日志里一行 send webhook failed。让用户配完立刻点一下，能拿到
+// 上游原话（例如 errcode=310000 关键词不匹配），不必等真有攻击才发现。
+func (w WAFService) TestWebhook(req request.WAFWebhookUpdate) error {
+	if req.URL == "" {
+		return fmt.Errorf("webhook url is empty")
+	}
+	method := req.Method
+	if method == "" {
+		method = "custom"
+	}
+	payload, err := webhook_sender.BuildWebhookPayload(method,
+		"[3panel WAF] 测试消息", "收到这条消息说明攻击通知配置可用。")
+	if err != nil {
+		return err
+	}
+	return webhook_sender.SendWebhookRequest(method, req.URL, payload, nil)
 }
 
 func (w WAFService) UpdateWebhookSetting(req request.WAFWebhookUpdate) error {

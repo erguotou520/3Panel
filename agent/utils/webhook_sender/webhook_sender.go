@@ -112,18 +112,24 @@ func sendLegacyWebhookRequest(method string, url string, payload any, transport 
 			return nil
 		}
 		if result.Errcode != 0 {
-			return fmt.Errorf("webhook provider rejected response")
+			// 带上上游的 errcode/errmsg：钉钉的关键词不匹配、签名校验失败、
+			// 企微的机器人被移出群，都会走到这里。只回一句「rejected」的话，
+			// 用户在界面上看到的就是「通知发不出去」，无从自查。
+			return fmt.Errorf("webhook provider rejected response: errcode=%d, errmsg=%s",
+				result.Errcode, strings.TrimSpace(result.Errmsg))
 		}
 	case constant.FeiShu:
 		var result struct {
-			StatusCode int `json:"StatusCode"`
-			Code       int `json:"code"`
+			StatusCode int    `json:"StatusCode"`
+			Code       int    `json:"code"`
+			Msg        string `json:"msg"`
 		}
 		if err := json.Unmarshal(respBody, &result); err != nil {
 			return nil
 		}
 		if result.StatusCode != 0 || result.Code != 0 {
-			return fmt.Errorf("webhook provider rejected response")
+			return fmt.Errorf("webhook provider rejected response: code=%d, msg=%s",
+				result.Code, strings.TrimSpace(result.Msg))
 		}
 	}
 	return nil

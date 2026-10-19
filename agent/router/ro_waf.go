@@ -18,6 +18,7 @@ func (a *WAFRouter) InitRouter(Router *gin.RouterGroup) {
 		wafRouter.POST("/cc/update", baseApi.UpdateWAFCCConfig)
 		wafRouter.GET("/webhook", baseApi.GetWAFWebhookSetting)
 		wafRouter.POST("/webhook/update", baseApi.UpdateWAFWebhookSetting)
+		wafRouter.POST("/webhook/test", baseApi.TestWAFWebhook)
 		wafRouter.GET("/option", baseApi.GetWAFOption)
 		wafRouter.POST("/option/update", baseApi.UpdateWAFOption)
 

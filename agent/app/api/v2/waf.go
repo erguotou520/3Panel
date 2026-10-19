@@ -320,6 +320,28 @@ func (b *BaseApi) GetWAFWebhookSetting(c *gin.Context) {
 }
 
 // @Tags WAF
+// @Summary Send a test message with the given webhook config
+// @Accept json
+// @Param request body request.WAFWebhookUpdate true "request"
+// @Success 200
+// @Security ApiKeyAuth
+// @Security Timestamp
+// @Router /waf/webhook/test [post]
+func (b *BaseApi) TestWAFWebhook(c *gin.Context) {
+	var req request.WAFWebhookUpdate
+	if err := helper.CheckBindAndValidate(&req, c); err != nil {
+		return
+	}
+	if err := wafService.TestWebhook(req); err != nil {
+		// 把上游原话带回去（不含 token）：用户在界面上直接看到
+		// 「关键词不匹配」这类原因，而不是笼统的「发送失败」。
+		helper.InternalServer(c, err)
+		return
+	}
+	helper.Success(c)
+}
+
+// @Tags WAF
 // @Summary Update webhook push setting
 // @Accept json
 // @Param request body request.WAFWebhookUpdate true "request"
