@@ -304,6 +304,45 @@
                             />
                             <div class="field-tip block">{{ $t('website.wafNotifyTip') }}</div>
                         </el-form-item>
+                        <el-form-item v-if="notifyAuthOptions.length" :label="$t('website.wafNotifyAuth')">
+                            <div class="field-row">
+                                <el-radio-group v-model="notify.authType" :disabled="!notify.enable">
+                                    <el-radio
+                                        v-for="opt in notifyAuthOptions"
+                                        :key="opt.value"
+                                        :value="opt.value"
+                                        class="mr-4"
+                                    >
+                                        {{ $t(opt.labelKey) }}
+                                    </el-radio>
+                                </el-radio-group>
+                            </div>
+                            <div class="field-tip block">{{ $t('website.wafNotifyAuthTip') }}</div>
+                        </el-form-item>
+                        <el-form-item v-if="notify.authType === 'keyword'" :label="$t('website.wafNotifyKeyword')">
+                            <el-input
+                                v-model="notify.keyword"
+                                :disabled="!notify.enable"
+                                class="p-w-300"
+                                :placeholder="$t('website.wafNotifyKeywordPlaceholder')"
+                            />
+                            <div class="field-tip block">{{ $t('website.wafNotifyKeywordTip') }}</div>
+                        </el-form-item>
+                        <el-form-item v-if="notify.authType === 'sign'" :label="$t('website.wafNotifySecret')">
+                            <el-input
+                                v-model="notify.secret"
+                                type="password"
+                                show-password
+                                :disabled="!notify.enable"
+                                class="p-w-300"
+                                :placeholder="
+                                    notify.secretSet
+                                        ? $t('website.wafNotifySecretKeepPlaceholder')
+                                        : $t('website.wafNotifySecretPlaceholder')
+                                "
+                            />
+                            <div class="field-tip block">{{ $t('website.wafNotifySecretTip') }}</div>
+                        </el-form-item>
                     </el-form>
                 </el-card>
             </el-tab-pane>
@@ -753,6 +792,7 @@ import {
     getWAFGEOStatus,
     deleteWAFIPGroup,
     type WAFWebhookMethod,
+    type WAFWebhookAuthType,
 } from '@/api/modules/waf';
 import {
     buildCurlCommand,
@@ -856,11 +896,45 @@ const notifyMethods: { value: WAFWebhookMethod; labelKey: string }[] = [
     { value: 'feiShu', labelKey: 'website.wafNotifyMethodFeiShu' },
     { value: 'custom', labelKey: 'website.wafNotifyMethodCustom' },
 ];
-const notify = ref<{ enable: boolean; method: WAFWebhookMethod; url: string }>({
+const notify = ref<{
+    enable: boolean;
+    method: WAFWebhookMethod;
+    url: string;
+    authType: WAFWebhookAuthType;
+    keyword: string;
+    secret: string;
+    secretSet: boolean;
+}>({
     enable: false,
     method: 'custom',
     url: '',
+    authType: 'none',
+    keyword: '',
+    secret: '',
+    secretSet: false,
 });
+
+// 认证方式按渠道过滤：加签只有钉钉支持；自定义关键词企微/钉钉支持；
+// 飞书机器人用的是另一套校验（签名在 header），自定义 webhook 由对端自行处理。
+const notifyAuthOptions = computed<{ value: WAFWebhookAuthType; labelKey: string }[]>(() => {
+    const all: { value: WAFWebhookAuthType; labelKey: string; methods: WAFWebhookMethod[] }[] = [
+        { value: 'none', labelKey: 'website.wafNotifyAuthNone', methods: ['weCom', 'dingTalk', 'feiShu', 'custom'] },
+        { value: 'keyword', labelKey: 'website.wafNotifyAuthKeyword', methods: ['weCom', 'dingTalk'] },
+        { value: 'sign', labelKey: 'website.wafNotifyAuthSign', methods: ['dingTalk'] },
+    ];
+    return all.filter((o) => o.methods.includes(notify.value.method));
+});
+
+// 渠道切换后当前认证方式可能不存在于新渠道的选项里（比如钉钉加签 → 企微），
+// 必须在选项变化时回退，否则 radio 群里没有选中项、保存还会被后端 oneof/校验拒绝。
+watch(
+    () => [notify.value.method, notify.value.authType],
+    () => {
+        if (notifyAuthOptions.value.length && !notifyAuthOptions.value.some((o) => o.value === notify.value.authType)) {
+            notify.value.authType = notifyAuthOptions.value[0].value;
+        }
+    },
+);
 
 // ============ 统计维度 ============
 const statDimensions: {
@@ -1020,6 +1094,10 @@ const notifyPayload = computed(() => ({
     enable: notify.value.enable,
     method: notify.value.method,
     url: notify.value.url.trim(),
+    authType: notify.value.authType,
+    keyword: notify.value.keyword.trim(),
+    // 空串 = 沿用已保存的密钥，后端不会把原文带回来
+    secret: notify.value.secret.trim(),
 }));
 const notifySnap = ref('');
 const notifyDirty = computed(() => snapshot(notifyPayload.value) !== notifySnap.value);
@@ -1150,11 +1228,7 @@ const testNotify = async () => {
     }
     notifyTesting.value = true;
     try {
-        await testWAFWebhook({
-            enable: notify.value.enable,
-            method: notify.value.method,
-            url: notify.value.url.trim(),
-        } as any);
+        await testWAFWebhook(notifyPayload.value as any);
         MsgSuccess(i18n.global.t('website.wafNotifyTestOk'));
     } catch (e) {
         // 请求拦截器已把后端带回的上游原因弹出来，这里不重复提示
@@ -1168,9 +1242,16 @@ const saveNotify = async () => {
         MsgWarning(i18n.global.t('website.wafNotifyURLRequired'));
         return;
     }
+    if (notify.value.enable && notify.value.authType === 'keyword' && !notify.value.keyword.trim()) {
+        MsgWarning(i18n.global.t('website.wafNotifyKeywordRequired'));
+        return;
+    }
     await updateWAFWebhook(notifyPayload.value as any);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    await markNotifyClean();
+    // 密钥保存后后端不回传原文，重新拉一次让占位文案从「粘贴密钥」变成「留空不修改」，
+    // 同时清掉输入框，避免密钥原文常驻在前端内存里。
+    notify.value.secret = '';
+    await loadNotify();
 };
 
 const onCopyCurl = async (row: any) => {

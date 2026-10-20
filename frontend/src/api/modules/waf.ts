@@ -335,10 +335,23 @@ export const updateWAFOption = (req: WAFOption) => {
 /** 通知渠道。取值必须与后端 constant/alert.go 里的常量一致 —— 大小写错了会被 oneof 校验拒绝。 */
 export type WAFWebhookMethod = 'custom' | 'weCom' | 'dingTalk' | 'feiShu';
 
+/**
+ * 机器人安全设置（认证方式）。取值必须与后端 webhook_sender 的 Auth* 常量一致。
+ * keyword：自定义关键词，拼进消息正文供上游校验（企微/钉钉支持）；
+ * sign：加签，HMAC-SHA256 签名放 query（仅钉钉支持）。
+ */
+export type WAFWebhookAuthType = 'none' | 'keyword' | 'sign';
+
 export interface WAFWebhookSetting {
     enable: boolean;
     method: WAFWebhookMethod;
     url: string;
+    authType: WAFWebhookAuthType;
+    keyword: string;
+    /** 加签密钥，仅在修改时上传；后端不会回传原文，只回 secretSet。 */
+    secret: string;
+    /** 后端返回：是否已保存过密钥（决定输入框占位文案）。保存/测试时不需要传。 */
+    secretSet?: boolean;
 }
 
 export const getWAFWebhook = () => {
