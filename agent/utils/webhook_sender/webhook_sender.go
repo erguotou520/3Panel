@@ -3,15 +3,89 @@ package webhook_sender
 import (
 	"bytes"
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/3panel-dev/3panel/agent/constant"
 )
+
+// 认证方式。取值同时出现在三个地方，改一处必须改另外两处：
+//
+//	· 本包的 Auth* 常量
+//	· request.WAFWebhookUpdate.AuthType 的 oneof 校验
+//	· 前端 api/modules/waf.ts 的 WAFWebhookAuthType
+const (
+	// AuthNone 不做认证（上游关掉了安全设置）。
+	AuthNone = "none"
+	// AuthKeyword 把关键词拼进消息正文，供上游做「自定义关键词」校验。
+	AuthKeyword = "keyword"
+	// AuthSign 对 timestamp+secret 做 HMAC-SHA256 加签，签名放在 query 里。
+	// 目前只有钉钉的群机器人用这套；企微/飞书都不支持。
+	AuthSign = "sign"
+)
+
+// Options 描述一次外发要用到的全部参数。
+//
+// 之所以把它收成一个结构体而不是继续加函数参数：认证方式、关键词、密钥
+// 三者是与消息内容无关的传输层配置，散成 5 个参数后每次加一种认证都要改
+// 所有调用点，而且很容易把 keyword 和 secret 传反（两者都是 string）。
+type Options struct {
+	Method   string
+	URL      string
+	AuthType string
+	Keyword  string
+	Secret   string
+}
+
+// KeywordPrefix 返回应当拼进正文的关键词。
+//
+// 只有认证方式选了 keyword 才生效：用户从「关键词」切到「加签」后，
+// 旧关键词不该继续污染每一条消息（它在正文里会多出一行无意义的token）。
+func (o Options) KeywordPrefix() string {
+	if o.AuthType == AuthKeyword {
+		return strings.TrimSpace(o.Keyword)
+	}
+	return ""
+}
+
+// signContent 按钉钉的约定拼接待签名串，并返回签名。
+//
+// 钉钉的算法是 HMAC-SHA256(key=secret, data=timestamp+"\n"+secret)，
+// 再 base64。注意 key 和 data 里都含 secret，少一处就再也对不上，
+// 而且上游只会回一句「sign not match」，无从定位。
+func signContent(secret string, timestampMs int64) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(strconv.FormatInt(timestampMs, 10) + "\n" + secret))
+	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
+}
+
+// SignDingTalkURL 在 webhook 地址上追加 timestamp 与 sign 两个 query 参数。
+//
+// 保留原有参数（access_token 就在 query 里），不能用「字符串拼 ?」的写法：
+// 地址里已经有 ? 时再拼一个问号，access_token 会被吃掉。
+func SignDingTalkURL(rawURL, secret string, now time.Time) (string, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return "", fmt.Errorf("parse webhook url failed: %w", err)
+	}
+	ts := now.UnixMilli()
+	q := parsed.Query()
+	q.Set("timestamp", strconv.FormatInt(ts, 10))
+	q.Set("sign", signContent(secret, ts))
+	// Query().Encode() 会按 RFC 3986 转义 base64 里的 + / =，
+	// 手拼则会把 + 变成空格，上游必然校验失败。
+	parsed.RawQuery = q.Encode()
+	return parsed.String(), nil
+}
 
 func NormalizeToText(s string) string {
 	r := strings.NewReplacer(
@@ -29,33 +103,42 @@ func NormalizeToText(s string) string {
 	return r.Replace(s)
 }
 
-func BuildWebhookPayload(method string, title string, text string) (any, error) {
+// BuildWebhookPayload 组装各家的消息体。
+//
+// keyword 非空时拼在正文最前面：钉钉/企微的「自定义关键词」校验只认消息
+// 正文里出现的原文，塞到 title 之类自定义字段里不算数。放在最前面还有
+// 一个好处 —— 关键词被截断时仍然完整（正文尾部是攻击详情，可能很长）。
+func BuildWebhookPayload(method string, title string, text string, keyword string) (any, error) {
+	body := text
+	if prefix := strings.TrimSpace(keyword); prefix != "" {
+		body = prefix + "\n" + text
+	}
 	switch method {
 	case constant.WeCom:
 		return map[string]any{
 			"msgtype": "markdown",
 			"markdown": map[string]any{
-				"content": fmt.Sprintf("**%s**\n%s", title, text),
+				"content": fmt.Sprintf("**%s**\n%s", title, body),
 			},
 		}, nil
 	case constant.DingTalk:
 		return map[string]any{
 			"msgtype": "text",
 			"text": map[string]any{
-				"content": fmt.Sprintf("%s\n%s", title, text),
+				"content": fmt.Sprintf("%s\n%s", title, body),
 			},
 		}, nil
 	case constant.FeiShu:
 		return map[string]any{
 			"msg_type": "text",
 			"content": map[string]any{
-				"text": fmt.Sprintf("%s\n%s", title, text),
+				"text": fmt.Sprintf("%s\n%s", title, body),
 			},
 		}, nil
 	case constant.Custom:
 		return map[string]any{
 			"title":   title,
-			"message": text,
+			"message": body,
 			"type":    "3panel_alert",
 			"ts":      time.Now().Unix(),
 		}, nil
@@ -64,11 +147,35 @@ func BuildWebhookPayload(method string, title string, text string) (any, error) 
 	}
 }
 
-func SendWebhookRequest(method string, url string, payload any, transport *http.Transport) error {
-	return sendLegacyWebhookRequest(method, url, payload, transport)
+// SendWithOptions 发送一条消息，按 opts 的认证方式准备 URL 与正文。
+//
+// 把「认证」和「消息内容」分开之后，加一种认证方式不需要动调用方；
+// 之前的实现只能传 (method, url, payload)，关键词与加签都无处安放。
+func SendWithOptions(opts Options, payload any, transport *http.Transport) error {
+	target := opts.URL
+	switch opts.AuthType {
+	case "", AuthNone:
+	case AuthKeyword:
+		// 关键词体现在正文里，由 BuildWebhookPayload 拼好；这里不做事。
+	case AuthSign:
+		if opts.Method != constant.DingTalk {
+			return fmt.Errorf("webhook sign is only supported by dingTalk, got %q", opts.Method)
+		}
+		if opts.Secret == "" {
+			return fmt.Errorf("webhook sign secret is empty")
+		}
+		signed, err := SignDingTalkURL(target, opts.Secret, time.Now())
+		if err != nil {
+			return err
+		}
+		target = signed
+	default:
+		return fmt.Errorf("unsupported webhook auth type: %s", opts.AuthType)
+	}
+	return sendWebhookRequest(opts.Method, target, payload, transport)
 }
 
-func sendLegacyWebhookRequest(method string, url string, payload any, transport *http.Transport) error {
+func sendWebhookRequest(method string, url string, payload any, transport *http.Transport) error {
 	if url == "" {
 		return fmt.Errorf("send webhook request failed: url is empty")
 	}

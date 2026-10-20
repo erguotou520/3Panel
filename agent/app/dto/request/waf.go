@@ -96,6 +96,14 @@ type WAFWebhookUpdate struct {
 	// 而面板没有这个配置界面，于是该功能自上线起无人能用过。
 	Method string `json:"method" validate:"omitempty,oneof=custom weCom dingTalk feiShu"`
 	URL    string `json:"url" validate:"required_if=Enable true,omitempty,url"`
+	// AuthType 钉钉机器人的安全设置：none / keyword（自定义关键词）/ sign（加签）。
+	// 取值必须与 webhook_sender.Auth* 常量、前端 WAFWebhookAuthType 三处一致。
+	AuthType string `json:"authType" validate:"omitempty,oneof=none keyword sign"`
+	// Keyword 自定义关键词，拼进消息正文供上游校验。authType=keyword 时必填。
+	Keyword string `json:"keyword" validate:"max=100"`
+	// Secret 加签密钥（以 SEC 开头）。刻意不做 required：
+	// 空串表示「沿用已保存的密钥」，否则前端每次保存都要重新贴一遍密钥。
+	Secret string `json:"secret" validate:"max=200"`
 }
 
 // WAFRuleReorder 黑白名单拖动排序。

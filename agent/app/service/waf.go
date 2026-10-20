@@ -886,22 +886,81 @@ func (w WAFService) UpdateOption(req request.WAFOptionUpdate) error {
 
 // ==================== Webhook 外发设置 ====================
 
+// settingValue 读一条设置，缺失时返回 fallback。
+// 升级上来的机器不会有新增的 key，缺 key 必须等价于默认值而不是错误。
+func settingValue(key, fallback string) string {
+	if item, err := settingRepo.Get(settingRepo.WithByKey(key)); err == nil {
+		return item.Value
+	}
+	return fallback
+}
+
 func (w WAFService) GetWebhookSetting() (map[string]interface{}, error) {
+	secret := settingValue("WAFWebhookSecret", "")
+	enabled := settingValue("WAFWebhookEnable", "false")
 	res := map[string]interface{}{
-		"enable": false,
-		"method": "custom",
-		"url":    "",
-	}
-	if item, err := settingRepo.Get(settingRepo.WithByKey("WAFWebhookEnable")); err == nil {
-		res["enable"] = item.Value == "true" || item.Value == "enable"
-	}
-	if item, err := settingRepo.Get(settingRepo.WithByKey("WAFWebhookMethod")); err == nil && item.Value != "" {
-		res["method"] = item.Value
-	}
-	if item, err := settingRepo.Get(settingRepo.WithByKey("WAFWebhookURL")); err == nil {
-		res["url"] = item.Value
+		"enable":   enabled == "true" || enabled == "enable",
+		"method":   settingValue("WAFWebhookMethod", "custom"),
+		"url":      settingValue("WAFWebhookURL", ""),
+		"authType": settingValue("WAFWebhookAuthType", webhook_sender.AuthNone),
+		"keyword":  settingValue("WAFWebhookKeyword", ""),
+		// secret 一律不下发：它是加签密钥，拿到就能伪造消息。
+		// 前端只需要知道「有没有设置过」，用来决定占位文案是
+		// 「粘贴 SEC 开头的密钥」还是「留空则不修改」。
+		"secretSet": secret != "",
 	}
 	return res, nil
+}
+
+// resolveWebhookAuth 校验并归一化认证配置。
+//
+// 显式报错而不是静默降级：用户选了加签但渠道是企微，静默当成「无认证」
+// 的表现是消息发得出去、但上游那条通道其实是关闭校验的 —— 看起来一切正常，
+// 直到某天有人发现机器人可以被任意伪造。宁可保存失败并说明原因。
+func resolveWebhookAuth(method, authType, keyword string) (string, error) {
+	switch authType {
+	case "", webhook_sender.AuthNone:
+		return webhook_sender.AuthNone, nil
+	case webhook_sender.AuthKeyword:
+		if strings.TrimSpace(keyword) == "" {
+			return "", fmt.Errorf("认证方式为关键词时必须填写关键词")
+		}
+		return webhook_sender.AuthKeyword, nil
+	case webhook_sender.AuthSign:
+		if method != constant.DingTalk {
+			return "", fmt.Errorf("加签认证仅钉钉支持，当前通知渠道为 %q", method)
+		}
+		return webhook_sender.AuthSign, nil
+	default:
+		return "", fmt.Errorf("不支持的认证方式: %s", authType)
+	}
+}
+
+// webhookOptionsFromRequest 把表单值 + 已保存的密钥组装成一次外发的参数。
+//
+// 加签密钥留空表示沿用已保存的：密钥是 40 多位随机串，前端不会拿到明文，
+// 强迫用户每次保存都重新粘贴一遍既做不到也没必要。
+func webhookOptionsFromRequest(method, url, authType, keyword, secret string) (webhook_sender.Options, error) {
+	if method == "" {
+		method = constant.Custom
+	}
+	normalized, err := resolveWebhookAuth(method, authType, keyword)
+	if err != nil {
+		return webhook_sender.Options{}, err
+	}
+	if normalized == webhook_sender.AuthSign && secret == "" {
+		secret = settingValue("WAFWebhookSecret", "")
+		if secret == "" {
+			return webhook_sender.Options{}, fmt.Errorf("认证方式为加签时必须填写加签密钥")
+		}
+	}
+	return webhook_sender.Options{
+		Method:   method,
+		URL:      url,
+		AuthType: normalized,
+		Keyword:  strings.TrimSpace(keyword),
+		Secret:   secret,
+	}, nil
 }
 
 // TestWebhook 用**表单当前值**发一条测试消息（不要求先保存）。
@@ -912,25 +971,34 @@ func (w WAFService) GetWebhookSetting() (map[string]interface{}, error) {
 // 上游原话（例如 errcode=310000 关键词不匹配），不必等真有攻击才发现。
 func (w WAFService) TestWebhook(req request.WAFWebhookUpdate) error {
 	if req.URL == "" {
-		return fmt.Errorf("webhook url is empty")
+		return fmt.Errorf("未配置 Webhook 地址")
 	}
-	method := req.Method
-	if method == "" {
-		method = "custom"
-	}
-	payload, err := webhook_sender.BuildWebhookPayload(method,
-		"[3panel WAF] 测试消息", "收到这条消息说明攻击通知配置可用。")
+	opts, err := webhookOptionsFromRequest(req.Method, req.URL, req.AuthType, req.Keyword, req.Secret)
 	if err != nil {
 		return err
 	}
-	return webhook_sender.SendWebhookRequest(method, req.URL, payload, nil)
+	payload, err := webhook_sender.BuildWebhookPayload(opts.Method,
+		"[3panel WAF] 测试消息", "收到这条消息说明攻击通知配置可用。", opts.KeywordPrefix())
+	if err != nil {
+		return err
+	}
+	return webhook_sender.SendWithOptions(opts, payload, nil)
 }
 
 func (w WAFService) UpdateWebhookSetting(req request.WAFWebhookUpdate) error {
+	opts, err := webhookOptionsFromRequest(req.Method, req.URL, req.AuthType, req.Keyword, req.Secret)
+	if err != nil {
+		return err
+	}
 	values := map[string]string{
-		"WAFWebhookEnable": fmt.Sprintf("%v", req.Enable),
-		"WAFWebhookMethod": req.Method,
-		"WAFWebhookURL":    req.URL,
+		"WAFWebhookEnable":   fmt.Sprintf("%v", req.Enable),
+		"WAFWebhookMethod":   opts.Method,
+		"WAFWebhookURL":      req.URL,
+		"WAFWebhookAuthType": opts.AuthType,
+		"WAFWebhookKeyword":  opts.Keyword,
+	}
+	if req.Secret != "" {
+		values["WAFWebhookSecret"] = strings.TrimSpace(req.Secret)
 	}
 	for key, value := range values {
 		var item model.Setting
@@ -1284,26 +1352,36 @@ func enrichWAFAreas(logs []model.WAFLog, lookup func(string) (string, error)) {
 	}
 }
 
-// wafWebhookSetting 读取外发设置（enable, method, url）
-func wafWebhookSetting() (bool, string, string) {
-	enable, method, url := false, "", ""
-	if item, err := settingRepo.Get(settingRepo.WithByKey("WAFWebhookEnable")); err == nil {
-		enable = item.Value == "true" || item.Value == "enable"
+// wafWebhookOptions 读取外发设置（含认证方式）。
+// 第二个返回值表示「是否真的需要外发」—— 关闭或没填地址时为 false。
+func wafWebhookOptions() (webhook_sender.Options, bool) {
+	opts := webhook_sender.Options{
+		Method:   settingValue("WAFWebhookMethod", constant.Custom),
+		URL:      settingValue("WAFWebhookURL", ""),
+		AuthType: settingValue("WAFWebhookAuthType", webhook_sender.AuthNone),
+		Keyword:  settingValue("WAFWebhookKeyword", ""),
+		Secret:   settingValue("WAFWebhookSecret", ""),
 	}
-	if item, err := settingRepo.Get(settingRepo.WithByKey("WAFWebhookMethod")); err == nil {
-		method = item.Value
+	if opts.Method == "" {
+		opts.Method = constant.Custom
 	}
-	if item, err := settingRepo.Get(settingRepo.WithByKey("WAFWebhookURL")); err == nil {
-		url = item.Value
+	if opts.AuthType == "" {
+		opts.AuthType = webhook_sender.AuthNone
 	}
-	return enable && url != "", method, url
+	// 认证方式被改过、但密钥已经被清掉时，别让每条消息都发一次失败请求。
+	// 数据面还在正常拦，通知配置坏了只影响告警，不该把日志刷成滚屏。
+	if opts.AuthType == webhook_sender.AuthSign && opts.Secret == "" {
+		opts.AuthType = webhook_sender.AuthNone
+	}
+	enabled := settingValue("WAFWebhookEnable", "false")
+	return opts, (enabled == "true" || enabled == "enable") && opts.URL != ""
 }
 
 // pushWebhooks 将本轮拦截事件外发到配置的 Webhook（企业微信/钉钉/飞书/自定义）
 // 发送失败仅记日志，不影响入库与请求
 func (w WAFService) pushWebhooks(logs []model.WAFLog) {
-	enable, method, url := wafWebhookSetting()
-	if !enable {
+	opts, ok := wafWebhookOptions()
+	if !ok {
 		return
 	}
 	go func() {
@@ -1313,12 +1391,13 @@ func (w WAFService) pushWebhooks(logs []model.WAFLog) {
 			}
 			text := fmt.Sprintf("site: %s\nattack: %s\nip: %s\n%s %s\ndetail: %s",
 				l.WebsiteName, l.AttackType, l.IP, l.Method, l.Path, l.Detail)
-			payload, err := webhook_sender.BuildWebhookPayload(method, "[3panel WAF] 拦截事件", text)
+			payload, err := webhook_sender.BuildWebhookPayload(opts.Method,
+				"[3panel WAF] 拦截事件", text, opts.KeywordPrefix())
 			if err != nil {
 				global.LOG.Errorf("[waf] build webhook payload failed: %v", err)
 				return
 			}
-			if err := webhook_sender.SendWebhookRequest(method, url, payload, nil); err != nil {
+			if err := webhook_sender.SendWithOptions(opts, payload, nil); err != nil {
 				global.LOG.Errorf("[waf] send webhook failed: %v", err)
 				return
 			}
