@@ -7,6 +7,7 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/3panel-dev/3panel/agent/app/dto"
@@ -18,6 +19,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/constant"
 	"github.com/3panel-dev/3panel/agent/global"
 	"github.com/3panel-dev/3panel/agent/utils/encrypt"
+	"github.com/3panel-dev/3panel/agent/utils/localssh"
 	"github.com/3panel-dev/3panel/agent/utils/ssh"
 	terminalai "github.com/3panel-dev/3panel/agent/utils/terminal/ai"
 	"github.com/jinzhu/copier"
@@ -256,6 +258,7 @@ func (u *SettingService) SaveConnInfo(req dto.SSHConnData) error {
 	localConn, _ := json.Marshal(&connItem)
 	connAfterEncrypt, _ := encrypt.StringEncrypt(string(localConn))
 	_ = settingRepo.Update("LocalSSHConn", connAfterEncrypt)
+	_ = localssh.ClearDiag()
 	return nil
 }
 
@@ -283,6 +286,7 @@ func (u *SettingService) loadLocalConn() dto.SSHConnData {
 	var data dto.SSHConnData
 	localSSHConnShow, _ := settingRepo.GetValueByKey("LocalSSHConnShow")
 	data.LocalSSHConnShow = localSSHConnShow
+	data.Diag = localssh.GetDiag()
 	connItem, _ := settingRepo.GetValueByKey("LocalSSHConn")
 	if len(connItem) == 0 {
 		return data
@@ -313,9 +317,98 @@ func (u *SettingService) GetLocalConn() dto.SSHConnData {
 func (u *SettingService) GetLocalConnForSSH() (dto.SSHConnData, error) {
 	data := u.loadLocalConn()
 	if len(data.Addr) == 0 {
-		return data, errors.New("no such ssh conn info in db")
+		// The install-time probe can fail while the agent is starting (sshd not
+		// up, fleet sshd_config not applied yet) and leaves LocalSSHConn empty
+		// forever, because all migrations are already consumed. Self-heal on
+		// demand so the master terminal works without a manual save.
+		if !global.IsMaster {
+			return data, errors.New("no such ssh conn info in db")
+		}
+		healed, err := u.healLocalConn()
+		if err != nil {
+			return data, err
+		}
+		return healed, nil
 	}
 	return data, nil
+}
+
+// localConnHealInterval throttles the on-demand self-heal so a permanently
+// broken sshd is not re-probed on every terminal open.
+const localConnHealInterval = 30 * time.Second
+
+var lastLocalConnHeal atomic.Int64
+
+// healLocalConn (re)establishes the master-local SSH connection on demand when
+// LocalSSHConn is empty: it makes sure the panel key exists (generating it when
+// missing), probes the candidate loopback ports and stores the first connection
+// that works. The returned data is what the caller should dial with.
+func (u *SettingService) healLocalConn() (dto.SSHConnData, error) {
+	last := time.Unix(0, lastLocalConnHeal.Load())
+	now := time.Now()
+	if now.Sub(last) < localConnHealInterval {
+		return dto.SSHConnData{}, errors.New("local ssh conn is not configured yet, the previous self-heal attempt is still cooling down, please retry later")
+	}
+	lastLocalConnHeal.Store(now.UnixNano())
+
+	privateKey, err := localssh.ReadKey()
+	if err != nil || len(privateKey) == 0 {
+		if cerr := u.ensureLocalSSHKey(); cerr != nil {
+			_ = localssh.SetDiag(localssh.DiagKeyMissing(cerr))
+			return dto.SSHConnData{}, errors.New("local ssh conn self-heal failed: " + cerr.Error())
+		}
+		privateKey, err = localssh.ReadKey()
+		if err != nil || len(privateKey) == 0 {
+			_ = localssh.SetDiag(localssh.DiagKeyMissing(err))
+			return dto.SSHConnData{}, errors.New("local ssh conn self-heal failed: " + err.Error())
+		}
+	}
+
+	conn, portsTried, perr := localssh.Probe(privateKey)
+	if perr != nil {
+		diag := localssh.BuildDiag(portsTried, perr)
+		_ = localssh.SetDiag(diag)
+		return dto.SSHConnData{}, errors.New("local ssh conn self-heal failed: " + diag)
+	}
+	if serr := localssh.Save(conn); serr != nil {
+		_ = localssh.SetDiag("本机 SSH 探测成功，但连接信息写入数据库失败：" + serr.Error())
+		return dto.SSHConnData{}, errors.New("local ssh conn self-heal failed to store the connection: " + serr.Error())
+	}
+	_ = localssh.ClearDiag()
+	global.LOG.Infof("local ssh conn self-healed on port %d", conn.Port)
+	return dto.SSHConnData{
+		Addr:       conn.Addr,
+		Port:       uint(conn.Port),
+		User:       conn.User,
+		AuthMode:   "key",
+		PrivateKey: string(conn.PrivateKey),
+	}, nil
+}
+
+// ensureLocalSSHKey generates the panel key pair when the private key file is
+// missing. CreateRootCert registers the key in the certificate table and
+// appends the public key to the current user's authorized_keys.
+func (u *SettingService) ensureLocalSSHKey() error {
+	if localssh.KeyExists() {
+		return nil
+	}
+	req := dto.RootCertOperate{
+		EncryptionMode: "ed25519",
+		Name:           localssh.PanelKeyName,
+		Description:    localssh.PanelKeyDescription,
+	}
+	// CreateRootCert reports ErrRecordExist when a certificate with the same
+	// name is already registered, and in that case it does not regenerate the
+	// key. If the key file is genuinely missing in that situation, the ReadKey
+	// retry below fails and the diagnostic note explains it.
+	err := NewISSHService().CreateRootCert(req)
+	if err != nil {
+		be, ok := err.(buserr.BusinessError)
+		if !ok || be.Msg != "ErrRecordExist" {
+			return err
+		}
+	}
+	return nil
 }
 
 func (u *SettingService) SaveDescription(req dto.CommonDescription) error {

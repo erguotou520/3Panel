@@ -2,10 +2,18 @@
     <DrawerPro v-model="dialogVisible" :header="$t('terminal.addHost')" @close="handleClose" size="large">
         <el-form ref="hostRef" label-width="100px" label-position="top" :model="form" :rules="rules">
             <el-alert
-                v-if="form.isLocal"
+                v-if="form.isLocal && !connDiag"
                 class="common-prompt"
                 center
                 :title="$t('terminal.connLocalErr')"
+                :closable="false"
+                type="warning"
+            />
+            <el-alert
+                v-if="form.isLocal && connDiag"
+                class="common-prompt"
+                center
+                :title="connDiag"
                 :closable="false"
                 type="warning"
             />
@@ -73,10 +81,11 @@
 import { ElForm } from 'element-plus';
 import { Host } from '@/api/interface/host';
 import { Rules } from '@/global/form-rules';
-import { addHost, editHost, testByInfo } from '@/api/modules/terminal';
+import { addHost, editHost, loadLocalConn, testByInfo } from '@/api/modules/terminal';
 import i18n from '@/lang';
 import { reactive, ref } from 'vue';
 import { MsgError, MsgSuccess } from '@/utils/message';
+import { decodeBase64 } from '@/utils/base64';
 import { getAgentGroupList } from '@/api/modules/group';
 import { useGlobalStore } from '@/composables/useGlobalStore';
 
@@ -85,6 +94,9 @@ const targetNode = ref('local');
 
 const dialogVisible = ref();
 const isOK = ref(false);
+// Reason provided by the backend (self-heal diag) for why the local ssh
+// connection is not configured; shown above the form when non-empty.
+const connDiag = ref('');
 type FormInstance = InstanceType<typeof ElForm>;
 const hostRef = ref<FormInstance>();
 
@@ -150,6 +162,7 @@ const loadGroups = async () => {
     }
 };
 const loadLocal = async () => {
+    connDiag.value = '';
     form.id = 0;
     form.addr = '127.0.0.1';
     form.port = 22;
@@ -159,6 +172,25 @@ const loadLocal = async () => {
     form.privateKey = '';
     form.passPhrase = '';
     form.rememberPassword = false;
+    const res = await loadLocalConn();
+    connDiag.value = res.data.diag || '';
+    if (!res.data.addr) {
+        return;
+    }
+    // The backend base64-encodes credential fields in this response.
+    form.addr = res.data.addr;
+    form.port = res.data.port;
+    form.user = res.data.user;
+    form.authMode = res.data.authMode;
+    if (res.data.password) {
+        form.password = decodeBase64(res.data.password);
+    }
+    if (res.data.privateKey) {
+        form.privateKey = decodeBase64(res.data.privateKey);
+    }
+    if (res.data.passPhrase) {
+        form.passPhrase = decodeBase64(res.data.passPhrase);
+    }
 };
 
 const setDefault = () => {
@@ -201,6 +233,8 @@ const submitAddHost = (formEl: FormInstance | undefined, ops: string) => {
                 }
                 dialogVisible.value = false;
                 if (form.isLocal) {
+                    // The backend cleared the diag on save; mirror it locally.
+                    connDiag.value = '';
                     emit('on-new-local', targetNode.value);
                     emit('load-host-tree');
                     return;

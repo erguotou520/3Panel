@@ -51,6 +51,9 @@ export namespace Host {
         password: string;
 
         localSSHConnShow: string;
+        // Human readable reason the local ssh connection is missing/broken,
+        // set by the backend self-heal on probe failure.
+        diag?: string;
     }
     export interface GroupChange {
         id: number;

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/user"
 	"path"
 	"strconv"
 	"strings"
@@ -25,6 +24,7 @@ import (
 	"github.com/3panel-dev/3panel/agent/utils/copier"
 	"github.com/3panel-dev/3panel/agent/utils/encrypt"
 	"github.com/3panel-dev/3panel/agent/utils/firewall"
+	"github.com/3panel-dev/3panel/agent/utils/localssh"
 	"github.com/3panel-dev/3panel/agent/utils/ssh"
 
 	"github.com/go-gormigrate/gormigrate/v2"
@@ -853,46 +853,22 @@ var RefreshLocalSSHConn = &gormigrate.Migration{
 
 // localSSHKeyPath returns the panel-owned private key used for the local terminal.
 func localSSHKeyPath() string {
-	itemPath := "/root/.ssh/id_ed25519_3panel"
-	if currentInfo, err := user.Current(); err == nil && len(currentInfo.HomeDir) > 0 {
-		itemPath = path.Join(currentInfo.HomeDir, ".ssh/id_ed25519_3panel")
-	}
-	return itemPath
+	return localssh.KeyPath()
 }
 
 // ensureLocalSSHKeyPair returns the panel private key, generating it when absent.
 func ensureLocalSSHKeyPair() ([]byte, error) {
 	itemPath := localSSHKeyPath()
 	if _, err := os.Stat(itemPath); err != nil {
-		_ = service.NewISSHService().CreateRootCert(dto.RootCertOperate{EncryptionMode: "ed25519", Name: "id_ed25519_3panel", Description: "3Panel Terminal"})
+		_ = service.NewISSHService().CreateRootCert(dto.RootCertOperate{EncryptionMode: "ed25519", Name: localssh.PanelKeyName, Description: localssh.PanelKeyDescription})
 	}
 	return os.ReadFile(itemPath)
 }
 
-// localSSHProbeTimeout bounds each candidate probe so that a filtered or
-// unreachable port cannot stall startup.
-const localSSHProbeTimeout = 3 * time.Second
-
 // probeLocalSSHConn returns the first detected loopback port the key can log in to.
 func probeLocalSSHConn(privateKey []byte) (ssh.ConnInfo, bool) {
-	for _, port := range migrationutils.CandidateLocalSSHPorts() {
-		connWithKey := ssh.ConnInfo{
-			Addr:       "127.0.0.1",
-			User:       "root",
-			Port:       port,
-			AuthMode:   "key",
-			PrivateKey: privateKey,
-		}
-		probe := connWithKey
-		probe.DialTimeOut = localSSHProbeTimeout
-		client, err := ssh.NewClient(probe)
-		if err != nil {
-			continue
-		}
-		client.Close()
-		return connWithKey, true
-	}
-	return ssh.ConnInfo{}, false
+	conn, _, err := localssh.Probe(privateKey)
+	return conn, err == nil
 }
 
 func saveLocalSSHConn(tx *gorm.DB, connWithKey ssh.ConnInfo) error {

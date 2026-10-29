@@ -91,6 +91,9 @@ type SSHConnData struct {
 	PassPhrase string `json:"passPhrase"`
 
 	LocalSSHConnShow string `json:"localSSHConnShow"`
+	// Diag is a human readable note explaining why the local ssh connection is
+	// missing or broken; it is set by the on-demand self-heal on probe failure.
+	Diag string `json:"diag,omitempty"`
 }
 
 type SystemProxy struct {
