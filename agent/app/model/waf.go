@@ -48,12 +48,16 @@ func (w WAFRule) TableName() string {
 // WAFCCConfig 站点级 CC 防护配置（每站点一条）
 type WAFCCConfig struct {
 	BaseModel
-	WebsiteID uint   `gorm:"uniqueIndex" json:"websiteId"`
-	Limit     int    `json:"limit"`                                  // 窗口内最大请求数，0 = 关闭
-	Window    int    `gorm:"default:60" json:"window"`               // 窗口秒数
-	Action    string `gorm:"varchar(16);default:deny" json:"action"` // deny | challenge | log
-	ByURI     bool   `gorm:"default:false" json:"byUri"`             // 按 IP+URI 维度计数
-	Enabled   bool   `gorm:"default:true" json:"enabled"`
+	WebsiteID uint `gorm:"uniqueIndex" json:"websiteId"`
+	// Limit 必须 >0 才生效（0 视为未配置）；关闭防护用 Enabled=false。
+	Limit  int    `json:"limit"`                                  // 窗口内最大请求数
+	Window int    `gorm:"default:60" json:"window"`               // 窗口秒数
+	Action string `gorm:"varchar(16);default:deny" json:"action"` // deny | challenge | log
+	ByURI  bool   `gorm:"default:false" json:"byUri"`             // 按 IP+URI 维度计数
+	// 不要给 Enabled 加 gorm:"default:true"：GORM 在 INSERT 时会省略带默认值
+	// 的零值字段，于是「首次保存且开关关闭」会被 DB 默认值改写成 true ——
+	// 界面显示关闭、数据面却实际开启 CC，是本轮修复里最难排查的静默失效。
+	Enabled bool `json:"enabled"`
 }
 
 func (w WAFCCConfig) TableName() string {

@@ -4,6 +4,12 @@ local _M = {}
 local function url_decode(s)
     if not s then return nil end
     s = s:gsub("+", " ")
+    -- IIS 风格的 %uXXXX 编码
+    s = s:gsub("%%u(%x%x%x%x)", function(h)
+        local n = tonumber(h, 16)
+        if n and n > 0 and n < 128 then return string.char(n) end
+        return nil
+    end)
     s = s:gsub("%%(%x%x)", function(h)
         return string.char(tonumber(h, 16))
     end)
@@ -15,6 +21,19 @@ local HTML_ENTITIES = {
     ["&#39;"] = "'", ["&apos;"] = "'", ["&amp;"] = "&", ["&#x27;"] = "'",
     ["&#x2F;"] = "/", ["&#47;"] = "/", ["&nbsp;"] = " ",
 }
+
+-- JSON/JS 字符串里的 \uXXXX 转义（"<script>" 常以 \u003c 的形式出现在
+-- JSON body 或某些框架解码后的参数值中）。只还原 ASCII 码点：检测器关心的
+-- 是 < > ' " { } $ 等语法字符；非 ASCII 码点保持原样，避免生成非法 UTF-8。
+local function decode_json_escapes(s)
+    return (s:gsub("\\u(%x%x%x%x)", function(h)
+        local n = tonumber(h, 16)
+        if n and n > 0 and n < 128 then
+            return string.char(n)
+        end
+        return nil -- 返回 nil 时保留原匹配
+    end))
+end
 
 local function decode_entities(s)
     for ent, ch in pairs(HTML_ENTITIES) do
@@ -32,7 +51,10 @@ function _M.normalize(s)
     local prev = s
     for _ = 1, 3 do
         local cur = url_decode(prev)
-        if cur then cur = decode_entities(cur) end
+        if cur then
+            cur = decode_entities(cur)
+            cur = decode_json_escapes(cur)
+        end
         if not cur or cur == prev then break end
         prev = cur
     end

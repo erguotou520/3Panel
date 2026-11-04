@@ -402,11 +402,13 @@ describe('i18n 键存在性', () => {
         expect(enKeys.has(key)).toBe(true);
     });
 
-    it('WAF_DETECTORS 的 15 个 labelKey 全部有定义', () => {
+    it('WAF_DETECTORS 的 15 个 labelKey 与 descKey 全部有定义', () => {
         for (const d of WAF_DETECTORS) {
-            const key = d.labelKey.replace('website.', '');
-            expect(zhKeys.has(key)).toBe(true);
-            expect(enKeys.has(key)).toBe(true);
+            for (const k of [d.labelKey, d.descKey]) {
+                const key = k.replace('website.', '');
+                expect(zhKeys.has(key)).toBe(true);
+                expect(enKeys.has(key)).toBe(true);
+            }
         }
     });
 

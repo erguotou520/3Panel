@@ -121,13 +121,22 @@
 
                         <el-form-item :label="$t('website.wafDetectors')">
                             <div class="waf-detector-grid">
-                                <el-checkbox
+                                <!-- 勾选 = 关闭该检测器。用 tooltip 逐个解释检测器用途与误伤风险，
+                                     避免用户在不了解语义的情况下误关。 -->
+                                <el-tooltip
                                     v-for="d in detectorOptions"
                                     :key="d.name"
-                                    :value="d.name"
-                                    :label="$t(d.labelKey)"
-                                    @change="onDetectorToggle(d.name, $event)"
-                                />
+                                    :content="$t(d.descKey)"
+                                    placement="top"
+                                    :show-after="200"
+                                >
+                                    <el-checkbox
+                                        :model-value="disabledDetectors.has(d.name)"
+                                        @change="onDetectorToggle(d.name, $event)"
+                                    >
+                                        {{ $t(d.labelKey) }}
+                                    </el-checkbox>
+                                </el-tooltip>
                                 <span class="field-tip block">{{ $t('website.wafDetectorsTip') }}</span>
                             </div>
                         </el-form-item>
@@ -873,12 +882,14 @@ const pageColorInvalid = computed(
 const isValidPageColorValue = (color: string) =>
     /^#[0-9a-fA-F]{6}$/.test(color) || NAMED_PAGE_COLORS.includes(color.toLowerCase());
 
+// 勾选 = 关闭检测器（与区块标题、提示文案一致）。
+// 之前这里判断反了：勾选反而把检测器从 disabled 集合里删掉，
+// 再叠加模板缺少 :model-value，导致保存后重新进入页面勾选状态全部丢失。
 const onDetectorToggle = (name: string, checked: boolean | (string | number)[]) => {
-    const on = checked === true;
-    if (on) {
-        disabledDetectors.value.delete(name);
-    } else {
+    if (checked === true) {
         disabledDetectors.value.add(name);
+    } else {
+        disabledDetectors.value.delete(name);
     }
     option.value.disabledDetectors = formatDisabledDetectors(disabledDetectors.value);
 };
@@ -1018,7 +1029,9 @@ const trendOption = computed(() => {
 
 const cc = ref<any>({
     websiteId: props.websiteId,
-    limit: 0,
+    // 默认上限不能是 0：0 在数据面等价于「未配置」，用户只打开开关、
+    // 不改上限就保存，会得到「开关是开的、实际没有防护」。
+    limit: 100,
     window: 60,
     action: 'deny',
     byUri: false,
@@ -1177,6 +1190,11 @@ const loadCC = async () => {
     const res = await getWAFCCConfig(props.websiteId);
     if (res.data) {
         cc.value = res.data;
+        // 历史数据里 limit=0 表示「关闭」（旧语义）。新语义下 0 不是合法上限，
+        // 回填 0 会让「只打开开关」提交出后端必然拒绝的请求，这里兜底成默认值。
+        if (!(cc.value.limit > 0)) {
+            cc.value.limit = 100;
+        }
     }
     await markCCClean();
 };
@@ -1184,7 +1202,9 @@ const loadCC = async () => {
 const saveCC = async () => {
     await updateWAFCCConfig(ccPayload.value);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    await markCCClean();
+    // 保存后回读而不是只标记干净：后端会对窗口/上限做兜底，
+    // 只清脏标记会让界面继续显示提交值，与数据面实际配置不一致。
+    await loadCC();
 };
 
 const loadOption = async () => {

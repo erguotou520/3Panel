@@ -375,12 +375,19 @@ func (w WAFService) syncDataPlane() error {
 
 // ==================== CC 配置 ====================
 
+// defaultCCLimit 是 CC 防护的默认请求数上限。
+//
+// 不能是 0：前端拿到 0 后用户只打开开关、不改上限就提交，而 0 在数据面
+// 是「未配置」——开关显示打开、实际完全没有防护。给一个能直接生效的
+// 合理默认值，用户只需要开开关。
+const defaultCCLimit = 100
+
 func (w WAFService) GetCCConfig(websiteID uint) (*model.WAFCCConfig, error) {
 	var cc model.WAFCCConfig
 	err := global.DB.Where("website_id = ?", websiteID).First(&cc).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &model.WAFCCConfig{WebsiteID: websiteID, Window: 60, Action: model.WAFActionDeny, Enabled: false}, nil
+			return &model.WAFCCConfig{WebsiteID: websiteID, Limit: defaultCCLimit, Window: 60, Action: model.WAFActionDeny, Enabled: false}, nil
 		}
 		return nil, err
 	}
@@ -388,6 +395,13 @@ func (w WAFService) GetCCConfig(websiteID uint) (*model.WAFCCConfig, error) {
 }
 
 func (w WAFService) UpdateCCConfig(req request.WAFCCUpdate) error {
+	// 开启 CC 却没有有效上限，等于「防护开着但没有阈值」：数据面会把
+	// limit<=0 当成未配置而整条跳过，界面却显示已开启。这里直接拒绝，
+	// 让用户看到明确错误，而不是保存成功后再去猜为什么没生效。
+	// 关闭防护请把 enabled 置 false，不要靠把 limit 清零。
+	if req.Enabled && req.Limit <= 0 {
+		return fmt.Errorf("CC 上限必须大于 0")
+	}
 	var cc model.WAFCCConfig
 	err := global.DB.Where("website_id = ?", req.WebsiteID).First(&cc).Error
 	wasNew := errors.Is(err, gorm.ErrRecordNotFound)
@@ -402,9 +416,10 @@ func (w WAFService) UpdateCCConfig(req request.WAFCCUpdate) error {
 	cc.Window = req.Window
 	cc.Action = req.Action
 	cc.ByURI = req.ByURI
-	// 开关由前端显式给出。此前是从 Limit>0 派生的，导致「配好阈值先不启用」
-	// 无法表达：关掉防护就得把 limit 清零，下次开启还要重新填一遍。
-	cc.Enabled = req.Enabled && req.Limit > 0
+	// 开关完全由前端显式给出，不再从 Limit>0 派生。
+	// 之前的 `req.Enabled && req.Limit > 0` 会把「打开开关但没填上限」
+	// 静默降级成 enabled=false —— 保存返回成功，防护实际没开。
+	cc.Enabled = req.Enabled
 	if cc.Action == "" {
 		cc.Action = model.WAFActionDeny
 	}

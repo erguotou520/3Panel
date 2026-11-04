@@ -330,7 +330,7 @@ func TestWAFCCConfig(t *testing.T) {
 		t.Fatalf("default cc: %+v %v", cc, err)
 	}
 
-	if err := svc.UpdateCCConfig(request.WAFCCUpdate{WebsiteID: 99, Limit: 50, Window: 30, Action: model.WAFActionChallenge, ByURI: true}); err != nil {
+	if err := svc.UpdateCCConfig(request.WAFCCUpdate{WebsiteID: 99, Enabled: true, Limit: 50, Window: 30, Action: model.WAFActionChallenge, ByURI: true}); err != nil {
 		t.Fatalf("update cc: %v", err)
 	}
 	cc, _ = svc.GetCCConfig(99)
@@ -338,8 +338,8 @@ func TestWAFCCConfig(t *testing.T) {
 		t.Fatalf("cc after update: %+v", cc)
 	}
 
-	// limit=0 即关闭
-	if err := svc.UpdateCCConfig(request.WAFCCUpdate{WebsiteID: 99, Limit: 0, Window: 30, Action: model.WAFActionDeny}); err != nil {
+	// 关闭防护靠显式开关，不再靠 limit=0
+	if err := svc.UpdateCCConfig(request.WAFCCUpdate{WebsiteID: 99, Enabled: false, Limit: 0, Window: 30, Action: model.WAFActionDeny}); err != nil {
 		t.Fatalf("disable cc: %v", err)
 	}
 	cc, _ = svc.GetCCConfig(99)
