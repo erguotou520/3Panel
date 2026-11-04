@@ -4,7 +4,9 @@ local _M = {}
 
 -- 返回 nil（未检出）或 描述字符串
 function _M.detect()
-    local headers, err = ngx.req.get_headers(100)
+    -- 0 = 不截断：CL/TE 走私检测必须看到全部头，否则第 101 个之后的
+    -- Transfer-Encoding / Content-Length 直接漏检。
+    local headers, err = ngx.req.get_headers(0)
     if not headers then
         return nil
     end

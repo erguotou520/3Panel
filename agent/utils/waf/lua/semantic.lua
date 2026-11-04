@@ -247,6 +247,19 @@ function _M.detect_sqli(value)
     if s:find("%a['\"]%s*%-%-") or s:find("%a['\"]%s*#") then
         return true
     end
+    -- 布尔恒真/恒假：1 OR true-- / id=1 AND false# / 1 OR NOT 1=0。
+    -- 之前的候选词与检测器都不覆盖 true/false/not，真实 OpenResty 下
+    -- `?id=1 OR true--` 稳定 200（实测），这是公开工具的标准 payload。
+    if s:find("%f[%w]or%s+true%f[^%w]") or s:find("%f[%w]or%s+false%f[^%w]")
+        or s:find("%f[%w]and%s+true%f[^%w]") or s:find("%f[%w]and%s+false%f[^%w]")
+        or s:find("%f[%w]or%s+not%f[^%w]") or s:find("%f[%w]and%s+not%f[^%w]") then
+        return true
+    end
+    -- 十六进制/八进制数值比较：0x31 OR 0x31=0x31 / id=0x1 AND 0x1>0
+    if (s:find("%f[%w]or%f[^%w]") or s:find("%f[%w]and%f[^%w]"))
+        and (s:find("0x%x+%s*[=<>!]%s*0x%x+") or s:find("0x%x+%s+or%s+0x%x+")) then
+        return true
+    end
     -- ORDER BY 枚举：1' ORDER BY 10-- 末尾注释已由上面覆盖，
     -- 无注释形态（?id=1 ORDER BY 10）靠「引号/数字 + ORDER BY + 数字」识别，
     -- 数字超过 1 即为列枚举探针。
@@ -467,29 +480,96 @@ function _M.detect_lfi(value, uri)
 end
 
 -- ============ SSRF ============
-local SSRF_HOSTS = {"169%.254%.169%.254", "metadata%.google%.internal", "100%.100%.100%.200", "127%.0%.0%.1", "localhost", "0%.0%.0%.0", "%[::1%]", "169%.254%.169%.254:latest"}
+-- SSRF 的成立条件是「服务端把这个值当作请求目标去发请求」。WAF 看不到应用怎么用，
+-- 因此判定必须结合上下文，否则内网部署会把本站自身地址全部拦掉（历史上就是 100% 误报）：
+--   · 头部（Referer/Origin 等）根本不判 —— 浏览器回带本站内网 URL 是正常行为；
+--   · 只有参数名像 URL 目标参数（url/redirect/callback…）时，才做内网段/本机判定；
+--   · 其它位置（URI 整体、请求体、普通参数）只保留云元数据/反连平台这类高置信度判定，
+--     避免把业务里正常的绝对内网 URL（跳转回跳、SSO return、图片代理）判成攻击。
+local SSRF_URL_PARAM_HINTS = {
+    "url", "uri", "href", "src", "link", "target", "dest", "redirect",
+    "return", "next", "callback", "webhook", "notify", "feed", "proxy",
+    "endpoint", "fetch", "download", "host",
+}
 
-function _M.detect_ssrf(value)
-    if not value or value == "" then return false end
-    local s = normalize.normalize(value)
-    if not (s:find("^http") or s:find("^gopher") or s:find("^dict") or s:find("^file") or s:find("^ftp") or s:find("^rmi") or s:find("^ldap") or s:find("^jdbc")) then return false end
-    if s:find("^rmi") or s:find("^ldap") or s:find("^jdbc") then return true end
-    if s:find("%.oast%.") or s:find("%.oast%.live") or s:find("dnslog") then return true end
-    for _, h in ipairs(SSRF_HOSTS) do
-        if s:find(h) then return true end
-    end
-    -- 内网网段
-    local ip = s:match("^https?://([%d%.]+)")
-    if ip then
-        local a, b = ip:match("^(%d+)%.(%d+)")
-        a = tonumber(a)
-        if a == 10 or a == 127 or a == 0 or (a == 192 and b == "168") or (a == 172 and tonumber(b) and tonumber(b) >= 16 and tonumber(b) <= 31) then
-            return true
-        end
+local function is_url_param(name)
+    if type(name) ~= "string" or name == "" then return false end
+    local n = string.lower(name)
+    for _, h in ipairs(SSRF_URL_PARAM_HINTS) do
+        if n:find(h, 1, true) then return true end
     end
     return false
 end
+_M.is_url_param = is_url_param
 
+-- 云元数据 / 容器运行时元数据：命中即高置信度 SSRF，不依赖参数名上下文
+local SSRF_METADATA = {
+    ["169.254.169.254"] = true,
+    ["169.254.170.2"] = true,
+    ["metadata.google.internal"] = true,
+    ["100.100.100.200"] = true,
+}
+
+-- 从「scheme://authority/path」里取出 host：去掉 userinfo、端口，保留 IPv6 方括号内地址
+local function url_host(s)
+    local authority = s:match("^[%a][%a%d%+%.%-]*://([^/%?#]*)")
+    if not authority or authority == "" then return nil end
+    local host = authority:match("([^@]*)$")
+    if not host or host == "" then return nil end
+    if host:sub(1, 1) == "[" then
+        return host:match("^%[([^%]]*)%]")
+    end
+    return host:match("^([^:]+)")
+end
+
+local function ip_octets(host)
+    local a, b, c, d = host:match("^(%d+)%.(%d+)%.(%d+)%.(%d+)$")
+    if not a then return nil end
+    return tonumber(a), tonumber(b), tonumber(c), tonumber(d)
+end
+
+local function is_private_ip(host)
+    local a, b = ip_octets(host)
+    if not a then return false end
+    if a == 10 or a == 127 then return true end
+    if a == 192 and b == 168 then return true end
+    if a == 172 and b and b >= 16 and b <= 31 then return true end
+    if a == 169 and b == 254 then return true end
+    if a == 0 and b == 0 and host == "0.0.0.0" then return true end
+    return false
+end
+
+local function is_oast_host(host)
+    return host:find("%.oast%.") ~= nil
+        or host:find("%.oast%.live$") ~= nil
+        or host:find("interact", 1, true) ~= nil
+        or host:find("burpcollaborator", 1, true) ~= nil
+        or host:find("dnslog", 1, true) ~= nil
+end
+
+function _M.detect_ssrf(value, ctx)
+    if not value or value == "" then return false end
+    -- 头部（Referer/Origin/X-Forwarded-* 等）不是服务端会去请求的地址，直接放过。
+    if ctx and ctx.header then return false end
+    local s = normalize.normalize(value)
+    -- 协议前缀必须精确到 "://"：原来用 ^http/^ldap 会把 httpclient、ldap_username
+    -- 这类普通单词也放进判定，属于无意义的宽匹配。
+    if not (s:find("^https?://") or s:find("^gopher://") or s:find("^dict://")
+        or s:find("^file://") or s:find("^ftp://") or s:find("^rmi://")
+        or s:find("^ldap://") or s:find("^jdbc:")) then
+        return false
+    end
+    -- JNDI 协议（rmi/ldap/jdbc）本身就意味着远程加载，服务端一旦解析即构成 SSRF
+    if s:find("^rmi://") or s:find("^ldap://") or s:find("^jdbc:") then return true end
+    local host = url_host(s)
+    if not host or host == "" then return false end
+    if SSRF_METADATA[host] or is_oast_host(host) then return true end
+    -- 内网网段/本机地址只在 URL 类参数里才算命中：
+    -- 否则内网站点自己的绝对 URL（Referer、跳转回跳、SSO return）都会被误杀。
+    if not (ctx and is_url_param(ctx.param)) then return false end
+    return is_private_ip(host) or host == "localhost" or host:find("%.localhost$") ~= nil
+        or host == "::1" or host == "0:0:0:0:0:0:0:1"
+end
 -- ============ Template / code injection / deserialization / XXE ============
 -- JNDI 混淆展开：把内层表达式求值成最终字符串，再查 jndi:
 --
@@ -775,6 +855,19 @@ function _M.detect_exposure(value)
     return false
 end
 
+-- luajit 单测环境没有 ngx.re 时走的兜底候选判定：or/and 后跟比较、括号、
+-- true/false/not、十六进制等形态也必须放行，否则测试与生产判定不一致。
+local function boolean_op_candidate(lower)
+    if not (lower:find("%f[%w]or%f[^%w]") or lower:find("%f[%w]and%f[^%w]")) then
+        return false
+    end
+    return lower:find("=", 1, true) ~= nil
+        or lower:find("(", 1, true) ~= nil
+        or lower:find("%f[%w]true%f[^%w]") ~= nil
+        or lower:find("%f[%w]false%f[^%w]") ~= nil
+        or lower:find("0x", 1, true) ~= nil
+end
+
 local function has_attack_candidate(lower)
     -- 新增三类检测的候选词同样要在这里放行，否则会在快速筛被提前 return nil：
     --   · 原型污染：__proto__ / constructor（含 query 与 JSON 两种形态）
@@ -783,8 +876,8 @@ local function has_attack_candidate(lower)
     -- 这些串本身不含任何 SQL/XSS/命令元字符，是各自类别唯一的证据来源。
     if lower:find("__proto__", 1, true) or lower:find("constructor", 1, true)
         or lower:find("__schema", 1, true) or lower:find("__type", 1, true)
-        or lower:find("%\"query\"", 1, true) or lower:find("'query'", 1, true)
-        or lower:find("%\"mutation\"", 1, true) or lower:find("'mutation'", 1, true)
+        or lower:find('"query"', 1, true) or lower:find("'query'", 1, true)
+        or lower:find('"mutation"', 1, true) or lower:find("'mutation'", 1, true)
         or lower:find("/.env", 1, true) or lower:find("/.git", 1, true)
         or lower:find("/.svn", 1, true) or lower:find("/.aws", 1, true)
         or lower:find("/.ssh", 1, true) or lower:find("wp-config", 1, true)
@@ -792,14 +885,14 @@ local function has_attack_candidate(lower)
         or lower:find("actuator", 1, true) or lower:find("server-status", 1, true)
         -- 备份/编辑器残留后缀：只有这些后缀、没有任何攻击特征时，
         -- 上面的候选词一个都命中不了，会被这里提前 return nil 漏掉。
-        or lower:find("%.bak", 1, true) or lower:find("%.old", 1, true)
-        or lower:find("%.orig", 1, true) or lower:find("%.swp", 1, true)
-        or lower:find("%.swo", 1, true) or lower:find("%.save", 1, true)
+        or lower:find(".bak", 1, true) or lower:find(".old", 1, true)
+        or lower:find(".orig", 1, true) or lower:find(".swp", 1, true)
+        or lower:find(".swo", 1, true) or lower:find(".save", 1, true)
         -- Java 序列化魔数 AC ED 00 05 的三种编码。它们不含任何攻击元字符，
         -- 不在这里放行就会被下面的快速筛提前 return nil，detect_deserialization
         -- 里的判断永远走不到（aced0005 就曾因此完全失效）。
         or lower:find("aced0005", 1, true) or lower:find("ro0ab", 1, true)
-        or lower:find("%f[%w]id_rsa") or lower:find("%f[%w]credentials") then
+        or lower:find("id_rsa", 1, true) or lower:find("credentials", 1, true) then
         return true
     end
     -- 可执行扩展名必须在这里放行：?file=shell.php / /uploads/x.jsp 这类请求
@@ -810,18 +903,18 @@ local function has_attack_candidate(lower)
         if ngx.re.find(lower, [[\.(?:php\d*|phtml|phar|jspx?|asp[x]?|cgi|pl|py|sh|bash|exe|dll|so)(?:$|[^a-z0-9])]]) then
             return true
         end
-    elseif lower:find("%.php", 1, true) or lower:find("%.jsp", 1, true)
-        or lower:find("%.asp", 1, true) or lower:find("%.phtml", 1, true)
-        or lower:find("%.phar", 1, true) or lower:find("%.py", 1, true)
-        or lower:find("%.pl", 1, true) or lower:find("%.sh", 1, true)
-        or lower:find("%.cgi", 1, true) or lower:find("%.exe", 1, true) then
+    elseif lower:find(".php", 1, true) or lower:find(".jsp", 1, true)
+        or lower:find(".asp", 1, true) or lower:find(".phtml", 1, true)
+        or lower:find(".phar", 1, true) or lower:find(".py", 1, true)
+        or lower:find(".pl", 1, true) or lower:find(".sh", 1, true)
+        or lower:find(".cgi", 1, true) or lower:find(".exe", 1, true) then
         return true
     end
     if ngx and ngx.re and ngx.re.find then
-        local from = ngx.re.find(lower, [[[%<'"`;|$\\{}]|\.\.|://|\b(?:union|select|insert|update|delete|drop|sleep|waitfor|gtid_subset|hashbytes|concat|javascript|jndi|phpinfo|printf|print_r|var_dump|md5|processbuilder|ognlcontext|groovyshell|file_put_contents|base64_decode|expr|echo|touch|ping|xp_cmdshell|alert|prompt|eval|onmouseover)\b|@@|(?:javax\.naming|sun\.awt\.datatransfer|jdk\.nashorn|org\.apache\.commons\.beanutils)|/(?:etc|proc|usr/bin)/|/actuator/(?:env|heapdump|gateway/routes)|/phpmyadmin|/druid/(?:login\.html|websession\.html)|/apisix/admin/routes|/\.git/(?:config|head)|/\.env|/server-status|/swagger-ui|/web\.config|/web-inf/web\.xml|/jmx-console|/manager/html|/\.ds_store|/meta-inf/maven/|/bsh\.servlet\.bshservlet|/phpunit/phpunit/src/util/php/eval-stdin\.php|/(?:shell[\w-]*|webshell[\w-]*|phpspy|c99|r57)\.php|/[^/?]+\.sql$|/(?:backup|db|database|root|site|test|web|webapps|website|www|wwwroot)\.(?:zip|rar)$|/(?:config|db)\.php\.bak$|/[^/?]+\.config\.bak$|/wls-wsat/|/mgmt/tm/util/bash|/jmreport/testconnection|device\.rsp|s=captcha|/actuator;/|/center/api/session(?:[/?]|$)|/excu_shell|invokefunction|__construct|__destruct|call_user_func|memberaccess|classloader|updatexml|extractvalue|os\.execute|print\s*\(|system\s*\(|passthru|shell_exec|initialcontext|defineclass|%3c|%3e|%27|%24\{|\{\{|\band\s+\d+\s*[=<>]|\bor\s+\d+\s*=|__class__|__mro__|[?&]cmd=|dbms_pipe|char\(\d|/%*!|case\s+when|cast\(|sh\s+-c\s+\S|nc\s+-e|md5sum|nslookup|oast|interactsh|dnslog|windows/win\.ini|program files|documents and settings|appdata|sys_user|java\.lang\.[a-z]+|java\.util\.[a-z]+|templatesimpl|logback\.core|this\.constructor\.constructor|assert\s*\(\s*base\d*_decode|/bin/sleep|create\s+alias|\.aspx|\.ashx|\.jspx|\.jsp|\|a:\d+:\{|group\s+by|decode\s*\(\s*length|/\*\*]], "jo")
+        local from = ngx.re.find(lower, [[[%<'"`;|$\\{}]|\.\.|://|\b(?:union|select|insert|update|delete|drop|sleep|waitfor|gtid_subset|hashbytes|concat|javascript|jndi|phpinfo|printf|print_r|var_dump|md5|processbuilder|ognlcontext|groovyshell|file_put_contents|base64_decode|expr|echo|touch|ping|xp_cmdshell|alert|prompt|eval|onmouseover)\b|@@|(?:javax\.naming|sun\.awt\.datatransfer|jdk\.nashorn|org\.apache\.commons\.beanutils)|/(?:etc|proc|usr/bin)/|/actuator/(?:env|heapdump|gateway/routes)|/phpmyadmin|/druid/(?:login\.html|websession\.html)|/apisix/admin/routes|/\.git/(?:config|head)|/\.env|/server-status|/swagger-ui|/web\.config|/web-inf/web\.xml|/jmx-console|/manager/html|/\.ds_store|/meta-inf/maven/|/bsh\.servlet\.bshservlet|/phpunit/phpunit/src/util/php/eval-stdin\.php|/(?:shell[\w-]*|webshell[\w-]*|phpspy|c99|r57)\.php|/[^/?]+\.sql$|/(?:backup|db|database|root|site|test|web|webapps|website|www|wwwroot)\.(?:zip|rar)$|/(?:config|db)\.php\.bak$|/[^/?]+\.config\.bak$|/wls-wsat/|/mgmt/tm/util/bash|/jmreport/testconnection|device\.rsp|s=captcha|/actuator;/|/center/api/session(?:[/?]|$)|/excu_shell|invokefunction|__construct|__destruct|call_user_func|memberaccess|classloader|updatexml|extractvalue|os\.execute|print\s*\(|system\s*\(|passthru|shell_exec|initialcontext|defineclass|%3c|%3e|%27|%24\{|\{\{|\band\s+\d+\s*[=<>]|\bor\s+\d+\s*=|__class__|__mro__|[?&]cmd=|dbms_pipe|char\(\d|/%*!|case\s+when|cast\(|sh\s+-c\s+\S|nc\s+-e|md5sum|nslookup|oast|interactsh|dnslog|windows/win\.ini|program files|documents and settings|appdata|sys_user|java\.lang\.[a-z]+|java\.util\.[a-z]+|templatesimpl|logback\.core|this\.constructor\.constructor|assert\s*\(\s*base\d*_decode|/bin/sleep|create\s+alias|\.aspx|\.ashx|\.jspx|\.jsp|\|a:\d+:\{|group\s+by|decode\s*\(\s*length|/\*\*|\b(?:or|and)\s+(?:\(|not\b|true\b|false\b|0x[0-9a-f]|\d+\s*[+\-*])]], "jo")
         return from ~= nil
     end
-    return _M.detect_exposure(lower)
+    return boolean_op_candidate(lower) or _M.detect_exposure(lower)
         or lower:find("[%%<'\"`;|$\\{}]")
         or lower:find("..", 1, true)
         or lower:find("://", 1, true)
@@ -984,8 +1077,31 @@ function _M.detect_dangerous_ext(value)
     return false
 end
 
+-- 文件上传检测只应在文件类参数上生效。
+--
+-- 之前 detect_dangerous_ext 被放进通用检测流水线，对 request_uri 与所有
+-- 参数值生效，导致 GET /index.php、/?next=/index.php 这类正常请求被误判为
+-- "危险文件上传"（真实 OpenResty 实测 403）—— 对 PHP/JSP 站点等于开启 WAF
+-- 即全站不可用。这里用参数名收窄到文件语义；URI 本身不再做该判定。
+local FILE_PARAM_NAMES = {
+    file = true, filename = true, filepath = true, file_path = true,
+    upload = true, uploadfile = true, upload_file = true, fname = true,
+    attachment = true, attachment_name = true, attachmentname = true,
+    avatar = true, photo = true, image = true, media = true, doc = true,
+}
+
+local function is_file_param(name)
+    if type(name) ~= "string" or name == "" then return false end
+    local n = name:lower()
+    if FILE_PARAM_NAMES[n] then return true end
+    if n:match("^file[%w_]*$") or n:match("^upload[%w_]*$") then return true end
+    if n:find("[_%-]file%[?%d*%]?$") or n:find("[_%-]upload%[?%d*%]?$") then return true end
+    return false
+end
+_M.is_file_param = is_file_param
+
 -- 对单个「参数值或 URI」跑全套检测，返回 {type=..., value=...} 或 nil
-function _M.inspect(value, uri)
+function _M.inspect(value, uri, ctx)
     if not value or value == "" then return nil end
     -- 强度为 off 时整体不检测。
     if level == "off" then return nil end
@@ -1011,7 +1127,9 @@ function _M.inspect(value, uri)
         {"sqli", _M.detect_sqli},
         {"xss", _M.detect_xss},
         {"rce", _M.detect_rce},
-        {"upload", _M.detect_dangerous_ext},
+        {"upload", function(v, c)
+            return c and is_file_param(c.param) and _M.detect_dangerous_ext(v)
+        end},
         {"prototype_pollution", _M.detect_prototype_pollution},
         {"graphql", _M.detect_graphql},
         {"sensitive_path", _M.detect_sensitive_path},
@@ -1032,7 +1150,7 @@ function _M.inspect(value, uri)
         if detector_off(c[1]) then
             -- 该检测器被关掉，继续下一个
         else
-            local hit = c[2](value)
+            local hit = c[2](value, ctx)
             if hit then
                 return {type = c[1], value = value}
             end
@@ -1230,15 +1348,15 @@ function _M.detect_graphql(value)
     -- 把花括号内的内容抓出来，数其中 "字段名(" 的出现次数，>=2 即为枚举。
     local body = s:match("{%b{}}")
     if body then
+        -- 单次遍历 + 哈希计数（原实现对每个字段名重新 gmatch 全文，
+        -- O(fields × len)，实测 132KB body 单请求 297ms，可被打成 CPU DoS）。
+        local counts = {}
         for field in body:gmatch("([%a_][%w_]*)%s*%(") do
-            local n = 0
-            for _ in body:gmatch(field .. "%s*%(") do
-                n = n + 1
-                if n >= 2 then break end
-            end
+            local n = (counts[field] or 0) + 1
             if n >= 2 then
                 return true
             end
+            counts[field] = n
         end
     end
     -- alias 前缀叠加字段选择：alias1: user / a1: user

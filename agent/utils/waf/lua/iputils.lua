@@ -123,6 +123,69 @@ function _M.in_cidr(ip, cidr)
 end
 
 -- ============================================================================
+-- 限流 / 探测键归一化（CC、probe 用）
+--
+-- 旧实现直接用 ngx.var.remote_addr 拼键，有两个问题：
+--   1. IPv6 每个 /128 一个键 —— 攻击者只要在同一个 /64 内换源地址，
+--      CC 计数就永远从 1 开始，限流完全可绕过；
+--   2. 键空间是「地址 × URI」的笛卡尔积，唯一 URL 能被无限枚举，
+--      32m 的 waf_dict 被 CC/probe/日志/规则快照共用，键打满后
+--      incr 失败 —— CC 静默放行、攻击日志静默丢失。
+--
+-- rate_key 把地址折叠成稳定的「IPv4 单地址 / IPv6 的 /64 前缀」键，
+-- 配合调用方对 URI 做定长哈希分桶，使每个窗口内可创建的键数量有界。
+--
+-- 注意：只做键的空间折叠，不改变任何判定语义；in_cidr / in_ranges 不受影响。
+-- ============================================================================
+
+-- 32 位字符串哈希（djb2），纯 Lua 算术实现。
+-- 仅作 ngx.crc32_short 不可用时的等价回退（waf_test.lua 的 ngx stub 就没有
+-- crc32_short），保证「URI 分桶」在任何环境都有界且确定性一致。
+-- 乘法 + 取模都在 2^53 精度内，无溢出误差。
+local HASH_MOD = 4294967296
+function _M.str_hash(s)
+    if type(s) ~= "string" or s == "" then return 0 end
+    local h = 5381
+    for i = 1, #s do
+        h = (h * 33 + s:byte(i)) % HASH_MOD
+    end
+    return h
+end
+
+-- 把 IP 折叠成限流键：
+--   IPv4            -> 原规范字符串（与旧键完全一致，向后兼容）
+--   IPv6            -> /64 前缀（前 4 组 = 8 字节）的定长 hex，如
+--                      "2001:db8:1:2::/64" -> "20010db800010002"
+--   IPv4-mapped v6  -> 还原成 IPv4 点分键。双栈监听（listen [::]）下 nginx
+--                      会把 IPv4 客户端报成 ::ffff:a.b.c.d；若一律按 /64
+--                      折叠，所有 IPv4 客户端会共用 ::/64 一个桶 —— 既改变
+--                      按 IP 限流的语义，也会把全站 IPv4 流量打成一个计数器。
+--   解析失败        -> 回退原始字符串（例如带 zone id 的地址），行为与旧键一致
+function _M.rate_key(ip)
+    if type(ip) ~= "string" then return nil end
+    if ip == "" then return "" end
+    if ip:find(":", 1, true) == nil then
+        return ip -- IPv4：保持原样
+    end
+    local g = expand_ipv6(ip)
+    if not g then
+        return ip -- 无法解析：退化为原文，至少不崩
+    end
+    -- IPv4-mapped（::ffff:a.b.c.d / ::ffff:0:a.b.c.d 同属 ::ffff:0:0/96）
+    local zero = true
+    for i = 1, 5 do
+        if g[i] ~= 0 then zero = false break end
+    end
+    if zero and g[6] == 0xFFFF then
+        return string.format("%d.%d.%d.%d",
+            math.floor(g[7] / 256), g[7] % 256,
+            math.floor(g[8] / 256), g[8] % 256)
+    end
+    -- 普通 IPv6：取 /64 前缀（前 4 组）的定长 hex，稳定且无压缩歧义
+    return string.format("%04x%04x%04x%04x", g[1], g[2], g[3], g[4])
+end
+
+-- ============================================================================
 -- 批量 CIDR 判定（geo 规则用）
 --
 -- 为什么需要这一套：geo 规则的国家段是从 mmdb 展开的，实测 CN 有近万条

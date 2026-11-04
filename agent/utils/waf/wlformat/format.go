@@ -143,6 +143,19 @@ func Decode(data []byte) (v4, v6 []netip.Prefix, err error) {
 		return nil, nil, ErrCorrupt
 	}
 
+	// 先按剩余字节数做下界校验，再分配。
+	//
+	// count 字段来自不可信文件（CI 制品 / 镜像），而 u32 最多能声明 42 亿条：
+	// 一个 17 字节的坏文件就能让 make([]netip.Prefix, 0, countV4) 申请
+	// 几十 GB 内存，直接把下载方 OOM 掉。这里的下界是格式本身决定的：
+	// v4 每条至少 2 字节（gap、len 两个 varint），v6 每条恰好 32 字节。
+	// 下界只是必要条件（之后仍按真实解码结果做精确校验），但足以让
+	// 「声明天量条目」的文件在分配前就被拒绝。
+	remaining := len(data) - HeaderSize
+	if countV4 > remaining/2 || countV6 > remaining/32 {
+		return nil, nil, ErrCorrupt
+	}
+
 	v4 = make([]netip.Prefix, 0, countV4)
 	pos := HeaderSize
 	var prevEnd int64 = -1

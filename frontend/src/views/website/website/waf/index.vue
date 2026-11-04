@@ -1029,7 +1029,9 @@ const trendOption = computed(() => {
 
 const cc = ref<any>({
     websiteId: props.websiteId,
-    limit: 0,
+    // 默认上限不能是 0：0 在数据面等价于「未配置」，用户只打开开关、
+    // 不改上限就保存，会得到「开关是开的、实际没有防护」。
+    limit: 100,
     window: 60,
     action: 'deny',
     byUri: false,
@@ -1188,6 +1190,11 @@ const loadCC = async () => {
     const res = await getWAFCCConfig(props.websiteId);
     if (res.data) {
         cc.value = res.data;
+        // 历史数据里 limit=0 表示「关闭」（旧语义）。新语义下 0 不是合法上限，
+        // 回填 0 会让「只打开开关」提交出后端必然拒绝的请求，这里兜底成默认值。
+        if (!(cc.value.limit > 0)) {
+            cc.value.limit = 100;
+        }
     }
     await markCCClean();
 };
@@ -1195,7 +1202,9 @@ const loadCC = async () => {
 const saveCC = async () => {
     await updateWAFCCConfig(ccPayload.value);
     MsgSuccess(i18n.global.t('commons.msg.operationSuccess'));
-    await markCCClean();
+    // 保存后回读而不是只标记干净：后端会对窗口/上限做兜底，
+    // 只清脏标记会让界面继续显示提交值，与数据面实际配置不一致。
+    await loadCC();
 };
 
 const loadOption = async () => {

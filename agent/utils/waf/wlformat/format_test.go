@@ -425,3 +425,45 @@ func TestWriteAndReadFile(t *testing.T) {
 		t.Error("file round trip mismatch")
 	}
 }
+
+// TestDecodeRejectsHugeDeclaredCounts 锁定 P1-7：count 来自不可信制品，
+// 必须在 make 之前按剩余字节数做下界校验。
+//
+// 修复前 Decode 直接 make([]netip.Prefix, 0, countV4)：一个 17 字节的
+// 坏文件只要把 countV4 写成 0xFFFFFFFF，就会让下载方申请几十 GB 内存
+// 直接 OOM —— 镜像被投毒/CI 出错就足以打挂所有客户端。
+func TestDecodeRejectsHugeDeclaredCounts(t *testing.T) {
+	cases := []struct {
+		name string
+		v4   uint32
+		v6   uint32
+	}{
+		{"v4-max", 0xFFFFFFFF, 0},
+		{"v4-huge", 4_000_000, 0},
+		{"v6-max", 0, 0xFFFFFFFF},
+		{"v6-without-payload", 0, 1},
+		{"both-huge", 0xFFFFFFFF, 0xFFFFFFFF},
+	}
+	for _, c := range cases {
+		buf := make([]byte, HeaderSize)
+		copy(buf, Magic)
+		buf[4] = Version
+		binary.LittleEndian.PutUint32(buf[9:13], c.v4)
+		binary.LittleEndian.PutUint32(buf[13:17], c.v6)
+		if _, _, err := Decode(buf); err != ErrCorrupt {
+			t.Errorf("%s: err = %v, want ErrCorrupt", c.name, err)
+		}
+	}
+
+	// 下界校验不能误伤合法文件：每条 v4 最少 2 字节，正好 2 字节/条时
+	// 必须放行（之后由逐条解码校验真实性）。
+	one := []netip.Prefix{mustPrefix(t, "1.2.3.0/24")}
+	blob, err := Encode(one, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v4, v6, err := Decode(blob)
+	if err != nil || len(v4) != 1 || len(v6) != 0 {
+		t.Fatalf("合法文件被下界校验误伤: v4=%v v6=%v err=%v", v4, v6, err)
+	}
+}

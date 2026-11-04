@@ -3551,7 +3551,8 @@ const message = {
         wafReportUrlFixed: '上报地址固定为社区 Worker，无需配置',
         wafReportPrivacy:
             '上报仅包含被拦截的 URL、攻击类型与命中参数，不含 Cookie、请求头与请求体。单个实例的上报不会直接进入全局名单。',
-        wafCCTip: '0 表示关闭 CC 防护。超限后：deny 直接 403，challenge 发起 JS 挑战，log 仅记录。',
+        wafCCTip:
+            '请求数上限必须大于 0；关闭 CC 防护请使用上方的状态开关。超限后：deny 直接 403，challenge 发起 JS 挑战，log 仅记录。',
         wafBotProbe: '机器人与扫描器防护',
         wafBotEnable: '机器人识别',
         wafBotAllowGood: '放行搜索引擎 bot',

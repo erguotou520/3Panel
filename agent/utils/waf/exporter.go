@@ -6,7 +6,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"sort"
@@ -189,9 +189,22 @@ func (c *compiledRuleSet) add(rule ruleDTO) bool {
 	var target map[string]ruleDTO
 	switch rule.MatchType {
 	case "ip":
-		if net.ParseIP(rule.MatchValue) == nil {
+		// 快速表的键必须与数据面的查询键完全一致，因此先归一化：
+		// 数据面拿到的 remote_addr 是规范形式（IPv4-mapped 会写回 1.2.3.4，
+		// IPv6 是小写压缩形式），而规则里的 match_value 是用户原文。
+		// 直接把原文当键，`::ffff:1.2.3.4` 或 `2001:DB8::1` 这类写法在
+		// 表里永远查不到 —— 规则看着生效，实际被静默跳过。
+		addr, err := netip.ParseAddr(strings.TrimSpace(rule.MatchValue))
+		if err != nil {
+			// 解析失败一律退回慢速列表（原逻辑）：那里按规则逐条匹配，
+			// 不依赖键的形态。
 			return false
 		}
+		// 带 zone 的地址（fe80::1%eth0）不会与 remote_addr 相等，不能进表。
+		if addr.Zone() != "" {
+			return false
+		}
+		rule.MatchValue = addr.Unmap().String()
 		target = c.IP
 	case "path":
 		target = c.Path

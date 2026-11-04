@@ -3739,7 +3739,7 @@ const message = {
         wafReportPrivacy:
             'Reports include only the blocked URL, attack type and the matched parameter. No cookies, headers or request body. A single instance cannot add an IP to the global list on its own.',
         wafCCTip:
-            '0 disables CC protection. When limit exceeded: deny returns 403, challenge issues a JS cookie challenge, log only records.',
+            'The limit must be greater than 0. To disable CC protection use the status switch above. When the limit is exceeded: deny returns 403, challenge issues a JS cookie challenge, log only records.',
         wafBotProbe: 'Bot & scanner protection',
         wafBotEnable: 'Bot detection',
         wafBotAllowGood: 'Allow search engine bots',

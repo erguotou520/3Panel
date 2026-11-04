@@ -333,17 +333,35 @@ check("lfi normal", not sem.detect_lfi("/docs/readme.md"))
 check("lfi normal2", not sem.detect_lfi("user/profile"))
 check("lfi normal dotted", not sem.detect_lfi("./relative/path"))
 -- SSRF
+-- 云元数据 / 反连平台 / JNDI 协议：与参数名无关，任何位置命中都算
 check("ssrf metadata", sem.detect_ssrf("http://169.254.169.254/latest/meta-data/"))
-check("ssrf internal", sem.detect_ssrf("http://127.0.0.1:8080/admin"))
-check("ssrf 10.x", sem.detect_ssrf("http://10.0.0.5/"))
-check("ssrf 192.168", sem.detect_ssrf("http://192.168.1.1/"))
-check("ssrf 172.16", sem.detect_ssrf("http://172.16.0.1/"))
-check("ssrf localhost", sem.detect_ssrf("http://localhost/admin"))
-check("ssrf gopher", sem.detect_ssrf("gopher://127.0.0.1:6379/_INFO"))
-check("ssrf normal", not sem.detect_ssrf("https://example.com/api"))
-check("ssrf normal2", not sem.detect_ssrf("https://10.example.com/"))
+check("ssrf metadata ecs", sem.detect_ssrf("http://169.254.170.2/v2/credentials"))
+check("ssrf metadata gcp", sem.detect_ssrf("http://metadata.google.internal/computeMetadata/v1/"))
 check("ssrf oast callback", sem.detect_ssrf("http://abc.oast.live/probe"))
 check("ssrf rmi callback", sem.detect_ssrf("rmi://118.195.206.7:1099/object"))
+-- 内网段 / 本机地址：只有 URL 类参数上下文才算命中
+check("ssrf internal url param", sem.detect_ssrf("http://127.0.0.1:8080/admin", {param = "url"}))
+check("ssrf 10.x redirect param", sem.detect_ssrf("http://10.0.0.5/", {param = "redirect_uri"}))
+check("ssrf 192.168 target param", sem.detect_ssrf("http://192.168.1.1/", {param = "target"}))
+check("ssrf 172.16 callback param", sem.detect_ssrf("http://172.16.0.1/", {param = "callback"}))
+check("ssrf localhost url param", sem.detect_ssrf("http://localhost/admin", {param = "url"}))
+check("ssrf gopher url param", sem.detect_ssrf("gopher://127.0.0.1:6379/_INFO", {param = "url"}))
+check("ssrf credential url param", sem.detect_ssrf("http://user:pass@10.0.0.5/", {param = "url"}))
+check("ssrf normal", not sem.detect_ssrf("https://example.com/api", {param = "url"}))
+check("ssrf normal2", not sem.detect_ssrf("https://10.example.com/", {param = "url"}))
+-- 误报回归：内网站点自身的 Referer / 无参数名位置 / 普通参数都不该命中
+check("ssrf referer intranet", not sem.detect_ssrf("http://10.5.5.88:8000/", {header = "referer"}))
+check("ssrf referer origin", not sem.detect_ssrf("https://192.168.10.5:8001/login", {header = "origin"}))
+check("ssrf nameless intranet", not sem.detect_ssrf("http://10.5.5.88:8000/"))
+check("ssrf plain param intranet", not sem.detect_ssrf("http://10.5.5.88:8000/", {param = "id"}))
+check("ssrf nameless metadata still hit", sem.detect_ssrf("http://169.254.169.254/latest"))
+-- 旧实现的宽匹配（^http / ^ldap / ^rmi / localhost 子串）不再误判
+check("ssrf scheme word http", not sem.detect_ssrf("httpclient", {param = "url"}))
+check("ssrf word ldap", not sem.detect_ssrf("ldap_username=admin", {param = "url"}))
+check("ssrf word rmirror", not sem.detect_ssrf("rmirror", {param = "url"}))
+check("ssrf word jdbc", not sem.detect_ssrf("jdbc", {param = "url"}))
+check("ssrf host substring localhost", not sem.detect_ssrf("https://example.com/localhost-guide", {param = "url"}))
+check("ssrf host substring dnslog", not sem.detect_ssrf("https://example.com/dnslog-guide", {param = "url"}))
 -- Extended P1 payload families from detect_log.xlsx
 check("log4shell direct", sem.detect_log4shell("${jndi:ldap://example.invalid/a}"))
 check("log4shell obfuscated", sem.detect_log4shell("${${x:-j}${x:-n}${x:-d}${x:-i}:ldap://example.invalid/a}"))
@@ -1777,9 +1795,9 @@ end)
 --
 -- 设计约束：每一档的差异必须对应**已存在的真实机制**，不能造假档位。
 --   · 语义层 high = 绕过 has_attack_candidate 前置快速筛。那个筛子是性能
---     优化，但它会漏：实测 POST /a.bak 在 balanced 下放行、high 下 403。
---     （inspect_uri 有独立的 sensitive_path 分支所以 GET 能拦，
---      但 query 值 / header / body 走的是 inspect，那里就漏了。）
+--     优化；候选筛漏掉的形态（例如 .bak 后缀）high 仍能检出。
+--     注意：2026-11-04 修复后，常见绕过形态（.bak 字面量、SQLi 布尔比较）
+--     已补进候选筛，balanced 也能检出；high 仍是「全量检测器」档位。
 --   · bot 层 high = 平衡档 + 把「空 User-Agent」当可疑。扫描器可以配成
 --     不发 UA，而 classify 对空 UA 返回 nil —— 这是真实缺口。
 print("=== 保护强度分档 ===")
@@ -1802,16 +1820,19 @@ do
     -- high：绕过快速筛，balanced 漏的它能拦
     sem.set_level("high")
     check("high 下 SQLi 仍检出", (sem.inspect("1' OR '1'='1", "1' OR '1'='1") or {}).type == "sqli")
-    check("high 下 /.bak 检出（balanced 漏）",
+    check("high 下 /.bak 检出",
         (sem.inspect("/a.bak", "/a.bak") or {}).type == "sensitive_path")
-    check("high 下 /upload.php 检出（balanced 漏）",
-        (sem.inspect("/upload.php", "/upload.php") or {}).type == "upload")
+    -- 上传检测只对文件类参数生效：正常 URL /upload.php 不再误判。
+    check("high 下 /upload.php 正常 URL 不误判",
+        sem.inspect("/upload.php", "/upload.php") == nil)
+    check("high 下 file 参数里的危险扩展名检出",
+        (sem.inspect("/upload.php", "/", {param = "file"}) or {}).type == "upload")
 
-    -- balanced 确实漏这两类（这是 high 档存在的理由，必须锁住）
+    -- balanced 下候选筛已补 .bak 字面量，敏感路径同样可检出
     sem.set_level("balanced")
-    check("balanced 下 /a.bak 漏检（high 档的差异化依据）",
-        sem.inspect("/a.bak", "/a.bak") == nil)
-    check("balanced 下 /upload.php 漏检（high 档的差异化依据）",
+    check("balanced 下 /a.bak 检出（候选筛已修）",
+        (sem.inspect("/a.bak", "/a.bak") or {}).type == "sensitive_path")
+    check("balanced 下 /upload.php 正常 URL 不误判",
         sem.inspect("/upload.php", "/upload.php") == nil)
 
     -- 非法值归一到 balanced，不能静默变成 off（那会让整层失效）
@@ -1848,7 +1869,7 @@ local function semantic_case(level, method, uri)
   run(function() access.run() end)
 end
 
-access_scenario("语义档 balanced：POST /a.bak 放行", site_with("block"), function()
+access_scenario("语义档 balanced：POST /a.bak 拦截（候选筛已修）", site_with("block"), function()
     T.vars.remote_addr = "1.2.3.4"
     T.vars.uri = "/a.bak"
     T.vars.request_uri = "/a.bak"
@@ -1858,7 +1879,7 @@ access_scenario("语义档 balanced：POST /a.bak 放行", site_with("block"), f
     T.method = "POST"
     T.headers["User-Agent"] = "Mozilla/5.0 Chrome"
 end, function()
-    return T.exited == nil
+    return ngx.status == 403
 end)
 
 access_scenario("语义档 high：POST /a.bak 拦截", site_with("block", {semantic_level = "high"}), function()
@@ -2586,6 +2607,45 @@ check("普通 PNG base64 不误判", sem.inspect("img=iVBORw0KGgoAAAANSUhEUg", "
 check("普通 base64 token 不误判",
     sem.inspect("token=eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxIn0", "/") == nil)
 check("普通文本不误判", sem.inspect("note=abcdef", "/") == nil)
+-- ==================== 2026-11-04 安全修复回归 ====================
+print("=== 2026-11-04 安全修复回归 ===")
+
+do
+    local sem = require("waf.semantic")
+    sem.set_level("balanced")
+
+    -- P0-1：.php/.jsp/.asp 正常 URL 不再被当成上传；文件参数仍检测
+    check("P0-1 正常 /index.php 不误判", sem.inspect("/index.php", "/index.php") == nil)
+    check("P0-1 正常 /wp-login.php 不误判", sem.inspect("/wp-login.php", "/wp-login.php") == nil)
+    check("P0-1 ?next=/index.php 不误判", sem.inspect("/index.php", "/", {param = "next"}) == nil)
+    check("P0-1 ?file=shell.php 仍检出",
+        (sem.inspect("shell.php", "/", {param = "file"}) or {}).type == "upload")
+
+    -- P1-1：JSON \uXXXX 在 normalize 中还原后能被语义引擎看到
+    check("P1-1 JSON unicode 转义 XSS 检出",
+        (sem.inspect('{"q":"\\u003cscript\\u003ealert(1)\\u003c/script\\u003e"}', "/") or {}).type == "xss")
+    local norm = require("waf.normalize")
+    check("P1-1 normalize 还原 \\u003c", norm.normalize("\\u003cscript\\u003e") == "<script>")
+
+    -- P1-3：SQLi 布尔恒真/十六进制比较
+    check("P1-3 1 OR true-- 检出", (sem.inspect("1 OR true--", "/") or {}).type == "sqli")
+    check("P1-3 1 or (1=1) 检出", (sem.inspect("1 or (1=1)", "/") or {}).type == "sqli")
+    check("P1-3 0x31 OR 0x31=0x31 检出", (sem.inspect("0x31 OR 0x31=0x31", "/") or {}).type == "sqli")
+
+    -- P1-4：GraphQL 检测 O(n)，大 body 不应出现秒级耗时
+    local fields = {}
+    for i = 1, 2000 do fields[i] = string.format("f%d(x)", i) end
+    local gql_body = '{"query":"{' .. table.concat(fields) .. '}"}'
+    local t0 = os.clock()
+    sem.inspect(gql_body, "/")
+    local cost = os.clock() - t0
+    check("P1-4 GraphQL 大 body 单次检测 < 100ms", cost < 0.1)
+
+    -- header 全量检测由 access 集成用例覆盖；这里验证 Cookie/UA 值能命中
+    check("P1-2 header Cookie 中的 XSS 可从语义层检出",
+        sem.inspect("<script>alert(1)</script>", nil, {header = "cookie"}) ~= nil)
+end
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

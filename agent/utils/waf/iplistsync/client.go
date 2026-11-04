@@ -87,6 +87,37 @@ type Client struct {
 	mirrors []Mirror
 	http    *http.Client
 	now     func() time.Time
+	// maxEntries 是制品条目数的 sanity 上限，超过即拒绝落盘。
+	// 真实制品约 13 万条；留出两个数量级余量。上游 CI 出错产出
+	// 天量区间时，宁可继续用旧名单，也不要把几十 GB 的区间表灌给数据面。
+	maxEntries int
+}
+
+const (
+	// maxRedirects 是下载链路允许的最大跳转次数。
+	// 正常镜像 0 跳，GitHub Release 会跨主机跳 1~2 次（github.com →
+	// objects.githubusercontent.com → release-assets...），5 跳留足余量。
+	maxRedirects = 5
+	// defaultMaxEntries 是制品条目数上限。
+	defaultMaxEntries = 5_000_000
+)
+
+// checkRedirect 是下载用的 http.Client 的跳转策略：
+//   - 最多 maxRedirects 跳，超限报错（防重定向环把客户端拖死）；
+//   - 跳转目标必须是 https，禁止 https → http 降级（防中间人把
+//     订阅名单替换成攻击者可控的明文内容）。
+//
+// 只约束跳转目标，不限制跨主机：GitHub Release 的制品正是在
+// github.com → objects.githubusercontent.com 之间跨主机跳转的。
+// via 是已经发出的请求链（不含本次请求），len(via) 即已完成的跳转数 + 1。
+func checkRedirect(req *http.Request, via []*http.Request) error {
+	if len(via) > maxRedirects {
+		return fmt.Errorf("stopped after %d redirects", maxRedirects)
+	}
+	if req.URL.Scheme != "https" {
+		return fmt.Errorf("refusing redirect to non-https url %s", req.URL.Redacted())
+	}
+	return nil
 }
 
 // NewClient 创建客户端。mirrors 为空时使用 DefaultMirrors。
@@ -97,8 +128,12 @@ func NewClient(dir string, mirrors []Mirror) *Client {
 	return &Client{
 		dir:     dir,
 		mirrors: mirrors,
-		http:    &http.Client{Timeout: 120 * time.Second},
-		now:     time.Now,
+		http: &http.Client{
+			Timeout:       120 * time.Second,
+			CheckRedirect: checkRedirect,
+		},
+		now:        time.Now,
+		maxEntries: defaultMaxEntries,
 	}
 }
 
@@ -197,8 +232,15 @@ func (c *Client) download(m Mirror, meta wlformat.Meta) error {
 	}
 	// 解码校验：编码/解码不对称会让 Lua 侧二分静默失效，
 	// 在这里挡住比让数据面拿着坏名单跑要好。
-	if _, _, err := wlformat.Decode(blob); err != nil {
+	v4, v6, err := wlformat.Decode(blob)
+	if err != nil {
 		return fmt.Errorf("decode check: %w", err)
+	}
+	// 条目数 sanity 上限：解码成功但规模离谱，说明上游聚合出了故障
+	// （例如把整段 IPv4 空间折叠成几十亿个单点区间）。拒绝落盘，
+	// 让客户端继续用上一份名单，而不是把数据面内存打爆。
+	if n := len(v4) + len(v6); n > c.maxEntries {
+		return fmt.Errorf("artifact has %d entries, exceeds limit %d", n, c.maxEntries)
 	}
 	if err := os.MkdirAll(c.dir, 0o755); err != nil {
 		return err
