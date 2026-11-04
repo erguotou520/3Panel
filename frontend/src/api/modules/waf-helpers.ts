@@ -147,22 +147,22 @@ export const WAF_MODES: { value: WAFMode; labelKey: string; descKey: string }[] 
  * 以及 _M.attack_types 里的条目一致（含 exposure / sensitive_path
  * 这两个走独立分支的）。名字对不上 = 关不掉，且不报错。
  */
-export const WAF_DETECTORS: { name: string; labelKey: string }[] = [
-    { name: 'sqli', labelKey: 'website.wafDetectorSqli' },
-    { name: 'xss', labelKey: 'website.wafDetectorXss' },
-    { name: 'rce', labelKey: 'website.wafDetectorRce' },
-    { name: 'lfi', labelKey: 'website.wafDetectorLfi' },
-    { name: 'ssrf', labelKey: 'website.wafDetectorSsrf' },
-    { name: 'upload', labelKey: 'website.wafDetectorUpload' },
-    { name: 'log4shell', labelKey: 'website.wafDetectorLog4shell' },
-    { name: 'code_injection', labelKey: 'website.wafDetectorCodeInjection' },
-    { name: 'ssti', labelKey: 'website.wafDetectorSsti' },
-    { name: 'deserialization', labelKey: 'website.wafDetectorDeserialization' },
-    { name: 'xxe', labelKey: 'website.wafDetectorXxe' },
-    { name: 'exposure', labelKey: 'website.wafDetectorExposure' },
-    { name: 'prototype_pollution', labelKey: 'website.wafDetectorPrototypePollution' },
-    { name: 'graphql', labelKey: 'website.wafDetectorGraphql' },
-    { name: 'sensitive_path', labelKey: 'website.wafDetectorSensitivePath' },
+export const WAF_DETECTORS: { name: string; labelKey: string; descKey: string }[] = [
+    { name: 'sqli', labelKey: 'website.wafDetectorSqli', descKey: 'website.wafDetectorSqliDesc' },
+    { name: 'xss', labelKey: 'website.wafDetectorXss', descKey: 'website.wafDetectorXssDesc' },
+    { name: 'rce', labelKey: 'website.wafDetectorRce', descKey: 'website.wafDetectorRceDesc' },
+    { name: 'lfi', labelKey: 'website.wafDetectorLfi', descKey: 'website.wafDetectorLfiDesc' },
+    { name: 'ssrf', labelKey: 'website.wafDetectorSsrf', descKey: 'website.wafDetectorSsrfDesc' },
+    { name: 'upload', labelKey: 'website.wafDetectorUpload', descKey: 'website.wafDetectorUploadDesc' },
+    { name: 'log4shell', labelKey: 'website.wafDetectorLog4shell', descKey: 'website.wafDetectorLog4shellDesc' },
+    { name: 'code_injection', labelKey: 'website.wafDetectorCodeInjection', descKey: 'website.wafDetectorCodeInjectionDesc' },
+    { name: 'ssti', labelKey: 'website.wafDetectorSsti', descKey: 'website.wafDetectorSstiDesc' },
+    { name: 'deserialization', labelKey: 'website.wafDetectorDeserialization', descKey: 'website.wafDetectorDeserializationDesc' },
+    { name: 'xxe', labelKey: 'website.wafDetectorXxe', descKey: 'website.wafDetectorXxeDesc' },
+    { name: 'exposure', labelKey: 'website.wafDetectorExposure', descKey: 'website.wafDetectorExposureDesc' },
+    { name: 'prototype_pollution', labelKey: 'website.wafDetectorPrototypePollution', descKey: 'website.wafDetectorPrototypePollutionDesc' },
+    { name: 'graphql', labelKey: 'website.wafDetectorGraphql', descKey: 'website.wafDetectorGraphqlDesc' },
+    { name: 'sensitive_path', labelKey: 'website.wafDetectorSensitivePath', descKey: 'website.wafDetectorSensitivePathDesc' },
 ];
 
 /** 把后端的逗号分隔字符串解析成集合。空/空白/全空项 = 空集合。 */

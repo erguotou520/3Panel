@@ -121,13 +121,22 @@
 
                         <el-form-item :label="$t('website.wafDetectors')">
                             <div class="waf-detector-grid">
-                                <el-checkbox
+                                <!-- 勾选 = 关闭该检测器。用 tooltip 逐个解释检测器用途与误伤风险，
+                                     避免用户在不了解语义的情况下误关。 -->
+                                <el-tooltip
                                     v-for="d in detectorOptions"
                                     :key="d.name"
-                                    :value="d.name"
-                                    :label="$t(d.labelKey)"
-                                    @change="onDetectorToggle(d.name, $event)"
-                                />
+                                    :content="$t(d.descKey)"
+                                    placement="top"
+                                    :show-after="200"
+                                >
+                                    <el-checkbox
+                                        :model-value="disabledDetectors.has(d.name)"
+                                        @change="onDetectorToggle(d.name, $event)"
+                                    >
+                                        {{ $t(d.labelKey) }}
+                                    </el-checkbox>
+                                </el-tooltip>
                                 <span class="field-tip block">{{ $t('website.wafDetectorsTip') }}</span>
                             </div>
                         </el-form-item>
@@ -873,12 +882,14 @@ const pageColorInvalid = computed(
 const isValidPageColorValue = (color: string) =>
     /^#[0-9a-fA-F]{6}$/.test(color) || NAMED_PAGE_COLORS.includes(color.toLowerCase());
 
+// 勾选 = 关闭检测器（与区块标题、提示文案一致）。
+// 之前这里判断反了：勾选反而把检测器从 disabled 集合里删掉，
+// 再叠加模板缺少 :model-value，导致保存后重新进入页面勾选状态全部丢失。
 const onDetectorToggle = (name: string, checked: boolean | (string | number)[]) => {
-    const on = checked === true;
-    if (on) {
-        disabledDetectors.value.delete(name);
-    } else {
+    if (checked === true) {
         disabledDetectors.value.add(name);
+    } else {
+        disabledDetectors.value.delete(name);
     }
     option.value.disabledDetectors = formatDisabledDetectors(disabledDetectors.value);
 };
