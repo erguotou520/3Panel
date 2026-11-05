@@ -207,6 +207,45 @@ local function inspect_json_sample(body, uri)
     return walk(data, 1)
 end
 
+-- multipart 的文件区是二进制。整段送语义引擎时 detect_lfi 会把 JPEG/PNG 里
+-- 必然存在的 \0 与 0x01-0x08 / 0x0e-0x1f 控制字节当成「空字节路径截断」，
+-- 任何正常图片上传都 100% 被判 lfi（2026-11-05 实测）。
+--
+-- 这里只把每个 part 的头部（含 Content-Disposition / filename）与普通表单
+-- 字段的值交给语义引擎；文件内容由 detect_upload 单独检查危险扩展名与
+-- 可执行魔数。载荷藏在字段名/普通字段值里仍会被扫到，不构成绕过。
+-- boundary 解析失败时退回整段扫描（宁可误报也不漏检）。
+local function multipart_text_parts(body)
+    local boundary = body:match("^%-%-([^\r\n]+)")
+    if not boundary or boundary == "" then return body end
+    local marker = "--" .. boundary
+    local parts, pos = {}, 1
+    while true do
+        local _, e1 = body:find(marker, pos, true)
+        if not e1 then break end
+        local s2 = body:find(marker, e1 + 1, true)
+        local stop = s2 and (s2 - 1) or #body
+        local seg = body:sub(e1 + 1, stop)
+        local crlf = seg:find("\r\n\r\n", 1, true)
+        local lf = crlf or seg:find("\n\n", 1, true)
+        local sep_len = crlf and 4 or 2
+        local head = lf and seg:sub(1, lf - 1) or seg
+        parts[#parts + 1] = head
+        if lf then
+            local content = seg:sub(lf + sep_len)
+            -- 普通表单字段必扫；文件区只在「确实是文本」时才扫，
+            -- 二进制（JPEG/PNG 里必然存在的 \0 与控制字节）整段排除。
+            -- 保留文本文件区可避免「把 payload 伪装成上传文件」的绕过。
+            if not head:lower():find("filename%s*=") or not content:find("[%z\1-\8\14-\31]") then
+                parts[#parts + 1] = content
+            end
+        end
+        if not s2 then break end
+        pos = s2
+    end
+    return #parts > 0 and table.concat(parts, "\r\n") or ""
+end
+
 local function detect_request(start_ms)
     -- URI 检测（含规范化后的路径穿越检测）
     local uri = ngx.var.request_uri or ""
@@ -238,14 +277,20 @@ local function detect_request(start_ms)
             local body = read_body_sample(config.BODY_LIMIT)
             if body then
                 local lc = string.lower(ct)
-                if lc:find("multipart", 1, true) and semantic.detect_upload(body) then
+                local is_multipart = lc:find("multipart", 1, true)
+                if is_multipart and semantic.detect_upload(body) then
                     return "upload", "dangerous file upload", body
                 end
                 local h
-                if lc:find("json", 1, true) then
-                    h = inspect_json_sample(body, uri)
+                if is_multipart then
+                    -- 文件区是二进制，只把头部与普通字段值送语义引擎。
+                    h = semantic.inspect(multipart_text_parts(body), uri)
+                else
+                    if lc:find("json", 1, true) then
+                        h = inspect_json_sample(body, uri)
+                    end
+                    h = h or semantic.inspect(body, uri)
                 end
-                h = h or semantic.inspect(body, uri)
                 if h then
                     return h.type, h.value, body
                 end

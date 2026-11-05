@@ -383,6 +383,14 @@ function _M.detect_rce(value)
     -- ${IFS} 是空格的命令注入绕过写法，归一后再做探针匹配
     raw = raw:gsub("%${%s*ifs%s*%}", " ")
     s = s:gsub("%${%s*ifs%s*%}", " ")
+    -- data URI 的 ";base64" 是 MIME 编码声明，不是 shell 分隔符。
+    -- RCE_CMD_NAMES 含 "base64"（命令注入常用手法），META_CLASS 又把 ";" 当元字符，
+    -- 于是前端把图片转成 data:image/jpeg;base64,... 提交的接口会被整片判成 RCE。
+    -- 只剥离标准形态的编码前缀，其余内容照常检测：攻击者在数据后补 ";id"，
+    -- 留下的 ";id" 依然会被 meta_then_cmd 拦下，不构成绕过。
+    local DATA_URI_PREFIX = "(data:[%w%.%-%+%s]+/[%w%.%-%+%s]+)%s*;%s*base64%s*,"
+    raw = raw:gsub(DATA_URI_PREFIX, "%1 ")
+    s = s:gsub(DATA_URI_PREFIX, "%1 ")
     if raw:find("%f[%w]expr%s+%d+%s*[%+%-]%s*%d+") or raw:find("%f[%w]expr%s+%d+%s+%d+") then return true end
     -- 参数名在前的 expr 变体：cls_mode_login expr 927+927 / Published expr 1+1
     if s:find("%f[%a]expr%s+%d+%s*[%+%-*]%s*%d+") or s:find("%f[%a]expr%s+%d+%s+%d+") then return true end

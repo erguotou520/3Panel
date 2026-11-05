@@ -40,8 +40,12 @@ local BAD_BOTS = {
     "whatweb", "httrack", "scrapy", "libwww%-perl", "wget%s*/",
     "archiver", "webcopier", "site%sdigger",
     -- HTTP 客户端库指纹（脚本化流量）
+    -- "java/" 已刻意移除：Apache-HttpClient、Spring RestTemplate、OkHttp 等
+    -- 正常服务端调用的 UA 都带 "Java/1.x"，把它当攻击工具会让 API 站点
+    -- 开启 WAF 后所有服务间调用直接 403（2026-11-05 实测）。
+    -- 真正的 Java 攻击链由下面的 ysoserial / marshalsec / log4j-scan 覆盖。
     "ospython-requests%s*/", "python%-requests", "go%-http%-client",
-    "java/", "okhttp", "axios/", "node%-fetch", "guzzlehttp",
+    "okhttp", "axios/", "node%-fetch", "guzzlehttp",
     -- 已知漏洞扫描器
     "log4j%s*scan", "jndi%s*lookup", "ysoserial", "marshalsec",
     "log4shell", "pwntest", "s2tomcat",

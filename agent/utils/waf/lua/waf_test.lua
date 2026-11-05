@@ -2646,6 +2646,125 @@ do
         sem.inspect("<script>alert(1)</script>", nil, {header = "cookie"}) ~= nil)
 end
 
+-- ==================== 误伤回归：三条正常业务请求（2026-11-05）====================
+-- 现场：开启 WAF 后 POST /files（JSON 带图片 data URI）、POST /authorize
+-- （Java HttpClient UA）、POST /upload（multipart 上传 jpg）全部 403。
+-- 三个根因彼此独立，分别落在 bot 词表 / RCE 检测器 / 请求体采集三处。
+-- 每条都要有反向对照，证明「误伤消失」不等于「把检测关掉」。
+print("=== 误伤回归：正常业务请求 ===")
+do
+    local bot = require("waf.bot")
+    local sem = require("waf.semantic")
+    sem.set_level("balanced")
+    sem.set_disabled_detectors(nil)
+
+    -- 1. Java 业务客户端 UA 不再被当扫描器，明确的攻击工具仍拦
+    local java_ua = "Apache-HttpClient/4.5.13 (Java/1.8.0_111)"
+    check("Java HttpClient UA 不判扫描器", bot.classify(java_ua) == nil)
+    check("裸 Java/1.x UA 不判扫描器", bot.classify("Java/1.8.0_111") == nil)
+    check("Java 攻击链工具仍拦", bot.classify("ysoserial/PoC") == "bad")
+    check("sqlmap 仍拦（词表收敛未误删）", bot.classify("sqlmap/1.5.2 #stable") == "bad")
+    check("Go/Python 客户端仍按原策略拦",
+        bot.classify("Go-http-client/1.1") == "bad" and bot.classify("python-requests/2.28.0") == "bad")
+
+    -- 2. data URI 的 ;base64 是 MIME 声明，不是 shell 命令注入
+    local data_json = '{"taskId":10,"token":"eyJhbGciOiJIUzI1NiJ9.abc",' ..
+        '"image":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA=="}'
+    check("data:image/jpeg;base64 不判 RCE", not sem.detect_rce(data_json))
+    check("整条 JSON 上传 body 放行",
+        sem.inspect(data_json, "/api/v1/info-extraction/tasks/10/files") == nil)
+    check("data:image/svg+xml;base64 不判 RCE",
+        not sem.detect_rce("file=data:image/svg+xml;base64,PHN2Zz4="))
+    check("真命令注入 ; base64 -d 仍拦", sem.detect_rce("?x=; base64 -d /etc/passwd"))
+    check("data URI 后追加 ;id 仍拦", sem.detect_rce("data:image/jpeg;base64,AAAA;id"))
+
+    -- header 全量扫描会读 UA；真实浏览器 UA 里的 ";" 不能触发语义误判
+    check("真实浏览器 UA 走 header 扫描不误判",
+        sem.inspect("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " ..
+            "(KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36 Edg/156.0.0.0",
+            nil, {header = "user_agent"}) == nil)
+end
+
+do
+    local MP_B = "----WebKitFormBoundaryO3H9ExKdh8aeE2AR"
+    -- 真实 JPEG/PNG 二进制：必然含 \0 与 0x01-0x08 / 0x0e-0x1f 控制字节
+    local JPEG_BIN = "\255\216\255\224\0\16JFIF\0\1\1\0\0\1\0\1\0\0" ..
+        string.rep("\137\80\78\71\13\10\26\10\0\0\0\13IHDR\0\0\1\244\0\0\1\140\8\6\0\0\0", 8)
+    local FILE_HEAD = 'Content-Disposition: form-data; name="file"; ' ..
+        'filename="0e701bc15c4114b93af587b8a204ecb6.jpg"\r\nContent-Type: image/jpeg'
+
+    local function mp_body(head, content)
+        return "--" .. MP_B .. "\r\n" .. head .. "\r\n\r\n" ..
+               (content or JPEG_BIN) .. "\r\n--" .. MP_B .. "--\r\n"
+    end
+    local function post_mp(name, body, expect_block)
+        access_scenario(name, site_with(nil), function()
+            T.vars.remote_addr = "1.2.3.4"
+            T.vars.uri = "/api/v1/assistant/upload"
+            T.vars.request_uri = "/api/v1/assistant/upload"
+            T.vars.query_string = nil
+            T.vars.content_type = "multipart/form-data; boundary=" .. MP_B
+            T.vars.http_user_agent = "Mozilla/5.0 Chrome"
+            T.method = "POST"
+            T.body = body
+        end, function()
+            if expect_block then return ngx.status == 403 and T.exited == 403 end
+            return T.exited == nil and ngx.status ~= 403
+        end)
+    end
+
+    -- 3. multipart 文件区二进制不再被判 LFI
+    post_mp("正常 jpg 上传放行", mp_body(FILE_HEAD), false)
+    post_mp("文件名 shell.php 仍拦",
+        mp_body('Content-Disposition: form-data; name="file"; filename="shell.php"'), true)
+    post_mp("文件区 <?php 仍拦",
+        mp_body(FILE_HEAD, JPEG_BIN .. "<?php system($_GET[x]); ?>"), true)
+    post_mp("普通表单字段带 SQLi 仍拦",
+        mp_body('Content-Disposition: form-data; name="q"', "1' OR '1'='1"), true)
+    post_mp("纯文本文件区带 SQLi 仍拦（无绕过）",
+        mp_body('Content-Disposition: form-data; name="file"; filename="note.txt"', "1' OR '1'='1"), true)
+
+    -- 现场另外两条请求走完整 access 链路。站点未导出 bot 配置时
+    -- access.lua 走「无条件 classify」兜底分支，正是 Java UA 被拦的路径。
+    access_scenario("JSON 图片 data URI 上传放行", site_with(nil), function()
+        T.vars.remote_addr = "1.2.3.4"
+        T.vars.uri = "/api/v1/info-extraction/tasks/10/files"
+        T.vars.request_uri = "/api/v1/info-extraction/tasks/10/files"
+        T.vars.query_string = nil
+        T.vars.content_type = "application/json"
+        T.vars.http_user_agent = "Mozilla/5.0 Chrome"
+        T.method = "POST"
+        T.body = '{"taskId":10,"image":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA=="}'
+    end, function()
+        return T.exited == nil and ngx.status ~= 403
+    end)
+
+    access_scenario("Java HttpClient 授权接口放行", site_with(nil), function()
+        T.vars.remote_addr = "1.2.3.4"
+        T.vars.uri = "/api/v1/user/authorize"
+        T.vars.request_uri = "/api/v1/user/authorize"
+        T.vars.query_string = nil
+        T.vars.content_type = "application/x-www-form-urlencoded"
+        T.vars.http_user_agent = "Apache-HttpClient/4.5.13 (Java/1.8.0_111)"
+        T.method = "POST"
+        T.body = "username=foo"
+    end, function()
+        return T.exited == nil and ngx.status ~= 403
+    end)
+
+    access_scenario("bot 未配置时扫描器 UA 仍拦", site_with(nil), function()
+        T.vars.remote_addr = "1.2.3.4"
+        T.vars.uri = "/api/v1/user/authorize"
+        T.vars.request_uri = "/api/v1/user/authorize"
+        T.vars.query_string = nil
+        T.vars.http_user_agent = "sqlmap/1.5#stable (https://sqlmap.org)"
+        T.method = "POST"
+        T.body = "username=foo"
+    end, function()
+        return ngx.status == 403 and T.exited == 403
+    end)
+end
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end
