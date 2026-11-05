@@ -285,3 +285,117 @@ func TestDefaultMirrorsOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestCheckRedirectPolicy 锁定 P1-7 的跳转加固：
+//   - 最多 maxRedirects 跳，超限报错（防跳转环拖死客户端）；
+//   - 跳转目标必须是 https，禁止 https → http 降级；
+//   - 跨主机 https 跳转必须放行（GitHub Release 依赖这一点）。
+func TestCheckRedirectPolicy(t *testing.T) {
+	mk := func(raw string) *http.Request {
+		req, err := http.NewRequest(http.MethodGet, raw, nil)
+		if err != nil {
+			t.Fatalf("new request %q: %v", raw, err)
+		}
+		return req
+	}
+	httpsVia := []*http.Request{mk("https://github.com/erguotou520/3Panel/releases/download/waf-iplist-latest/wl_v2.bin")}
+
+	if err := checkRedirect(mk("https://objects.githubusercontent.com/x.bin"), httpsVia); err != nil {
+		t.Errorf("跨主机 https 跳转必须放行（GitHub Release 依赖），err=%v", err)
+	}
+	if err := checkRedirect(mk("http://mirror.example.com/x.bin"), httpsVia); err == nil {
+		t.Error("https → http 降级必须拒绝")
+	} else if !strings.Contains(err.Error(), "non-https") {
+		t.Errorf("降级错误信息应说明原因，实际 %v", err)
+	}
+
+	// 恰好 maxRedirects 跳放行，再多一跳拒绝。
+	via := make([]*http.Request, 0, maxRedirects+1)
+	for i := 0; i < maxRedirects; i++ {
+		via = append(via, mk("https://a.example.com/x"))
+	}
+	if err := checkRedirect(mk("https://b.example.com/x"), via); err != nil {
+		t.Errorf("%d 跳以内应放行，err=%v", maxRedirects, err)
+	}
+	via = append(via, mk("https://a.example.com/x"))
+	if err := checkRedirect(mk("https://b.example.com/x"), via); err == nil {
+		t.Errorf("超过 %d 跳必须拒绝", maxRedirects)
+	}
+}
+
+// TestClientRejectsRedirectDowngrade 端到端确认 NewClient 真的装上了跳转策略：
+// 镜像返回 https → http 重定向时必须失败，且不落盘。
+func TestClientRejectsRedirectDowngrade(t *testing.T) {
+	dir := t.TempDir()
+	_, meta := makeBlob(t, "1.2.3.4/32")
+
+	plain := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := json.Marshal(meta)
+		_, _ = w.Write(b)
+	}))
+	t.Cleanup(plain.Close)
+
+	tlsMux := http.NewServeMux()
+	tlsMux.HandleFunc("/meta.json", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, plain.URL+"/meta.json", http.StatusFound)
+	})
+	tlsSrv := httptest.NewTLSServer(tlsMux)
+	t.Cleanup(tlsSrv.Close)
+
+	m := Mirror{Name: "tls", MetaURL: tlsSrv.URL + "/meta.json", DataURL: tlsSrv.URL + "/wl_v2.bin"}
+	c := NewClient(dir, []Mirror{m})
+	if c.http.CheckRedirect == nil {
+		t.Fatal("下载用 http.Client 必须配置 CheckRedirect")
+	}
+	// 信任测试自签证书；CheckRedirect 保持 NewClient 配置。
+	c.http.Transport = tlsSrv.Client().Transport
+
+	changed, _, err := c.Update()
+	if err == nil {
+		t.Fatal("https → http 降级重定向必须失败")
+	}
+	if changed {
+		t.Error("失败的下载不应报告 changed")
+	}
+	if _, statErr := os.Stat(c.DataPath()); statErr == nil {
+		t.Error("被拒绝的下载不应落盘")
+	}
+}
+
+// TestDownloadRejectsInsaneEntryCount 覆盖解码成功但条目数离谱的情况：
+// 必须拒绝落盘（继续用旧名单），而不是把天量区间灌给数据面。
+func TestDownloadRejectsInsaneEntryCount(t *testing.T) {
+	dir := t.TempDir()
+	blob, meta := makeBlob(t, "1.2.3.4/32", "8.8.8.0/24")
+	m := serve(t, blob, meta, false)
+
+	c := NewClient(dir, []Mirror{m})
+	// 注入极小上限：真实上限 5M 条时 8MB 的下载上限已经先挡住了，
+	// 无法构造出能走到该分支的制品，故在此收小上限验证拒绝逻辑本身。
+	c.maxEntries = 1
+	changed, _, err := c.Update()
+	if err == nil {
+		t.Fatal("条目数超过 sanity 上限时必须拒绝")
+	}
+	if !strings.Contains(err.Error(), "exceeds limit") {
+		t.Errorf("错误信息应说明条目数超限，实际 %v", err)
+	}
+	if changed {
+		t.Error("被拒绝的制品不应报告 changed")
+	}
+	if _, statErr := os.Stat(c.DataPath()); statErr == nil {
+		t.Error("超限制品不应落盘")
+	}
+}
+
+// TestDownloadAcceptsArtifactWithinLimit 确认 sanity 上限不会误伤正常制品。
+func TestDownloadAcceptsArtifactWithinLimit(t *testing.T) {
+	dir := t.TempDir()
+	blob, meta := makeBlob(t, "1.2.3.4/32", "8.8.8.0/24")
+	m := serve(t, blob, meta, false)
+	c := NewClient(dir, []Mirror{m})
+	changed, _, err := c.Update()
+	if err != nil || !changed {
+		t.Fatalf("正常制品被拒: changed=%v err=%v", changed, err)
+	}
+}

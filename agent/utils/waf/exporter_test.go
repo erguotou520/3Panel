@@ -211,3 +211,94 @@ func TestExportRulesDoesNotCreateUnknownSites(t *testing.T) {
 		t.Errorf("site 7 must keep enabled=false, got %+v (present=%v)", site, ok)
 	}
 }
+
+// TestCompiledIPNormalized 锁定 P1-6：编译表（快速路径）的 IP 键必须是
+// 规范形式。数据面用 remote_addr 查表，而 remote_addr 是规范形式：
+// IPv4-mapped 的 ::ffff:1.2.3.4 会写成 1.2.3.4，IPv6 是小写压缩形式。
+// 若把用户原文直接当键，`::ffff:1.2.3.4` / `2001:DB8::1` 这类规则
+// 放进表里永远查不到 —— 界面显示已启用，实际被静默跳过。
+func TestCompiledIPNormalized(t *testing.T) {
+	compiled := newCompiledRuleSet()
+	cases := []struct {
+		value string
+		want  string
+	}{
+		{"::ffff:1.2.3.4", "1.2.3.4"},
+		{"::FFFF:102:304", "1.2.3.4"},
+		{" 1.2.3.5 ", "1.2.3.5"},
+		{"2001:DB8::1", "2001:db8::1"},
+		{"2001:DB8:0:0:0:0:0:0/128", ""}, // 带掩码的不是裸 IP，不进表
+	}
+	for _, c := range cases {
+		r := ruleDTO{ID: 1, Name: "r", Priority: 1, MatchType: "ip", MatchValue: c.value, MatchOp: "exact", Action: model.WAFActionDeny, Enabled: true}
+		got := compiled.add(r)
+		if c.want == "" {
+			if got {
+				t.Errorf("add(%q) 应当失败并退回慢速表", c.value)
+			}
+			continue
+		}
+		if !got {
+			t.Errorf("add(%q) 应当成功", c.value)
+			continue
+		}
+		if _, ok := compiled.IP[c.want]; !ok {
+			t.Errorf("add(%q) 后缺少规范键 %q，实际键集合 %v", c.value, c.want, keysOf(compiled.IP))
+		}
+	}
+	// 原文键不能残留：残留一份就说明归一化没做彻底。
+	for _, raw := range []string{"::ffff:1.2.3.4", "2001:DB8::1", " 1.2.3.5 "} {
+		if _, ok := compiled.IP[raw]; ok {
+			t.Errorf("编译表里不应存在原文键 %q", raw)
+		}
+	}
+	// 解析失败与带 zone 的地址都必须退回慢速表。
+	for _, bad := range []string{"not-an-ip", "fe80::1%eth0", ""} {
+		r := ruleDTO{ID: 2, Name: "bad", Priority: 2, MatchType: "ip", MatchValue: bad, MatchOp: "exact", Action: model.WAFActionDeny, Enabled: true}
+		if compiled.add(r) {
+			t.Errorf("add(%q) 应当失败并退回慢速表", bad)
+		}
+	}
+}
+
+// TestExportRulesNormalizesCompiledIPKeys 从 rules.json 层面确认键已归一化，
+// 并且无法预编译的 IP 规则仍留在慢速列表里（不能丢规则）。
+func TestExportRulesNormalizesCompiledIPKeys(t *testing.T) {
+	dir := t.TempDir()
+	rules := []model.WAFRule{
+		{BaseModel: model.BaseModel{ID: 1}, Name: "mapped", Scope: model.WAFScopeGlobal, Priority: 10, MatchType: "ip", MatchValue: "::ffff:1.2.3.4", MatchOp: "exact", Action: model.WAFActionDeny, Enabled: true},
+		{BaseModel: model.BaseModel{ID: 2}, Name: "upper-v6", Scope: model.WAFScopeGlobal, Priority: 20, MatchType: "ip", MatchValue: "2001:DB8::1", MatchOp: "exact", Action: model.WAFActionDeny, Enabled: true},
+		{BaseModel: model.BaseModel{ID: 3}, Name: "invalid", Scope: model.WAFScopeGlobal, Priority: 30, MatchType: "ip", MatchValue: "not-an-ip", MatchOp: "exact", Action: model.WAFActionDeny, Enabled: true},
+	}
+	if err := ExportRules(rules, nil, nil, map[uint]bool{1: true}, dir, false); err != nil {
+		t.Fatalf("ExportRules: %v", err)
+	}
+	raw, err := os.ReadFile(filepath.Join(HostWAFDir(dir), "rules.json"))
+	if err != nil {
+		t.Fatalf("read rules.json: %v", err)
+	}
+	var got exportedRules
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	for _, want := range []string{"1.2.3.4", "2001:db8::1"} {
+		if got.Global.Compiled.IP[want].Name == "" {
+			t.Errorf("compiled.ip 缺少规范键 %q，实际 %v", want, keysOf(got.Global.Compiled.IP))
+		}
+	}
+	if len(got.Global.Compiled.IP) != 2 {
+		t.Errorf("compiled.ip 条目数 = %d，want 2 (%v)", len(got.Global.Compiled.IP), keysOf(got.Global.Compiled.IP))
+	}
+	// 解析失败的规则必须仍在慢速列表，不能被吞掉。
+	if len(got.Global.Rules) != 1 || got.Global.Rules[0].Name != "invalid" {
+		t.Errorf("无法预编译的 IP 规则应留在慢速列表，实际 %+v", got.Global.Rules)
+	}
+}
+
+func keysOf(m map[string]ruleDTO) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

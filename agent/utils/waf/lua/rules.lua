@@ -168,6 +168,12 @@ local function build_dim_values()
         if v ~= nil then return v end
         if name == "ip" then
             v = ngx.var.remote_addr or ""
+            -- 双栈 listen [::] 下 nginx 可能把 IPv4 客户端报成 ::ffff:1.2.3.4，
+            -- 而 exporter 已把 compiled.ip 的键归一化成 1.2.3.4（unmap）。
+            -- 这里不还原的话，双栈站点上的 IP 黑白名单会全部静默失效。
+            local mapped = v:match("^::[Ff][Ff][Ff][Ff]:(%d+%.%d+%.%d+%.%d+)$")
+            if mapped then v = mapped end
+            v = string.lower(v)
         elseif name == "path" then
             v = ngx.var.uri or ""
         elseif name == "raw_path" then
