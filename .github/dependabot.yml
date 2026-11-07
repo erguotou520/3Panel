@@ -1,5 +1,7 @@
 version: 2
 
+# 依赖版本巡检：gomod(agent/core) 与 npm(frontend + scripts/*) 每日检查。
+# 配合 depbot-automerge.yml：CI 全绿自动合并（squash），失败时呼叫 @copilot 修复。
 updates:
   - package-ecosystem: "gomod"
     directories:
@@ -7,8 +9,18 @@ updates:
       - "/core"
     schedule:
       interval: "daily"
+    labels:
+      - "dependencies"
+      - "go"
 
   - package-ecosystem: "npm"
-    directory: "/frontend"
+    directories:
+      - "/frontend"
+      - "/scripts/appstore-mirror"
+      - "/scripts/cf-appstore-sync"
+      - "/scripts/waf-reporter"
     schedule:
       interval: "daily"
+    labels:
+      - "dependencies"
+      - "npm"
