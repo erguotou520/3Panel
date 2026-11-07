@@ -1469,8 +1469,8 @@ func calculateDirSizeFallback(path string, sizeMap map[string]int64) {
 	})
 }
 
-func getFormat(cType CompressType) archiver.CompressedArchive {
-	format := archiver.CompressedArchive{}
+func getFormat(cType CompressType) archiver.Archive {
+	format := archiver.Archive{}
 	switch cType {
 	case Tar:
 		format.Archival = archiver.Tar{}
@@ -1490,6 +1490,13 @@ func getFormat(cType CompressType) archiver.CompressedArchive {
 	case Xz, TarXz:
 		format.Compression = archiver.Xz{}
 		format.Archival = archiver.Tar{}
+	}
+	// archiver v4 alpha.9 将 Archival（写）与 Extraction（读）拆分为两个接口，
+	// 解压路径依赖 Extraction，这里复用同一格式实现。
+	if format.Archival != nil {
+		if extraction, ok := format.Archival.(archiver.Extraction); ok {
+			format.Extraction = extraction
+		}
 	}
 	return format
 }
@@ -1619,7 +1626,7 @@ type archiveOwnership struct {
 	gid int
 }
 
-func getArchiveOwnership(file archiver.File) (archiveOwnership, bool) {
+func getArchiveOwnership(file archiver.FileInfo) (archiveOwnership, bool) {
 	header, ok := getArchiveTarHeader(file)
 	if ok && header.Uid >= 0 && header.Gid >= 0 {
 		return archiveOwnership{uid: header.Uid, gid: header.Gid}, true
@@ -1629,7 +1636,7 @@ func getArchiveOwnership(file archiver.File) (archiveOwnership, bool) {
 
 const zipUnixOwnershipExtraID = 0x7875
 
-func getArchiveZipOwnership(file archiver.File) (archiveOwnership, bool) {
+func getArchiveZipOwnership(file archiver.FileInfo) (archiveOwnership, bool) {
 	var extra []byte
 	switch header := file.Header.(type) {
 	case *zip.FileHeader:
@@ -1704,7 +1711,7 @@ func getFileOwnership(info fs.FileInfo) (archiveOwnership, bool) {
 	return archiveOwnership{uid: int(stat.Uid), gid: int(stat.Gid)}, true
 }
 
-func getArchiveTarHeader(file archiver.File) (tar.Header, bool) {
+func getArchiveTarHeader(file archiver.FileInfo) (tar.Header, bool) {
 	switch header := file.Header.(type) {
 	case *tar.Header:
 		if header == nil {
@@ -1821,7 +1828,7 @@ func (f FileOp) extractArchiveWithSDK(ctx context.Context, input io.Reader, dst 
 	extractionStarted := false
 	root := filepath.Clean(dst)
 
-	handler := func(ctx context.Context, archFile archiver.File) error {
+	handler := func(ctx context.Context, archFile archiver.FileInfo) error {
 		info := archFile.FileInfo
 		if isIgnoreFile(archFile.Name()) {
 			return nil
@@ -1965,7 +1972,7 @@ func (f FileOp) extractArchiveWithSDK(ctx context.Context, input io.Reader, dst 
 		_ = os.Chtimes(filePath, info.ModTime(), info.ModTime())
 		return nil
 	}
-	if err := extractor.Extract(ctx, input, nil, handler); err != nil {
+	if err := extractor.Extract(ctx, input, handler); err != nil {
 		return extractionStarted, err
 	}
 	for _, link := range hardlinks {
@@ -2181,7 +2188,7 @@ func (f FileOp) DecompressWithOptions(ctx context.Context, srcFile string, dst s
 	return f.decompressWithSDK(ctx, srcFile, dst, cType, secret, options)
 }
 
-func ZipFile(ctx context.Context, files []archiver.File, dst afero.File, progress func(current, total int, message string)) error {
+func ZipFile(ctx context.Context, files []archiver.FileInfo, dst afero.File, progress func(current, total int, message string)) error {
 	zw := zip.NewWriter(dst)
 	defer zw.Close()
 
