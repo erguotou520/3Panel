@@ -1,0 +1,81 @@
+name: Depbot Automerge
+
+# 依赖 PR 的「CI 绿了就合」自动化（配合 dependabot 每日例行升级使用）：
+#
+# 1. Test 工作流在某个 PR 上完整跑完且结论为 success
+#    → 核对 PR head 与 CI 跑的 sha 一致、PR 仍可合并、作者是 dependabot
+#    → squash 合并并留评论。
+# 2. Test 工作流结论为 failure
+#    → 在同一 PR 里 @copilot（GitHub 自带的 coding agent），
+#      让它分析失败原因并在分支上修复；修复后本工作流会再次触发，
+#      CI 转绿时自动合并。每个失败的 head sha 只召唤一次，不刷屏。
+#
+# 安全闸门：
+# - 只处理 author == dependabot[bot] 的 PR；
+# - 合并前校验 headRefOid == 本次 CI 的 head_sha（防止把没跑过 CI 的提交合进来）；
+# - 校验 mergeable == MERGEABLE（有冲突不合）；
+# - 主分支 push 触发的 run 没有对应 PR，直接跳过。
+#
+# 前置条件：仓库 Settings → General → Auto-merge 已开启（本仓已开，
+# gh pr merge 依赖该权限位）。
+
+on:
+    workflow_run:
+        workflows: ["Test"]
+        types: [completed]
+
+permissions:
+    pull-requests: write
+    contents: write
+
+jobs:
+    automerge:
+        name: 依赖 PR CI 绿自动合并
+        if: github.event.workflow_run.conclusion == 'success'
+        runs-on: ubuntu-latest
+        steps:
+            - name: 找到对应的 dependabot PR 并 squash 合并
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -uo pipefail
+                  sha=${{ github.event.workflow_run.head_sha }}
+                  pr_json=$(gh pr list --state open --head "$sha" \
+                      --json number,headRefOid,mergeable,author --jq 'first // empty' 2>/dev/null || true)
+                  [ -z "$pr_json" ] && { echo "该 sha 没有开放 PR（主分支自跑？），跳过"; exit 0; }
+                  num=$(echo "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["number"])')
+                  head=$(echo "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["headRefOid"])')
+                  mergeable=$(echo "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["mergeable"])')
+                  author=$(echo "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["author"]["login"])')
+                  echo "PR #$num head=$head mergeable=$mergeable author=$author"
+                  [ "$head" = "$sha" ] || { echo "PR head 与 CI 的 sha 不一致（分支又更新了？），跳过"; exit 0; }
+                  [ "$mergeable" = "MERGEABLE" ] || { echo "PR 有冲突不可合并，跳过"; exit 0; }
+                  [ "$author" = "dependabot[bot]" ] || { echo "不是 dependabot 的 PR，跳过"; exit 0; }
+                  gh pr merge --squash "$num" && \
+                      gh pr comment "$num" --body "✅ CI 全绿，已自动 squash 合并（Depbot Automerge）。"
+
+    copilot:
+        name: CI 失败召唤 Copilot 修复
+        if: github.event.workflow_run.conclusion == 'failure'
+        runs-on: ubuntu-latest
+        steps:
+            - name: 在 dependabot PR 里 @copilot（每个失败 sha 只召唤一次）
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -uo pipefail
+                  sha=${{ github.event.workflow_run.head_sha }}
+                  pr_json=$(gh pr list --state open --head "$sha" \
+                      --json number,author --jq 'first // empty' 2>/dev/null || true)
+                  [ -z "$pr_json" ] && exit 0
+                  num=$(echo "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["number"])')
+                  author=$(echo "$pr_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["author"]["login"])')
+                  [ "$author" = "dependabot[bot]" ] || exit 0
+                  # 该失败 sha 已经召唤过就不重复评论
+                  if gh api "repos/${{ github.repository }}/issues/$num/comments" \
+                        --jq '.[].body' 2>/dev/null | grep -qF "$sha"; then
+                      echo "该 sha 已召唤过 Copilot，不重复"; exit 0
+                  fi
+                  gh pr comment "$num" --body \
+"@copilot 本 PR（head ${sha}）的 CI 失败了。请查看失败日志，分析原因并在本分支上提交修复；修复后 Depbot Automerge 工作流会在 CI 转绿时自动合并。"
+                  echo "已在 PR #$num 召唤 Copilot"
