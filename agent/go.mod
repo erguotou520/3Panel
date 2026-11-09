@@ -28,9 +28,9 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
-github.com/klauspost/compress v1.20.3
-github.com/mattn/go-shellwords v1.0.16
-github.com/mholt/archiver/v4 v4.0.0-alpha.9
+	github.com/klauspost/compress v1.20.3
+	github.com/mattn/go-shellwords v1.0.16
+	github.com/mholt/archiver/v4 v4.0.0-alpha.9
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
@@ -55,9 +55,9 @@ github.com/mholt/archiver/v4 v4.0.0-alpha.9
 	go.mongodb.org/mongo-driver/v2 v2.8.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/net v0.59.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/text v0.42.0
+	golang.org/x/text v0.43.0
 	golang.org/x/time v0.15.0
 	google.golang.org/genproto v0.0.0-20260414002931-afd174a4e478
 	gopkg.in/ini.v1 v1.67.3
