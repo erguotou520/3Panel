@@ -28,9 +28,9 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
-github.com/klauspost/compress v1.20.3
-github.com/mattn/go-shellwords v1.0.16
-github.com/mholt/archiver/v4 v4.0.0-alpha.9
+	github.com/klauspost/compress v1.20.3
+	github.com/mattn/go-shellwords v1.0.16
+	github.com/mholt/archiver/v4 v4.0.0-alpha.9
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
@@ -39,7 +39,7 @@ github.com/mholt/archiver/v4 v4.0.0-alpha.9
 	github.com/patrickmn/go-cache v2.1.0+incompatible
 	github.com/pkg/errors v0.9.1
 	github.com/pkg/sftp v1.13.11
-	github.com/qiniu/go-sdk/v7 v7.27.0
+	github.com/qiniu/go-sdk/v7 v7.30.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/shirou/gopsutil/v4 v4.26.7
 	github.com/sirupsen/logrus v1.10.2
