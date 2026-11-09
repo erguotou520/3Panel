@@ -12,7 +12,7 @@ require (
 	github.com/creack/pty v1.1.24
 	github.com/docker/cli v29.9.3+incompatible
 	github.com/docker/docker v28.5.2+incompatible
-	github.com/docker/go-connections v0.8.1
+	github.com/docker/go-connections v0.8.2
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/gin-gonic/gin v1.12.0
 	github.com/glebarez/sqlite v1.11.0
@@ -28,9 +28,9 @@ require (
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jinzhu/copier v0.4.0
 	github.com/joho/godotenv v1.5.1
-github.com/klauspost/compress v1.20.3
-github.com/mattn/go-shellwords v1.0.16
-github.com/mholt/archiver/v4 v4.0.0-alpha.9
+	github.com/klauspost/compress v1.20.3
+	github.com/mattn/go-shellwords v1.0.16
+	github.com/mholt/archiver/v4 v4.0.0-alpha.9
 	github.com/miekg/dns v1.1.73
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/nicksnyder/go-i18n/v2 v2.6.1
