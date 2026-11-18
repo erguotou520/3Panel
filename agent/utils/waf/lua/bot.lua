@@ -44,8 +44,11 @@ local BAD_BOTS = {
     -- 正常服务端调用的 UA 都带 "Java/1.x"，把它当攻击工具会让 API 站点
     -- 开启 WAF 后所有服务间调用直接 403（2026-11-05 实测）。
     -- 真正的 Java 攻击链由下面的 ysoserial / marshalsec / log4j-scan 覆盖。
+    -- okhttp / axios / node-fetch / guzzlehttp 与 "java/" 同理，都是正常业务
+    -- 客户端库 UA（Android / Node SSR / PHP-Laravel），不是攻击工具；注释里
+    -- 已经声明要保护 OkHttp，词表里却还留着 "okhttp"（2026-11-13 实测仍拦）。
+    -- go-http-client / python-requests 属既有策略（waf_test.lua:679-680 有断言）。
     "ospython-requests%s*/", "python%-requests", "go%-http%-client",
-    "okhttp", "axios/", "node%-fetch", "guzzlehttp",
     -- 已知漏洞扫描器
     "log4j%s*scan", "jndi%s*lookup", "ysoserial", "marshalsec",
     "log4shell", "pwntest", "s2tomcat",

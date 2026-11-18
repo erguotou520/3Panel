@@ -215,6 +215,58 @@ end
 -- 字段的值交给语义引擎；文件内容由 detect_upload 单独检查危险扩展名与
 -- 可执行魔数。载荷藏在字段名/普通字段值里仍会被扫到，不构成绕过。
 -- boundary 解析失败时退回整段扫描（宁可误报也不漏检）。
+--
+-- part 头部是 HTTP 结构语法，不是用户输入。整行（或只剥赋值外壳）送检都会
+-- 人为制造攻击语法，已实测两类误报：
+--   1. 两个 name="..." 的引号 + 等号，叠加字段值里的独立单词 and/or，
+--      凑中 detect_sqli 的「引号计数 >= 2 + 等号关系」（"Tom and Jerry" 等）；
+--   2. 剥成裸值后若还留着 "Content-Disposition: form-data;"，字段名恰好是
+--      id / ls / cat / env / set / who 这类命令名时，"; id" 会被
+--      detect_rce 的 meta_then_cmd 判成命令注入 —— 字段名 id 极常见。
+-- 因此只提取各 key="value" 的**裸值**送检（name / filename / charset 都覆盖）：
+-- 字段名、文件名里藏的 payload 照样扫得到，但不再带上分号、引号和等号。
+local function strip_header_assign(head)
+    -- 按 ; 切分后逐段剥掉 key= 赋值外壳，只把「值」拼进送检文本。
+    -- 与旧实现的差别（2026-11-13 双路独立实测）：
+    --   1. name=evil 这种 RFC 7578 允许的**无引号**字段名不再被丢成空串；
+    --   2. name="a" OR "1"="1 这种值内带引号的攻击载荷不再被 [^"]* 截断。
+    -- 分号、等号、结构前缀一律不带入，避免重新制造 "; id" RCE 与
+    -- 两对引号 + 等号的 SQLi 误报。最外层成对引号剥掉，值内的原样保留。
+    local vals = {}
+    local function add_seg(seg)
+        -- 结构前缀按小写比对后再按下标裁掉，保留值本身的大小写
+        -- （head 里是 "Content-Disposition"，直接 gsub 小写模式会匹配不到）。
+        local value = seg
+        local _, e1 = seg:lower():find("^%s*content%-disposition%s*:%s*")
+        if e1 then value = value:sub(e1 + 1) end
+        local _, e2 = value:lower():find("^%s*form%-data%s*")
+        if e2 then value = value:sub(e2 + 1) end
+        value = value:gsub("^%s*[%w%-_]+%s*=%s*", ""):gsub("^%s+", ""):gsub("%s+$", "")
+        local first, last = value:sub(1, 1), value:sub(-1)
+        if #value >= 2 and ((first == '"' and last == '"') or (first == "'" and last == "'")) then
+            value = value:sub(2, -2)
+        end
+        if value ~= "" and value:lower() ~= "form-data" then vals[#vals + 1] = value end
+    end
+    -- 只在「引号外」的分号处切段。值里的分号（name=";id"、
+    -- filename="x;id.php"）是 payload 本身，当结构分隔符丢掉会让字段名里的
+    -- 命令注入漏检（2026-11-13 攻击对照 MP03 实测）。
+    local start, quoted = 1, nil
+    for i = 1, #head do
+        local ch = head:sub(i, i)
+        if quoted then
+            if ch == quoted then quoted = nil end
+        elseif ch == '"' or ch == "'" then
+            quoted = ch
+        elseif ch == ";" then
+            add_seg(head:sub(start, i - 1))
+            start = i + 1
+        end
+    end
+    add_seg(head:sub(start))
+    return table.concat(vals, " ")
+end
+
 local function multipart_text_parts(body)
     local boundary = body:match("^%-%-([^\r\n]+)")
     if not boundary or boundary == "" then return body end
@@ -230,7 +282,7 @@ local function multipart_text_parts(body)
         local lf = crlf or seg:find("\n\n", 1, true)
         local sep_len = crlf and 4 or 2
         local head = lf and seg:sub(1, lf - 1) or seg
-        parts[#parts + 1] = head
+        parts[#parts + 1] = strip_header_assign(head)
         if lf then
             local content = seg:sub(lf + sep_len)
             -- 普通表单字段必扫；文件区只在「确实是文本」时才扫，

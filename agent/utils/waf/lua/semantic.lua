@@ -126,9 +126,12 @@ local function looks_like_sql_injection_expr(s)
     if s:find("%(%s*select%s") and (s:find("md5%s*%(") or s:find("%f[%w]from%f[^%w]") or s:find(",") or s:find("%d")) then return true end
     -- select 后紧跟括号：select(N)、union(select(...))
     if s:find("%f[%w]select%s*%(%s*%a+") then return true end
-    if s:find("%f[%w]insert%f[^%w]") and s:find("%f[%w]into%f[^%w]") then return true end
-    if s:find("%f[%w]update%f[^%w]") and s:find("%f[%w]set%f[^%w]") then return true end
-    if s:find("%f[%w]delete%f[^%w]") and s:find("%f[%w]from%f[^%w]") then return true end
+    -- 关键字必须构成 SQL 结构（相邻或带赋值）。原先只要串里各出现一次就判，
+    -- "please delete the old file from the archive" / "please insert the coin
+    -- into the slot" / "update the set of options" 这类普通英文句子会 100% 误判。
+    if s:find("%f[%w]insert%s+into%f[^%w]") then return true end
+    if s:find("%f[%w]update%s+[%w_]+%s+set%s+[%w_]+%s*=") then return true end
+    if s:find("%f[%w]delete%s+from%f[^%w]") then return true end
     if s:find("%f[%w]drop%s+table%f[^%w]") or s:find("%f[%w]drop%s+database%f[^%w]") or s:find("%f[%w]drop%s+schema%f[^%w]") then return true end
     if s:find("%f[%w]sleep%s*%(") or s:find("%f[%w]benchmark%s*%(") or s:find("%f[%w]load_file%s*%(") then return true end
     if s:find("%f[%w]information_schema%f[^%w]") or s:find("%f[%w]pg_sleep%s*%(") then return true end
@@ -250,9 +253,13 @@ function _M.detect_sqli(value)
     -- 布尔恒真/恒假：1 OR true-- / id=1 AND false# / 1 OR NOT 1=0。
     -- 之前的候选词与检测器都不覆盖 true/false/not，真实 OpenResty 下
     -- `?id=1 OR true--` 稳定 200（实测），这是公开工具的标准 payload。
-    if s:find("%f[%w]or%s+true%f[^%w]") or s:find("%f[%w]or%s+false%f[^%w]")
-        or s:find("%f[%w]and%s+true%f[^%w]") or s:find("%f[%w]and%s+false%f[^%w]")
-        or s:find("%f[%w]or%s+not%f[^%w]") or s:find("%f[%w]and%s+not%f[^%w]") then
+    -- 必须同时存在「数字 + 布尔运算符」的 SQL 表达式骨架（1 OR true-- /
+    -- id=1 AND false# / 1 OR NOT 1=0），否则 "believe it or not"、
+    -- "whether or not" 这类普通英文在生产宽候选筛下会被送进检测器并误判。
+    if (s:find("%d%s+or%s+") or s:find("%d%s+and%s+"))
+        and (s:find("%f[%w]or%s+true%f[^%w]") or s:find("%f[%w]or%s+false%f[^%w]")
+             or s:find("%f[%w]and%s+true%f[^%w]") or s:find("%f[%w]and%s+false%f[^%w]")
+             or s:find("%f[%w]or%s+not%f[^%w]") or s:find("%f[%w]and%s+not%f[^%w]")) then
         return true
     end
     -- 十六进制/八进制数值比较：0x31 OR 0x31=0x31 / id=0x1 AND 0x1>0
@@ -260,10 +267,12 @@ function _M.detect_sqli(value)
         and (s:find("0x%x+%s*[=<>!]%s*0x%x+") or s:find("0x%x+%s+or%s+0x%x+")) then
         return true
     end
-    -- ORDER BY 枚举：1' ORDER BY 10-- 末尾注释已由上面覆盖，
-    -- 无注释形态（?id=1 ORDER BY 10）靠「引号/数字 + ORDER BY + 数字」识别，
-    -- 数字超过 1 即为列枚举探针。
-    if s:find("order%s+by%s+%d+") and #s:match("order%s+by%s+(%d+)") >= 1
+    -- ORDER BY 列枚举：要求 order by 前面是「数字 + 可选引号闭合」的注入探针形态
+    -- （1 ORDER BY 10 / 1' ORDER BY 10-- / id=1 ORDER BY 10 / URL 解码后的裸值）。
+    -- 只看 "order by + 数字" 会误杀 "sort order by 2 columns"；用 ?、=、select
+    -- 当上下文又会让 "Can you order by 2 columns ...?" 中招，且漏掉裸值探针
+    -- （2026-11-13 误伤 + 绕过双路实测）。候选筛已同步补 order by 词表。
+    if s:find("%d%s*['\"]?%s*order%s+by%s+%d+")
         and tonumber(s:match("order%s+by%s+(%d+)")) >= 2 then
         return true
     end
@@ -271,7 +280,12 @@ function _M.detect_sqli(value)
 end
 
 -- ============ XSS ============
-local XSS_EVENT_ATTRS = {"onerror", "onload", "onclick", "onmouseover", "onfocus", "onblur", "onmouseenter", "onanimationstart", "ontoggle", "onpointerdown", "onstart"}
+local XSS_EVENT_ATTRS = {"onerror", "onload", "onclick", "onmouseover", "onfocus", "onblur", "onmouseenter", "onanimationstart", "ontoggle", "onpointerdown", "onstart",
+    -- SVG SMIL 动画事件：<animate onbegin=alert(1)> / <set onbegin=...> /
+    -- <animateTransform onrepeat=...>。移除「见 <svg 即拦」后必须由事件属性表接管，
+    -- 否则这几类真实可执行的 SVG XSS 会被放过（2026-11-13 双路独立实测）。
+    "onbegin", "onend", "onrepeat", "onabort", "onfocusin", "onfocusout",
+    "onanimationend", "onanimationiteration"}
 
 -- 事件属性里可直接执行的浏览器函数。用于识别 onerror=alert(1) 这类裸赋值 ——
 -- 只收浏览器确实存在且能产生副作用的函数，避免把 onchange=format(x) 之类的
@@ -285,9 +299,16 @@ function _M.detect_xss(value)
     if not value or value == "" then return false end
     local s = normalize.normalize(value)
     -- 标签注入 <script / <img on...= / <svg onload / <iframe src=javascript:
-    if s:find("<%s*script") or s:find("<%s*iframe") or s:find("<%s*svg") or s:find("<%s*object") or s:find("<%s*embed") then
+    -- <svg> 本身是合法标签（图标、富文本、前端源码里很常见），一见到就 return
+    -- 会让正常 SVG 内容 100% 403（2026-11-13 实测）。带事件属性的攻击形态
+    -- （<svg onload=alert(1)>）由下面 XSS_EVENT_ATTRS 规则覆盖，不需要在此无条件拦。
+    if s:find("<%s*script") or s:find("<%s*iframe") or s:find("<%s*object") or s:find("<%s*embed") then
         return true
     end
+    -- <use xlink:href="data:image/svg+xml;base64,..."> 会把外部 SVG 当资源加载，
+    -- 内嵌脚本在部分浏览器/同源上下文可执行。移除「见 <svg 即拦」后这条是
+    -- 唯一的 SVG 载体缺口（2026-11-13 攻击对照 XS16）；正常图标用 #id 锚点不受影响。
+    if s:find("<%s*use[^>]-href%s*=%s*[\"']?data:image/svg") then return true end
     if s:find("<%f[%w]%s*img[^>]+onerror") or s:find("<%f[%w]%s*body[^>]+onload") then
         return true
     end
@@ -365,9 +386,22 @@ local META_CLASS = "[;|&`%$%(]%s*"
 
 local function meta_then_cmd(s)
     -- %f[^%w] 后置边界避免把 "idx" 里的 "id"、"wait" 里的 "ai" 当命令名。
+    -- 但 Cookie / form / URL matrix 参数里 "; id=1001" 是 key=value 结构语法，
+    -- 不是 shell 命令；只因字段名恰好叫 id/ls/env/set 就判注入会让带多字段
+    -- Cookie 的普通站点 100% 403（2026-11-13 实测）。命令名后紧跟 = 且后面
+    -- 不是 shell 参数/路径/命令替换时跳过该处，继续找后续出现。
     for _, name in ipairs(RCE_CMD_NAMES) do
-        if s:find(META_CLASS .. name .. "%f[^%w]") then
-            return true
+        local pos = 1
+        while true do
+            local _, e = s:find(META_CLASS .. name .. "%f[^%w]", pos)
+            if not e then break end
+            local rest = s:sub(e + 2)
+            local shell_arg = rest:match("^%s*[%-/]") or rest:match("^%s*%$%(")
+                or rest:match("^%s*`") or rest:match("^%s*|") or rest:match("^%s*;")
+            if not (s:sub(e + 1, e + 1) == "=" and not shell_arg) then
+                return true
+            end
+            pos = e + 1
         end
     end
     return false
@@ -391,6 +425,13 @@ function _M.detect_rce(value)
     local DATA_URI_PREFIX = "(data:[%w%.%-%+%s]+/[%w%.%-%+%s]+)%s*;%s*base64%s*,"
     raw = raw:gsub(DATA_URI_PREFIX, "%1 ")
     s = s:gsub(DATA_URI_PREFIX, "%1 ")
+    -- Markdown 代码围栏 ```python / ```bash 的语言名不是 shell 命令，但
+    -- META_CLASS 把反引号当元字符、RCE_CMD_NAMES 含 python/bash/sh，
+    -- 会让技术文档、AI 回答、README 整片被判 RCE（2026-11-13 实测）。
+    -- 只剥围栏标记本身，围栏内的真实命令内容照常检测。
+    local FENCE = "```[%w%.%-%+_]*"
+    raw = raw:gsub(FENCE, " ")
+    s = s:gsub(FENCE, " ")
     if raw:find("%f[%w]expr%s+%d+%s*[%+%-]%s*%d+") or raw:find("%f[%w]expr%s+%d+%s+%d+") then return true end
     -- 参数名在前的 expr 变体：cls_mode_login expr 927+927 / Published expr 1+1
     if s:find("%f[%a]expr%s+%d+%s*[%+%-*]%s*%d+") or s:find("%f[%a]expr%s+%d+%s+%d+") then return true end
@@ -754,7 +795,11 @@ function _M.detect_ssti(value)
     if s:find("#%s*{") and s:find("}") then return true end
     if s:find("#{%s*[%w@(]") and not s:find("#%s*[0-9a-f]%s*;") then return true end
     -- ---- Java EL / SpEL / JS 模板：${expr}。要求 $ 后紧跟 { 且内部不是纯数字 ----
-    if s:find("%${%s*[%w_(]") then return true end
+    -- ${var} / ${user.name} 是 JS 模板字符串、Spring/Maven/logback 配置的常见写法，
+    -- 见 ${ 就拦会让配置与文档类接口整片 403（2026-11-13 实测）。
+    -- 只有花括号内出现运算、比较或起始括号才算注入探测；
+    -- ${jndi:...} 由 detect_log4shell、${T(java...)} 由 SSTI_CHAINS 覆盖。
+    if s:find("%${[^}]*[%+%-%*%/><=]") or s:find("%${%s*%(") then return true end
     -- ---- 模板引擎属性链 / 静态方法调用 ----
     for _, chain in ipairs(SSTI_CHAINS) do
         if s:find(chain, 1, true) then return true end
@@ -919,7 +964,7 @@ local function has_attack_candidate(lower)
         return true
     end
     if ngx and ngx.re and ngx.re.find then
-        local from = ngx.re.find(lower, [[[%<'"`;|$\\{}]|\.\.|://|\b(?:union|select|insert|update|delete|drop|sleep|waitfor|gtid_subset|hashbytes|concat|javascript|jndi|phpinfo|printf|print_r|var_dump|md5|processbuilder|ognlcontext|groovyshell|file_put_contents|base64_decode|expr|echo|touch|ping|xp_cmdshell|alert|prompt|eval|onmouseover)\b|@@|(?:javax\.naming|sun\.awt\.datatransfer|jdk\.nashorn|org\.apache\.commons\.beanutils)|/(?:etc|proc|usr/bin)/|/actuator/(?:env|heapdump|gateway/routes)|/phpmyadmin|/druid/(?:login\.html|websession\.html)|/apisix/admin/routes|/\.git/(?:config|head)|/\.env|/server-status|/swagger-ui|/web\.config|/web-inf/web\.xml|/jmx-console|/manager/html|/\.ds_store|/meta-inf/maven/|/bsh\.servlet\.bshservlet|/phpunit/phpunit/src/util/php/eval-stdin\.php|/(?:shell[\w-]*|webshell[\w-]*|phpspy|c99|r57)\.php|/[^/?]+\.sql$|/(?:backup|db|database|root|site|test|web|webapps|website|www|wwwroot)\.(?:zip|rar)$|/(?:config|db)\.php\.bak$|/[^/?]+\.config\.bak$|/wls-wsat/|/mgmt/tm/util/bash|/jmreport/testconnection|device\.rsp|s=captcha|/actuator;/|/center/api/session(?:[/?]|$)|/excu_shell|invokefunction|__construct|__destruct|call_user_func|memberaccess|classloader|updatexml|extractvalue|os\.execute|print\s*\(|system\s*\(|passthru|shell_exec|initialcontext|defineclass|%3c|%3e|%27|%24\{|\{\{|\band\s+\d+\s*[=<>]|\bor\s+\d+\s*=|__class__|__mro__|[?&]cmd=|dbms_pipe|char\(\d|/%*!|case\s+when|cast\(|sh\s+-c\s+\S|nc\s+-e|md5sum|nslookup|oast|interactsh|dnslog|windows/win\.ini|program files|documents and settings|appdata|sys_user|java\.lang\.[a-z]+|java\.util\.[a-z]+|templatesimpl|logback\.core|this\.constructor\.constructor|assert\s*\(\s*base\d*_decode|/bin/sleep|create\s+alias|\.aspx|\.ashx|\.jspx|\.jsp|\|a:\d+:\{|group\s+by|decode\s*\(\s*length|/\*\*|\b(?:or|and)\s+(?:\(|not\b|true\b|false\b|0x[0-9a-f]|\d+\s*[+\-*])]], "jo")
+        local from = ngx.re.find(lower, [[[%<'"`;|$\\{}]|\.\.|://|\b(?:union|select|insert|update|delete|drop|sleep|waitfor|gtid_subset|hashbytes|concat|javascript|jndi|phpinfo|printf|print_r|var_dump|md5|processbuilder|ognlcontext|groovyshell|file_put_contents|base64_decode|expr|echo|touch|ping|xp_cmdshell|alert|prompt|eval|onmouseover)\b|@@|(?:javax\.naming|sun\.awt\.datatransfer|jdk\.nashorn|org\.apache\.commons\.beanutils)|/(?:etc|proc|usr/bin)/|/actuator/(?:env|heapdump|gateway/routes)|/phpmyadmin|/druid/(?:login\.html|websession\.html)|/apisix/admin/routes|/\.git/(?:config|head)|/\.env|/server-status|/swagger-ui|/web\.config|/web-inf/web\.xml|/jmx-console|/manager/html|/\.ds_store|/meta-inf/maven/|/bsh\.servlet\.bshservlet|/phpunit/phpunit/src/util/php/eval-stdin\.php|/(?:shell[\w-]*|webshell[\w-]*|phpspy|c99|r57)\.php|/[^/?]+\.sql$|/(?:backup|db|database|root|site|test|web|webapps|website|www|wwwroot)\.(?:zip|rar)$|/(?:config|db)\.php\.bak$|/[^/?]+\.config\.bak$|/wls-wsat/|/mgmt/tm/util/bash|/jmreport/testconnection|device\.rsp|s=captcha|/actuator;/|/center/api/session(?:[/?]|$)|/excu_shell|invokefunction|__construct|__destruct|call_user_func|memberaccess|classloader|updatexml|extractvalue|os\.execute|print\s*\(|system\s*\(|passthru|shell_exec|initialcontext|defineclass|%3c|%3e|%27|%24\{|\{\{|\band\s+\d+\s*[=<>]|\bor\s+\d+\s*=|__class__|__mro__|[?&]cmd=|dbms_pipe|char\(\d|/%*!|case\s+when|cast\(|sh\s+-c\s+\S|nc\s+-e|md5sum|nslookup|oast|interactsh|dnslog|windows/win\.ini|program files|documents and settings|appdata|sys_user|java\.lang\.[a-z]+|java\.util\.[a-z]+|templatesimpl|logback\.core|this\.constructor\.constructor|assert\s*\(\s*base\d*_decode|/bin/sleep|create\s+alias|\.aspx|\.ashx|\.jspx|\.jsp|\|a:\d+:\{|group\s+by|order\s+by|decode\s*\(\s*length|/\*\*|\b(?:or|and)\s+(?:\(|not\b|true\b|false\b|0x[0-9a-f]|\d+\s*[+\-*])]], "jo")
         return from ~= nil
     end
     return boolean_op_candidate(lower) or _M.detect_exposure(lower)
@@ -1017,6 +1062,7 @@ local function has_attack_candidate(lower)
         or lower:find(".jsp", 1, true)
         or lower:find("|a:", 1, true)
         or lower:find("group by", 1, true)
+        or lower:find("order by", 1, true)
         or lower:find("decode(length", 1, true)
         or lower:find("/**/", 1, true)
         or lower:match("%f[%w]or%s+%d+%s*=")
