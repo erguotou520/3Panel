@@ -1,0 +1,126 @@
+name: Dependency Drift
+
+# 依赖漂移巡检（兜底通道）：
+#
+# dependabot 每日例行 PR 是主通道，但万一例行 PR 没出来
+# （限流、分叉后配置漂移、新依赖没被扫描等），版本就会悄悄落后。
+# 本工作流每周把所有依赖目录里「锁文件版本 vs registry 最新版」
+# 的差集汇总成一个滚动 issue（标题固定，内容每次覆盖更新），
+# 落后一目了然；没有任何漂移时 issue 里就写 ✅。
+#
+# 覆盖范围：
+# - frontend（npm，package.json + package-lock.json）
+# - agent / core（Go，go.mod 的模块升级）
+
+on:
+    schedule:
+        # 每周日 01:30 UTC，错开 dependabot 的 01:00 例行
+        - cron: "30 1 * * 0"
+    workflow_dispatch:
+
+permissions:
+    issues: write
+
+jobs:
+    drift:
+        name: 依赖漂移巡检
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '22'
+
+            - name: 收集 npm 依赖漂移（frontend）
+              working-directory: frontend
+              run: |
+                  cat > /tmp/npm-drift.mjs <<'EOF'
+                  import fs from 'node:fs';
+                  import { execSync } from 'node:child_process';
+                  const pj = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+                  const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+                  const deps = { ...(pj.dependencies || {}), ...(pj.devDependencies || {}) };
+                  const rows = [];
+                  for (const name of Object.keys(deps).sort()) {
+                    const locked = lock.packages && lock.packages['node_modules/' + name]
+                        ? lock.packages['node_modules/' + name].version : '(missing)';
+                    let latest = '(err)';
+                    try {
+                        latest = execSync(`npm view ${JSON.stringify(name)} version`, {
+                            encoding: 'utf8', timeout: 30000,
+                        }).trim();
+                    } catch (e) { /* 网络错误时保留 (err) */ }
+                    // 简单语义化版本比较（忽略 prerelease 标签）
+                    const cmp = (a, b) => {
+                        const pa = a.split(/[.+-]/).map(x => parseInt(x, 10) || 0);
+                        const pb = b.split(/[.+-]/).map(x => parseInt(x, 10) || 0);
+                        for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+                            const d = (pa[i] || 0) - (pb[i] || 0);
+                            if (d) return d;
+                        }
+                        return 0;
+                    };
+                    if (latest !== '(err)' && locked !== '(missing)' && cmp(latest, locked) > 0) {
+                        rows.push(`| ${name} | ${locked} | ${latest} |`);
+                    }
+                  }
+                  fs.writeFileSync('/tmp/npm-drift.md', rows.length ? rows.join('\n') : '✅ 无漂移');
+                  EOF
+                  node /tmp/npm-drift.mjs
+
+            - uses: actions/setup-go@v5
+              with:
+                  go-version: '1.24'
+
+            - name: 收集 Go 模块漂移（agent / core）
+              # 单模块解析失败不阻断整体报告
+              run: |
+                  set -uo pipefail
+                  : > /tmp/go-drift.md
+                  for dir in agent core; do
+                      (cd "$dir" && go list -m -u -json all 2>/dev/null) | python3 - "$dir" >> /tmp/go-drift.md <<'EOF'
+                  import json, sys
+                  d = sys.argv[1]
+                  dec = json.JSONDecoder()
+                  s = sys.stdin.read()
+                  while s.strip():
+                      m, s = dec.raw_decode(s.lstrip())
+                      up = m.get('Upgrade')
+                      if up:
+                          print(f"| {d} | {m['Path']} | {m['Version']} | {up['Version']} |")
+                  EOF
+                  done
+                  [ -s /tmp/go-drift.md ] || echo "✅ 无漂移" > /tmp/go-drift.md
+
+            - name: 汇总并更新漂移报告 issue
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  set -uo pipefail
+                  {
+                      echo "上次巡检：$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+                      echo
+                      echo "## npm（frontend）"
+                      echo
+                      echo "| 依赖 | 当前锁定 | registry 最新 |"
+                      echo "| --- | --- | --- |"
+                      cat /tmp/npm-drift.md
+                      echo
+                      echo "## Go（agent / core）"
+                      echo
+                      echo "| 模块 | 当前版本 | 最新版本 |"
+                      echo "| --- | --- | --- |"
+                      cat /tmp/go-drift.md
+                  } > /tmp/drift-body.md
+                  body=$(cat /tmp/drift-body.md)
+                  issue=$(gh issue list --state open \
+                      --search "依赖漂移巡检 in:title" \
+                      --json number --jq '.[0].number // empty' 2>/dev/null || true)
+                  if [ -n "$issue" ]; then
+                      gh issue edit "$issue" --body "$body"
+                      echo "已更新 issue #$issue"
+                  else
+                      gh issue create --title "📦 依赖漂移巡检（Dependency Drift Report）" --body "$body"
+                      echo "已创建漂移报告 issue"
+                  fi

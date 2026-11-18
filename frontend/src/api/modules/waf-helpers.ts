@@ -155,14 +155,30 @@ export const WAF_DETECTORS: { name: string; labelKey: string; descKey: string }[
     { name: 'ssrf', labelKey: 'website.wafDetectorSsrf', descKey: 'website.wafDetectorSsrfDesc' },
     { name: 'upload', labelKey: 'website.wafDetectorUpload', descKey: 'website.wafDetectorUploadDesc' },
     { name: 'log4shell', labelKey: 'website.wafDetectorLog4shell', descKey: 'website.wafDetectorLog4shellDesc' },
-    { name: 'code_injection', labelKey: 'website.wafDetectorCodeInjection', descKey: 'website.wafDetectorCodeInjectionDesc' },
+    {
+        name: 'code_injection',
+        labelKey: 'website.wafDetectorCodeInjection',
+        descKey: 'website.wafDetectorCodeInjectionDesc',
+    },
     { name: 'ssti', labelKey: 'website.wafDetectorSsti', descKey: 'website.wafDetectorSstiDesc' },
-    { name: 'deserialization', labelKey: 'website.wafDetectorDeserialization', descKey: 'website.wafDetectorDeserializationDesc' },
+    {
+        name: 'deserialization',
+        labelKey: 'website.wafDetectorDeserialization',
+        descKey: 'website.wafDetectorDeserializationDesc',
+    },
     { name: 'xxe', labelKey: 'website.wafDetectorXxe', descKey: 'website.wafDetectorXxeDesc' },
     { name: 'exposure', labelKey: 'website.wafDetectorExposure', descKey: 'website.wafDetectorExposureDesc' },
-    { name: 'prototype_pollution', labelKey: 'website.wafDetectorPrototypePollution', descKey: 'website.wafDetectorPrototypePollutionDesc' },
+    {
+        name: 'prototype_pollution',
+        labelKey: 'website.wafDetectorPrototypePollution',
+        descKey: 'website.wafDetectorPrototypePollutionDesc',
+    },
     { name: 'graphql', labelKey: 'website.wafDetectorGraphql', descKey: 'website.wafDetectorGraphqlDesc' },
-    { name: 'sensitive_path', labelKey: 'website.wafDetectorSensitivePath', descKey: 'website.wafDetectorSensitivePathDesc' },
+    {
+        name: 'sensitive_path',
+        labelKey: 'website.wafDetectorSensitivePath',
+        descKey: 'website.wafDetectorSensitivePathDesc',
+    },
 ];
 
 /** 把后端的逗号分隔字符串解析成集合。空/空白/全空项 = 空集合。 */
