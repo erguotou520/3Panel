@@ -2,9 +2,12 @@ package service
 
 import (
 	"bytes"
+	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -36,6 +39,57 @@ const (
 	// nodeStatusOffline must match what the frontend renders as unhealthy; the
 	// node drawer treats anything other than 'Healthy' as a problem.
 	nodeStatusOffline = "Offline"
+)
+
+// nodeTLSConfig resolves the mTLS configuration for one node address. It is a
+// package-level hook so tests can substitute a configuration that does not
+// require the database.
+var nodeTLSConfig = nodecert.TLSConfig
+
+// nodeProbeTransport is the single Transport shared by every request core
+// makes to remote nodes.
+//
+// A fresh http.Transport must NOT be created per request: the zero value has
+// no IdleConnTimeout, so the keep-alive connection left behind after each
+// probe is never reaped. The once-a-minute health check leaked one TCP/TLS
+// connection per node per minute, until the local ephemeral port range
+// (32768-60999) was exhausted and new dials failed with "cannot assign
+// requested address" (errno 99), which the UI showed as Offline even though
+// the agents were healthy.
+//
+// Each node needs its own mTLS configuration (per-node server name), so it is
+// resolved per dial from the dial target instead of baked into the transport.
+var nodeProbeTransport = &http.Transport{
+	DialContext: (&net.Dialer{
+		Timeout:   remoteProbeTimeout,
+		KeepAlive: 30 * time.Second,
+	}).DialContext,
+	DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		tlsCfg, err := nodeTLSConfig(addr)
+		if err != nil {
+			return nil, err
+		}
+		dialer := &tls.Dialer{
+			Config:    tlsCfg,
+			NetDialer: &net.Dialer{Timeout: remoteProbeTimeout, KeepAlive: 30 * time.Second},
+		}
+		return dialer.DialContext(ctx, network, addr)
+	},
+	TLSHandshakeTimeout:   remoteProbeTimeout,
+	ResponseHeaderTimeout: remoteProbeTimeout,
+	ForceAttemptHTTP2:     false,
+	MaxIdleConns:          20,
+	MaxIdleConnsPerHost:   5,
+	IdleConnTimeout:       30 * time.Second,
+}
+
+var (
+	// nodeProbeClient serves the periodic health check and the dashboard
+	// probe; its timeout keeps the once-a-minute job well under its interval.
+	nodeProbeClient = &http.Client{Timeout: remoteProbeTimeout, Transport: nodeProbeTransport}
+	// nodeUpgradeClient reuses the same connection pool but allows longer
+	// dispatch requests.
+	nodeUpgradeClient = &http.Client{Timeout: 15 * time.Second, Transport: nodeProbeTransport}
 )
 
 type NodeService struct{}
@@ -111,18 +165,8 @@ func (u *NodeService) localSimpleItem() dto.SimpleNodeItem {
 }
 
 func (u *NodeService) fillRemoteSimpleItem(node model.Node, item *dto.SimpleNodeItem) error {
-	// Per-node TLS config: ServerName must be the host part of the dial
-	// address so the node's certificate (SAN carries the same host) verifies.
-	tlsCfg, err := nodecert.TLSConfig(node.Addr)
-	if err != nil {
-		return err
-	}
-	client := &http.Client{
-		Timeout:   remoteProbeTimeout,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}
 	var info agentNodeInfo
-	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/dashboard/current/node", &info); err != nil {
+	if err := u.getJSON(nodeProbeClient, "https://"+node.Addr+"/api/v2/dashboard/current/node", &info); err != nil {
 		return err
 	}
 	item.Status = nodeStatusOnline
@@ -152,7 +196,13 @@ func (u *NodeService) getJSON(client *http.Client, url string, out interface{}) 
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	// Read the body to EOF so the keep-alive connection can be returned to the
+	// shared pool and reused by the next probe.
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return err
 	}
 	if result.Code != http.StatusOK {
@@ -293,14 +343,7 @@ func (u *NodeService) Upgrade(req dto.NodeUpgrade) (*dto.NodeUpgradeResult, erro
 	if err != nil {
 		return nil, err
 	}
-	tlsCfg, err := nodecert.TLSConfig(node.Addr)
-	if err != nil {
-		return nil, err
-	}
-	client := &http.Client{
-		Timeout:   15 * time.Second,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}
+	client := nodeUpgradeClient
 	resp, err := client.Post("https://"+node.Addr+"/api/v2/settings/node/upgrade", "application/json", bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("dispatch upgrade to node %s: %w", node.Name, err)
@@ -379,7 +422,13 @@ func postNodeAPI(client *http.Client, addr, path string, payload, data interface
 		Message string          `json:"message"`
 		Data    json.RawMessage `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+	// Read the body to EOF so the keep-alive connection can be returned to the
+	// shared pool and reused by the next request.
+	raw, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("status %d: %w", resp.StatusCode, err)
+	}
+	if err := json.Unmarshal(raw, &result); err != nil {
 		return fmt.Errorf("status %d: %w", resp.StatusCode, err)
 	}
 	if result.Code != http.StatusOK {
@@ -506,16 +555,8 @@ func (u *NodeService) refresh(node *model.Node) {
 	if node.Addr == "" {
 		return
 	}
-	tlsCfg, err := nodecert.TLSConfig(node.Addr)
-	if err != nil {
-		return
-	}
-	client := &http.Client{
-		Timeout:   remoteProbeTimeout,
-		Transport: &http.Transport{TLSClientConfig: tlsCfg},
-	}
 	var info agentNodeInfo
-	if err := u.getJSON(client, "https://"+node.Addr+"/api/v2/dashboard/current/node", &info); err != nil {
+	if err := u.getJSON(nodeProbeClient, "https://"+node.Addr+"/api/v2/dashboard/current/node", &info); err != nil {
 		global.LOG.Debugf("node %s (%s) unreachable: %v", node.Name, node.Addr, err)
 		if node.Status != nodeStatusOffline {
 			node.Status = nodeStatusOffline
